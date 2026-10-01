@@ -15,6 +15,15 @@ struct SystemView: View {
                             .multilineTextAlignment(.center)
                             .foregroundStyle(.white.opacity(0.94))
 
+                        if let banner = store.targetBanner {
+                            Text(banner)
+                                .font(.caption2.weight(.semibold))
+                                .tracking(0.6)
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(SystemTheme.cyan)
+                                .padding(.top, 8)
+                        }
+
                         Spacer()
 
                         Text("GOAL")
@@ -31,7 +40,9 @@ struct SystemView: View {
                                     store.handleQuestTap(id: quest.id)
                                 } label: {
                                     HStack {
-                                        Text(quest.title).foregroundStyle(.white)
+                                        Text(quest.kind == .targetInjection ? "⟪TARGET⟫ \(quest.title)" : quest.title)
+                                            .foregroundStyle(.white)
+                                            .lineLimit(1)
                                         Spacer()
                                         Text(store.rowLabel(for: quest)).font(.subheadline.monospacedDigit()).foregroundStyle(SystemTheme.muted)
                                         Image(systemName: quest.status == .completed ? "checkmark.square.fill" : "square")

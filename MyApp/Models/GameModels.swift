@@ -413,7 +413,7 @@ struct PlayerState: Codable, Equatable {
     }
 }
 
-/// Placeholder morning inputs. WHOOP, calendar, and Targets replace these in later phases.
+/// Placeholder morning inputs. WHOOP and calendar replace these later. Active Targets live on the snapshot.
 struct MorningSignals: Codable, Equatable {
     var readinessBand: ReadinessBand
     var sleepPerformance: Int?
@@ -450,5 +450,28 @@ enum QuestDay {
 
     static func endOfDay(_ date: Date) -> Date {
         calendar.date(bySettingHour: 23, minute: 59, second: 59, of: date) ?? date
+    }
+
+    static func date(from key: String) -> Date? {
+        let parts = key.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        var components = DateComponents()
+        components.year = parts[0]
+        components.month = parts[1]
+        components.day = parts[2]
+        components.hour = 12
+        return calendar.date(from: components)
+    }
+
+    /// Inclusive day count. `2026-10-01` through `2026-10-14` is 14.
+    static func daySpan(from start: String, to end: String) -> Int {
+        guard let startDate = date(from: start), let endDate = date(from: end) else { return 1 }
+        let days = calendar.dateComponents([.day], from: startDate, to: endDate).day ?? 0
+        return max(days + 1, 1)
+    }
+
+    static func key(byAddingDays days: Int, to key: String) -> String {
+        guard let date = date(from: key), let shifted = calendar.date(byAdding: .day, value: days, to: date) else { return key }
+        return self.key(for: shifted)
     }
 }

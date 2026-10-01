@@ -1,6 +1,6 @@
 # The System — Implementation Phases
 
-Phases 1 and 2 are in the tree. Later phases follow `docs/MASTER_PLAN.md` §10 and `docs/AI_DAILY_QUEST_ENGINE.md`. The System, Goals, History, and Status chrome stays as it is.
+Phases 1, 2, and Targets are in the tree. Later phases follow `docs/MASTER_PLAN.md` §10 and `docs/AI_DAILY_QUEST_ENGINE.md`. The System, Goals, History, and Status chrome stays as it is.
 
 ## Phase 1 — Models, fallback quests, live binding (done)
 
@@ -25,7 +25,20 @@ Master plan MVP step 3.
 
 History day-clear cards and local midnight penalty rollover (master plan steps 6 and 7) are still open. They are not part of this slice.
 
-## Phase 3 — HealthKit and nutrition
+## Phase 3 — Targets (done)
+
+Master plan step 14. At most one Target is active. Goals stay the long-term mocks; they are not created from Targets.
+
+- `Target` is a dated campaign: title, kind, `startsOn`, `endsOn`, daily requirements, unit and cleared-day progress, status `draft | scheduled | active | completed | expired | aborted`.
+- Goals has a `GOALS | TARGETS` segment. Create, edit, activate, and abort use the existing panel, type, and cyan.
+- An active Target prefers hybrid when readiness is not red. Its requirements are injected into whatever mode the picker chose, in front of the training rows, replacing catalog `target_injection` placeholders.
+- System shows `TARGET ACTIVE · {title} · Day N/M` under the header and `⟪TARGET⟫` on those GOAL rows.
+- Completing an injected quest adds its quota to `unitsDone`. Clearing every injected quest for the day counts one cleared day. Hitting the unit goal grants `[Target Complete.]` and 150 XP. The next scheduled Target whose window includes today promotes the next time the day bundle is built.
+- Targets persist on the same UserDefaults snapshot as the player and the quest bundle.
+
+Full Recovery spend, the Sunday OPTIONAL bank, and History cards are still open.
+
+## HealthKit and nutrition (not started)
 
 Master plan steps 8 and 9.
 
@@ -47,12 +60,10 @@ Master plan steps 11 and 12.
 - WHOOP OAuth, recovery / sleep / workout sync, and webhooks. Readiness replaces the placeholder in the mode picker. REC stays a rolling composite, not today’s recovery score.
 - Strava OAuth, activities, and webhooks. Run quests verify from Strava, with workout dedupe against WHOOP and HealthKit.
 
-## Phase 6 — Targets and Full Recovery bank
+## Phase 6 — Full Recovery bank (open)
 
-Master plan steps 14 and 15.
+Master plan step 15. Targets themselves landed in Phase 3.
 
-- Goals screen segmented `GOALS | TARGETS` using the existing card chrome.
-- System banner `TARGET ACTIVE` and `⟪TARGET⟫` rows. At most one active Target.
 - Sunday OPTIONAL section banks a Full Recovery token (cap 3). The Status row spends a token through a confirm sheet.
 
 ## Phase 7 — FIN, penalties, push

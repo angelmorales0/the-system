@@ -19,7 +19,7 @@ final class GameStore: ObservableObject {
 
     init(persistence: GamePersistence = .standard) {
         #if DEBUG
-        let problems = VerificationFixtures.check()
+        let problems = VerificationFixtures.check() + TargetRules.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         #endif
 
@@ -42,6 +42,52 @@ final class GameStore: ObservableObject {
     var player: PlayerState { snapshot.player }
     var bundle: QuestBundle { snapshot.bundle }
     var goalQuests: [Quest] { bundle.goalQuests }
+    var targets: [Target] { snapshot.targets }
+
+    var targetBanner: String? {
+        let dayKey = bundle.dayKey.isEmpty ? QuestDay.key(for: clock) : bundle.dayKey
+        return snapshot.targetBanner(on: dayKey)
+    }
+
+    func saveTarget(_ target: Target, now: Date = .now) -> String? {
+        var next = snapshot
+        let message = next.upsertTarget(target, catalog: catalog, now: now)
+        snapshot = next
+        clock = now
+        runningTimersRemoveMissing()
+        publishTargetToast()
+        persist()
+        ensureTicker()
+        return message
+    }
+
+    func activateTarget(id: String, now: Date = .now) -> String? {
+        var next = snapshot
+        let message = next.activateTarget(id: id, catalog: catalog, now: now)
+        snapshot = next
+        clock = now
+        runningTimersRemoveMissing()
+        publishTargetToast()
+        persist()
+        ensureTicker()
+        return message
+    }
+
+    func abortTarget(id: String, now: Date = .now) {
+        var next = snapshot
+        next.abortTarget(id: id, catalog: catalog, now: now)
+        snapshot = next
+        clock = now
+        runningTimersRemoveMissing()
+        persist()
+        ensureTicker()
+    }
+
+    func startInterviewPrep(now: Date = .now) -> String? {
+        var target = Target.interviewPrep(starting: QuestDay.key(for: now))
+        target.status = .active
+        return saveTarget(target, now: now)
+    }
 
     func rowLabel(for quest: Quest) -> String {
         guard quest.status != .completed,
@@ -151,7 +197,10 @@ final class GameStore: ObservableObject {
             }
         }
         snapshot = next
-        if completed, next.runningTimers.isEmpty {
+        if let toast = next.targetToast {
+            verificationNote = toast
+            snapshot.targetToast = nil
+        } else if completed, next.runningTimers.isEmpty {
             verificationNote = nil
         } else if let runningNote {
             verificationNote = runningNote
@@ -197,12 +246,26 @@ final class GameStore: ObservableObject {
     private func note(for outcome: VerificationApply, title: String) {
         switch outcome {
         case .completed:
-            verificationNote = nil
+            publishTargetToast()
         case .rejected(let reason):
             verificationNote = "\(title): \(reason)"
         case .ignored, .updated:
             break
         }
+    }
+
+    private func publishTargetToast() {
+        guard let toast = snapshot.targetToast else {
+            verificationNote = nil
+            return
+        }
+        verificationNote = toast
+        snapshot.targetToast = nil
+    }
+
+    private func runningTimersRemoveMissing() {
+        let ids = Set(snapshot.bundle.quests.map(\.id))
+        snapshot.runningTimers.removeAll { !ids.contains($0.questId) }
     }
 
     private func ensureTicker() {
