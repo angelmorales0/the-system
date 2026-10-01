@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct ContentView: View {
+    @EnvironmentObject private var store: GameStore
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
         TabView {
             SystemView()
@@ -10,6 +13,11 @@ struct ContentView: View {
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .tint(SystemTheme.cyan)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                store.refreshForToday()
+            }
+        }
     }
 }
 
@@ -127,4 +135,7 @@ private struct Diamond: Shape {
     }
 }
 
-#Preview { ContentView() }
+#Preview {
+    ContentView()
+        .environmentObject(GameStore(persistence: .memory))
+}
