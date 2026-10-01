@@ -2,6 +2,8 @@ import SwiftUI
 
 struct StatusView: View {
     @EnvironmentObject private var store: GameStore
+    @State private var confirmRecovery = false
+    @State private var showShields = false
 
     private var stats: [RadarStat] {
         store.player.stats.radar.map { RadarStat(label: $0.label, value: $0.value) }
@@ -35,23 +37,47 @@ struct StatusView: View {
                             .padding(.vertical, 6)
 
                         SystemDivider()
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("FULL RECOVERY")
-                                    .font(.caption.weight(.semibold))
-                                    .tracking(1.1)
-                                    .foregroundStyle(SystemTheme.muted)
-                                Text("x\(store.player.fullRecoveryBank)")
-                                    .font(.title2.weight(.bold))
-                                    .foregroundStyle(.white)
+                        Button {
+                            confirmRecovery = true
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("FULL RECOVERY")
+                                        .font(.caption.weight(.semibold))
+                                        .tracking(1.1)
+                                        .foregroundStyle(SystemTheme.muted)
+                                    Text("x\(store.player.fullRecoveryBank)")
+                                        .font(.title2.weight(.bold))
+                                        .foregroundStyle(.white)
+                                }
+                                Spacer()
+                                Image(systemName: "bolt.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(SystemTheme.cyan)
+                                    .shadow(color: SystemTheme.cyan.opacity(0.35), radius: 4)
                             }
-                            Spacer()
-                            Image(systemName: "bolt.fill")
-                                .font(.title2)
-                                .foregroundStyle(SystemTheme.cyan)
-                                .shadow(color: SystemTheme.cyan.opacity(0.35), radius: 4)
                         }
+                        .buttonStyle(.plain)
+                        Button {
+                            showShields = true
+                        } label: {
+                            Text("DISTRACTOR SHIELDS")
+                                .font(.caption2.weight(.semibold))
+                                .tracking(1.1)
+                                .foregroundStyle(SystemTheme.muted)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
                     }
+                }
+                .confirmationDialog("Spend one Full Recovery token?", isPresented: $confirmRecovery, titleVisibility: .visible) {
+                    Button("Spend token") { store.spendFullRecovery() }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("A quiet morning switches today. A day already underway is queued for tomorrow. That day does not open a penalty if training is missed.")
+                }
+                .sheet(isPresented: $showShields) {
+                    PenaltyTargetsSheet()
                 }
                 .padding(.horizontal, 22)
 

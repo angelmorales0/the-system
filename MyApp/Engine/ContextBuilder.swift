@@ -59,6 +59,7 @@ enum ContextBuilder {
                 state: financeToday?.paceState ?? "unavailable"
             ),
             focus: MorningFocus(
+                // A saved picker selection is not minute data. Tokens stay in the App Group.
                 screenTimeAvailable: false,
                 distractingMinutesYesterday: nil,
                 deepWorkMinutesYesterday: nil,

@@ -1,6 +1,6 @@
 # The System — Implementation Phases
 
-Phases 1 through 6 are in the tree. Later phases follow `docs/MASTER_PLAN.md` §10 and `docs/AI_DAILY_QUEST_ENGINE.md`. The System, Goals, History, and Status chrome stays as it is.
+Phases 1 through 7 are in the tree. Later polish follows `docs/MASTER_PLAN.md` §10 and `docs/AI_DAILY_QUEST_ENGINE.md`. The System, Goals, History, and Status chrome stays as it is. Penalty setup on a device is in `docs/PHASE7_DEVICE.md`.
 
 ## Phase 1 — Models, fallback quests, live binding (done)
 
@@ -23,7 +23,7 @@ Master plan MVP step 3.
 - System rows go through a verifier. Timer rows start the timer. Manual rows confirm through the verifier. Stubbed rows still take a local checkbox, stored as on-device evidence rather than a forged API event.
 - One `externalId` cannot clear a second quest on the same day. New bundles run through `strippingModelCompletion()`, so a model cannot mark a quest complete.
 
-History day-clear cards and local midnight penalty rollover (master plan steps 6 and 7) are still open. They are not part of this slice.
+History day-clear cards (master plan step 6) are still open. Midnight penalty rollover landed in Phase 7.
 
 ## Phase 3 — Targets (done)
 
@@ -36,7 +36,7 @@ Master plan step 14. At most one Target is active. Goals stay the long-term mock
 - Completing an injected quest adds its quota to `unitsDone`. Clearing every injected quest for the day counts one cleared day. Hitting the unit goal grants `[Target Complete.]` and 150 XP. The next scheduled Target whose window includes today promotes the next time the day bundle is built.
 - Targets persist on the same UserDefaults snapshot as the player and the quest bundle.
 
-Full Recovery spend, the Sunday OPTIONAL bank, and History cards are still open.
+Full Recovery spend and the Sunday OPTIONAL token grant are in Phase 7 and the fallback catalog. History cards are still open.
 
 ## Phase 4 — Backend and AI quest generation (done)
 
@@ -72,19 +72,25 @@ Master plan §7 and step 16. The Read Only token stays on the backend.
 - Status FIN stays the quest-granted stat plus at most 20 projection points. It is not the account balance.
 - Performance Training fallback rows include an optional Light Spend Cap. Finance Discipline already had Spend Under Cap.
 
-## Full Recovery bank (open)
+## Full Recovery bank (done)
 
-Master plan step 15. Not part of the Mercury slice.
+Master plan step 15.
 
-- Sunday OPTIONAL section banks a Full Recovery token (cap 3). The Status row spends a token through a confirm sheet.
+- Sunday OPTIONAL rows in the fallback catalog grant a Full Recovery token (cap 3) when that quest is completed.
+- Status → FULL RECOVERY asks before spending one token. A quiet morning assigns today. A day already underway queues tomorrow. That Full Recovery day does not raise the penalty tier.
 
-## Phase 7 — Screen Time, penalties, push (open)
+## Phase 7 — Penalties, Screen Time, Live Activity (done)
 
-Master plan steps 17 and 18.
+Master plan §1.5, §9, and step 17. Device steps are in `docs/PHASE7_DEVICE.md`.
 
-- Screen Time: FamilyControls picker, penalty shields on selected distractors, DeviceActivity monitor, Live Activity. Shields are not a full phone lock.
-- Silent push when a verifier clears a quest.
+- America/Los_Angeles midnight: an incomplete required set raises `penaltyTier` from 1 to 3 and selects the fallback Penalty Quest bundle. A Full Recovery day waives that miss.
+- Family Controls picker on an additive Status sheet. The selection and `penaltyActive` live in the App Group. Morning context does not receive tokens or minute totals.
+- Named `ManagedSettingsStore` `penalty` applies shields on activate and `clearAllSettings()` on clear. A Device Activity monitor re-asserts them, including when its interval ends.
+- ActivityKit Live Activity starts and ends from the foreground. It goes stale after 8 hours. Shields outlive it.
+- Completing every required penalty quest lifts shields, ends the Live Activity, and sets the tier to 0. XP was already granted at 0.9×.
 
-## Later (master plan steps 19–25)
+Remaining: Apple Family Controls (Distribution) approval on each App ID, and a physical-device pass. This environment cannot compile the extensions.
 
-Plaid for non-Mercury accounts, EventKit calendar detail, DeviceActivityReport FOC charts, an on-device model as an offline author, a watchOS companion, a Target pause on Full Recovery, and penalty tier 3 polish.
+## Later (master plan steps 18–25)
+
+Silent push when a verifier clears a quest, Plaid for non-Mercury accounts, EventKit calendar detail, DeviceActivityReport FOC charts, an on-device model as an offline author, a watchOS companion, a Target pause on Full Recovery, History day-clear cards, and penalty tier 3 polish.

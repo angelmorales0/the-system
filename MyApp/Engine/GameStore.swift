@@ -22,7 +22,7 @@ final class GameStore: ObservableObject {
 
     init(persistence: GamePersistence = .standard) {
         #if DEBUG
-        let problems = VerificationFixtures.check() + TargetRules.check() + QuestGenerationRules.check() + IntegrationRules.check()
+        let problems = VerificationFixtures.check() + TargetRules.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         #endif
 
@@ -44,6 +44,23 @@ final class GameStore: ObservableObject {
         ensureTicker()
         observeHealthUpdates()
         refreshIntegrations(now: .now)
+        enforcePenalty()
+    }
+
+    func spendFullRecovery(now: Date = .now) {
+        var next = snapshot
+        let message = next.spendFullRecovery(catalog: catalog, now: now)
+        snapshot = next
+        verificationNote = message
+        clock = now
+        persist()
+        enforcePenalty()
+    }
+
+    func saveDistractorSelection() {
+        snapshot.hasDistractorSelection = PenaltySelectionStore.hasSelection
+        persist()
+        enforcePenalty()
     }
 
     var player: PlayerState { snapshot.player }
@@ -129,6 +146,7 @@ final class GameStore: ObservableObject {
             clock = now
             persist()
             ensureTicker()
+            enforcePenalty()
             return
         }
 
@@ -147,6 +165,7 @@ final class GameStore: ObservableObject {
                 clock = now
                 note(for: outcome, title: quest.title)
                 persist()
+                enforcePenalty()
             } else {
                 let context = snapshot.verificationContext(
                     for: quest,
@@ -184,6 +203,7 @@ final class GameStore: ObservableObject {
         persist()
         ensureTicker()
         refreshIntegrations(now: now)
+        enforcePenalty()
     }
 
     private func observeHealthUpdates() {
@@ -219,7 +239,19 @@ final class GameStore: ObservableObject {
             }
             self.evaluateConnectedVerifiers(now: now)
             self.persist()
+            self.enforcePenalty()
         }
+    }
+
+    private func enforcePenalty() {
+        let visible = snapshot.player.penaltyTier > 0 && snapshot.bundle.mode == .penalty
+        let title = snapshot.bundle.quests.first(where: { $0.status != .completed })?.title ?? snapshot.bundle.headerLine
+        PenaltyEnforcement.sync(
+            penaltyVisible: visible,
+            tier: snapshot.player.penaltyTier,
+            questTitle: title,
+            dayKey: snapshot.bundle.dayKey
+        )
     }
 
     /// One attempt per local day. The catalog bundle stays on screen until a valid bundle returns.
@@ -321,6 +353,9 @@ final class GameStore: ObservableObject {
             ticker?.invalidate()
             ticker = nil
         }
+        if completed {
+            enforcePenalty()
+        }
     }
 
     /// Foreground pass for adapters that can see evidence without a tap. Stubs return incomplete and change nothing.
@@ -359,6 +394,7 @@ final class GameStore: ObservableObject {
         clock = now
         note(for: outcome, title: title)
         persist()
+        enforcePenalty()
     }
 
     private func note(for outcome: VerificationApply, title: String) {

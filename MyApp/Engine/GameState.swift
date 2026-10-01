@@ -32,6 +32,14 @@ struct GameSnapshot: Codable, Equatable {
     var generatedBundle: QuestBundle?
     /// Shown once, then cleared. Not stored.
     var targetToast: String?
+    /// Day that should run as Full Recovery. Set when a token is spent for today.
+    var fullRecoveryDayKey: String?
+    /// Token spent after today's quests already started. Applied on the next rollover.
+    var queuedFullRecoveryDayKey: String?
+    /// Tier restored if a cleared penalty quest is undone the same day.
+    var heldPenaltyTier: Int = 0
+    /// True after a FamilyActivityPicker save. Tokens themselves stay in the App Group.
+    var hasDistractorSelection: Bool = false
 
     static func fresh(
         catalog: FallbackCatalog,
@@ -45,17 +53,65 @@ struct GameSnapshot: Codable, Equatable {
     }
 
     /// New local day swaps in a fallback bundle, then the store may replace it once from generation.
+    /// A missed required set raises `penaltyTier` (1...3) unless that day was Full Recovery.
     mutating func refreshIfNeeded(catalog: FallbackCatalog, now: Date = .now) {
         let key = QuestDay.key(for: now)
         guard bundle.dayKey != key else { return }
+        recordMissedDayIfNeeded()
         let previousTitles = bundle.quests.map(\.title)
         if !previousTitles.isEmpty {
             recentQuestTitles = Array(previousTitles.prefix(8))
         }
         generationAttemptDayKey = nil
         generatedBundle = nil
+        assignQueuedRecovery(on: key)
         rebuildBundle(catalog: catalog, now: now)
         runningTimers.removeAll()
+    }
+
+    /// Incomplete required quests escalate the penalty. A Full Recovery day does not.
+    mutating func recordMissedDayIfNeeded() {
+        let required = bundle.quests.filter { $0.kind != .optional }
+        let missed = !required.isEmpty && required.contains { $0.status != .completed }
+        let waived = bundle.mode == .fullRecovery || signals.spendingFullRecovery || fullRecoveryDayKey == bundle.dayKey
+        guard missed, !waived else { return }
+        player.penaltyTier = min(3, player.penaltyTier + 1)
+    }
+
+    private mutating func assignQueuedRecovery(on key: String) {
+        if queuedFullRecoveryDayKey == key {
+            signals.spendingFullRecovery = true
+            fullRecoveryDayKey = key
+            queuedFullRecoveryDayKey = nil
+        } else {
+            signals.spendingFullRecovery = false
+            if fullRecoveryDayKey != key {
+                fullRecoveryDayKey = nil
+            }
+        }
+    }
+
+    /// Spends one banked token. A quiet morning switches today; a day already in progress is queued.
+    mutating func spendFullRecovery(catalog: FallbackCatalog, now: Date) -> String {
+        let today = QuestDay.key(for: now)
+        guard player.fullRecoveryBank > 0 else { return "No Full Recovery token in the bank." }
+        if signals.spendingFullRecovery || fullRecoveryDayKey == today {
+            return "Full Recovery is already assigned for today."
+        }
+        if queuedFullRecoveryDayKey != nil {
+            return "A Full Recovery day is already queued."
+        }
+        player.withdrawRecoveryToken()
+        let quiet = runningTimers.isEmpty && !bundle.quests.contains { $0.status == .completed }
+        if quiet {
+            signals.spendingFullRecovery = true
+            fullRecoveryDayKey = today
+            generatedBundle = nil
+            rebuildBundle(catalog: catalog, now: now)
+            return "Full Recovery day assigned. A missed training set will not open a penalty."
+        }
+        queuedFullRecoveryDayKey = QuestDay.key(byAddingDays: 1, to: today)
+        return "Queued for tomorrow. Today's finished work stays."
     }
 
     func verificationContext(
@@ -147,6 +203,7 @@ struct GameSnapshot: Codable, Equatable {
         guard bundle.quests[index].status == .completed else { return }
         let completedQuest = bundle.quests[index]
         undoCompletion(at: index)
+        restorePenaltyIfNeeded()
         reverseTargetProgress(for: completedQuest)
         // Manual confirms stay in the log so undo cannot refund the 3-per-day cap.
         evidenceLog.removeAll { $0.questId == id && $0.evidence.source != ManualConfirmVerifier.source }
@@ -159,6 +216,7 @@ struct GameSnapshot: Codable, Equatable {
     static func xpGrant(for quest: Quest, mode: QuestMode) -> Int {
         var amount = quest.xp
         if mode == .penalty {
+            // Once, from the quest's own XP. Callers must not run this on an already taxed grant.
             amount = max(1, Int((Double(quest.xp) * 0.9).rounded()))
         }
         if quest.reward?.type == .xpBonus {
@@ -271,7 +329,7 @@ struct GameSnapshot: Codable, Equatable {
         player.stats.REC = previousREC
     }
 
-    private mutating func rebuildBundle(catalog: FallbackCatalog, now: Date) {
+    mutating func rebuildBundle(catalog: FallbackCatalog, now: Date) {
         reconcileTargets(now: now)
         let decision = ModePicker.decide(modeInput(now: now))
         let dayKey = QuestDay.key(for: now)
@@ -315,6 +373,24 @@ struct GameSnapshot: Codable, Equatable {
         quest.progress.current = quest.progress.target
         bundle.quests[index] = quest
         recordTargetProgress(for: quest)
+        liftPenaltyIfCleared()
+    }
+
+    /// Every required penalty row is done. Tier drops to 0. The 0.9× XP tax already applied at grant time.
+    private mutating func liftPenaltyIfCleared() {
+        guard bundle.mode == .penalty else { return }
+        let required = bundle.quests.filter { $0.kind != .optional }
+        guard !required.isEmpty, required.allSatisfy({ $0.status == .completed }) else { return }
+        guard player.penaltyTier > 0 else { return }
+        heldPenaltyTier = player.penaltyTier
+        player.penaltyTier = 0
+    }
+
+    private mutating func restorePenaltyIfNeeded() {
+        guard bundle.mode == .penalty, player.penaltyTier == 0 else { return }
+        let required = bundle.quests.filter { $0.kind != .optional }
+        guard required.contains(where: { $0.status != .completed }) else { return }
+        player.penaltyTier = min(3, max(1, heldPenaltyTier))
     }
 
     private mutating func undoCompletion(at index: Int) {
@@ -351,6 +427,7 @@ extension GameSnapshot {
         case version, player, signals, bundle, evidenceLog, runningTimers, targets
         case recentQuestTitles, generationAttemptDayKey, generatedBundle, readiness, recoveryComposite
         case finance, appliedFinProjection
+        case fullRecoveryDayKey, queuedFullRecoveryDayKey, heldPenaltyTier, hasDistractorSelection
     }
 
     init(from decoder: Decoder) throws {
@@ -367,6 +444,10 @@ extension GameSnapshot {
         recoveryComposite = try container.decodeIfPresent(RecoveryComposite.self, forKey: .recoveryComposite) ?? RecoveryComposite()
         finance = try container.decodeIfPresent(FinanceSnapshot.self, forKey: .finance)
         appliedFinProjection = try container.decodeIfPresent(Int.self, forKey: .appliedFinProjection) ?? 0
+        fullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .fullRecoveryDayKey)
+        queuedFullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .queuedFullRecoveryDayKey)
+        heldPenaltyTier = try container.decodeIfPresent(Int.self, forKey: .heldPenaltyTier) ?? 0
+        hasDistractorSelection = try container.decodeIfPresent(Bool.self, forKey: .hasDistractorSelection) ?? false
         generationAttemptDayKey = try container.decodeIfPresent(String.self, forKey: .generationAttemptDayKey)
         generatedBundle = try container.decodeIfPresent(QuestBundle.self, forKey: .generatedBundle)
         targetToast = nil
@@ -386,6 +467,10 @@ extension GameSnapshot {
         try container.encode(recoveryComposite, forKey: .recoveryComposite)
         try container.encodeIfPresent(finance, forKey: .finance)
         try container.encode(appliedFinProjection, forKey: .appliedFinProjection)
+        try container.encodeIfPresent(fullRecoveryDayKey, forKey: .fullRecoveryDayKey)
+        try container.encodeIfPresent(queuedFullRecoveryDayKey, forKey: .queuedFullRecoveryDayKey)
+        try container.encode(heldPenaltyTier, forKey: .heldPenaltyTier)
+        try container.encode(hasDistractorSelection, forKey: .hasDistractorSelection)
         try container.encodeIfPresent(generationAttemptDayKey, forKey: .generationAttemptDayKey)
         try container.encodeIfPresent(generatedBundle, forKey: .generatedBundle)
     }

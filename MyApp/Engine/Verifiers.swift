@@ -60,8 +60,9 @@ enum VerifierRegistry {
         case .mercurySpendUnder:
             return MercurySpendUnderVerifier()
         case .screenTimeLimit:
-            // TODO: Phase 7 — DeviceActivity thresholds for distractors or deep work. No Screen Time in this slice.
-            return IncompleteVerifier(method: method, reason: "Screen Time is not connected")
+            // DeviceActivity does not export minute totals to the app. Penalty shields are separate.
+            // This quest stays a local checkbox until a report extension exists.
+            return IncompleteVerifier(method: method, reason: "Screen Time minutes are not available to the app. Shields still apply on a penalty day.")
         }
     }
 }
