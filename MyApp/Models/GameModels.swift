@@ -226,7 +226,8 @@ extension Quest {
         targetId = try container.decodeIfPresent(String.self, forKey: .targetId)
         progress = try container.decode(QuestProgress.self, forKey: .progress)
         reward = try container.decodeIfPresent(QuestReward.self, forKey: .reward)
-        status = try container.decode(QuestStatus.self, forKey: .status)
+        // Model JSON omits status. A present value is still cleared by strippingModelCompletion.
+        status = try container.decodeIfPresent(QuestStatus.self, forKey: .status) ?? .pending
         grantedXP = try container.decodeIfPresent(Int.self, forKey: .grantedXP) ?? 0
         grantedStatPoints = try container.decodeIfPresent(Int.self, forKey: .grantedStatPoints) ?? 0
         grantedRecoveryToken = try container.decodeIfPresent(Bool.self, forKey: .grantedRecoveryToken) ?? false
@@ -265,7 +266,7 @@ struct QuestBundle: Codable, Equatable {
     var narrative: String
     var quests: [Quest]
     var warnings: [String]
-    /// `"fallback"` in Phase 1. `"llm"` arrives with the backend.
+    /// `"fallback"` is the on-device catalog. `"mock"`, `"template"`, and `"llm"` are generated bundles.
     var generatedBy: String
 
     var goalQuests: [Quest] {
@@ -294,6 +295,38 @@ struct QuestBundle: Codable, Equatable {
             return quest
         }
         return copy
+    }
+}
+
+extension QuestBundle {
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, dayKey, mode, headerLine, narrative, quests, warnings, generatedBy
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        dayKey = try container.decode(String.self, forKey: .dayKey)
+        mode = try container.decode(QuestMode.self, forKey: .mode)
+        let line = try container.decodeIfPresent(String.self, forKey: .headerLine) ?? ""
+        headerLine = line.isEmpty ? mode.headerLine : line
+        narrative = try container.decodeIfPresent(String.self, forKey: .narrative) ?? ""
+        quests = try container.decodeIfPresent([Quest].self, forKey: .quests) ?? []
+        warnings = try container.decodeIfPresent([String].self, forKey: .warnings) ?? []
+        let author = try container.decodeIfPresent(String.self, forKey: .generatedBy) ?? ""
+        generatedBy = author.isEmpty ? "llm" : author
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(dayKey, forKey: .dayKey)
+        try container.encode(mode, forKey: .mode)
+        try container.encode(headerLine, forKey: .headerLine)
+        try container.encode(narrative, forKey: .narrative)
+        try container.encode(quests, forKey: .quests)
+        try container.encode(warnings, forKey: .warnings)
+        try container.encode(generatedBy, forKey: .generatedBy)
     }
 }
 

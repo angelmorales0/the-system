@@ -16,6 +16,12 @@ struct GameSnapshot: Codable, Equatable {
     var evidenceLog: [EvidenceUse] = []
     var runningTimers: [TimerRun] = []
     var targets: [Target] = []
+    /// Titles from the previous quest day. Sent as summaries, never as evidence.
+    var recentQuestTitles: [String] = []
+    /// Local day that already spent its one generation attempt, including a failed one.
+    var generationAttemptDayKey: String?
+    /// Last accepted generated bundle for that day, before the player’s progress.
+    var generatedBundle: QuestBundle?
     /// Shown once, then cleared. Not stored.
     var targetToast: String?
 
@@ -30,10 +36,16 @@ struct GameSnapshot: Codable, Equatable {
         return snapshot
     }
 
-    /// New local day swaps in a fallback bundle. Penalty rollover is still later.
+    /// New local day swaps in a fallback bundle, then the store may replace it once from generation.
     mutating func refreshIfNeeded(catalog: FallbackCatalog, now: Date = .now) {
         let key = QuestDay.key(for: now)
         guard bundle.dayKey != key else { return }
+        let previousTitles = bundle.quests.map(\.title)
+        if !previousTitles.isEmpty {
+            recentQuestTitles = Array(previousTitles.prefix(8))
+        }
+        generationAttemptDayKey = nil
+        generatedBundle = nil
         rebuildBundle(catalog: catalog, now: now)
         runningTimers.removeAll()
     }
@@ -195,10 +207,21 @@ struct GameSnapshot: Codable, Equatable {
     private mutating func rebuildBundle(catalog: FallbackCatalog, now: Date) {
         reconcileTargets(now: now)
         let decision = ModePicker.decide(modeInput(now: now))
+        let dayKey = QuestDay.key(for: now)
+        if var cached = generatedBundle,
+           cached.dayKey == dayKey,
+           cached.mode == decision.selectedMode {
+            cached = cached.strippingModelCompletion(assignedAt: now)
+            if let target = activeTarget(on: now) {
+                cached = cached.injecting(target, now: now)
+            }
+            bundle = cached
+            return
+        }
         var built = catalog.makeBundle(
             mode: decision.selectedMode,
             band: signals.readinessBand,
-            dayKey: QuestDay.key(for: now),
+            dayKey: dayKey,
             now: now
         )
         if let target = activeTarget(on: now) {
@@ -259,6 +282,7 @@ struct GameSnapshot: Codable, Equatable {
 extension GameSnapshot {
     private enum CodingKeys: String, CodingKey {
         case version, player, signals, bundle, evidenceLog, runningTimers, targets
+        case recentQuestTitles, generationAttemptDayKey, generatedBundle
     }
 
     init(from decoder: Decoder) throws {
@@ -270,6 +294,9 @@ extension GameSnapshot {
         evidenceLog = try container.decodeIfPresent([EvidenceUse].self, forKey: .evidenceLog) ?? []
         runningTimers = try container.decodeIfPresent([TimerRun].self, forKey: .runningTimers) ?? []
         targets = try container.decodeIfPresent([Target].self, forKey: .targets) ?? []
+        recentQuestTitles = try container.decodeIfPresent([String].self, forKey: .recentQuestTitles) ?? []
+        generationAttemptDayKey = try container.decodeIfPresent(String.self, forKey: .generationAttemptDayKey)
+        generatedBundle = try container.decodeIfPresent(QuestBundle.self, forKey: .generatedBundle)
         targetToast = nil
     }
 
@@ -282,6 +309,9 @@ extension GameSnapshot {
         try container.encode(evidenceLog, forKey: .evidenceLog)
         try container.encode(runningTimers, forKey: .runningTimers)
         try container.encode(targets, forKey: .targets)
+        try container.encode(recentQuestTitles, forKey: .recentQuestTitles)
+        try container.encodeIfPresent(generationAttemptDayKey, forKey: .generationAttemptDayKey)
+        try container.encodeIfPresent(generatedBundle, forKey: .generatedBundle)
     }
 }
 

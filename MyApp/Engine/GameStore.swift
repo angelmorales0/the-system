@@ -14,17 +14,19 @@ final class GameStore: ObservableObject {
     @Published private(set) var clock = Date()
 
     private let catalog: FallbackCatalog
+    private let generator: any QuestGenerating
     private let persistence: GamePersistence
     private var ticker: Timer?
 
     init(persistence: GamePersistence = .standard) {
         #if DEBUG
-        let problems = VerificationFixtures.check() + TargetRules.check()
+        let problems = VerificationFixtures.check() + TargetRules.check() + QuestGenerationRules.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         #endif
 
         let catalog = FallbackCatalog.bundled()
         self.catalog = catalog
+        self.generator = QuestGenerateClient.make(catalog: catalog)
         self.persistence = persistence
         switch persistence {
         case .memory:
@@ -35,6 +37,7 @@ final class GameStore: ObservableObject {
         }
         advanceTimers(now: .now)
         evaluateConnectedVerifiers(now: .now)
+        requestGenerationIfNeeded(now: .now)
         persist()
         ensureTicker()
     }
@@ -152,8 +155,55 @@ final class GameStore: ObservableObject {
         }
         advanceTimers(now: now)
         evaluateConnectedVerifiers(now: now)
+        requestGenerationIfNeeded(now: now)
         persist()
         ensureTicker()
+    }
+
+    /// One attempt per local day. The catalog bundle stays on screen until a valid bundle returns.
+    private func requestGenerationIfNeeded(now: Date) {
+        let dayKey = QuestDay.key(for: now)
+        guard snapshot.bundle.dayKey == dayKey else { return }
+        guard snapshot.generationAttemptDayKey != dayKey else { return }
+        var next = snapshot
+        next.generationAttemptDayKey = dayKey
+        snapshot = next
+        let finished = snapshot.bundle.quests.contains { $0.status == .completed } || !snapshot.runningTimers.isEmpty
+        let alreadyGenerated = ["mock", "llm", "template"].contains(snapshot.bundle.generatedBy)
+        if finished || alreadyGenerated {
+            if alreadyGenerated, snapshot.generatedBundle == nil {
+                snapshot.generatedBundle = snapshot.bundle.strippingModelCompletion(assignedAt: now)
+            }
+            persist()
+            return
+        }
+        persist()
+        let context = ContextBuilder.make(snapshot: snapshot, now: now)
+        Task { [weak self] in
+            await self?.runGeneration(context: context, dayKey: dayKey)
+        }
+    }
+
+    private func runGeneration(context: MorningContext, dayKey: String) async {
+        let bundle = await generator.generate(context: context)
+        guard bundle.generatedBy != "fallback" else { return }
+        let now = Date()
+        guard snapshot.bundle.dayKey == dayKey, snapshot.generationAttemptDayKey == dayKey else { return }
+        guard !snapshot.bundle.quests.contains(where: { $0.status == .completed }) else { return }
+        guard snapshot.runningTimers.isEmpty else { return }
+        let decision = ModePicker.decide(snapshot.modeInput(now: now))
+        guard decision.selectedMode == context.modeDecision.selectedMode else { return }
+        guard let prepared = QuestSafety.accepting(bundle, context: context, assignedAt: now) else { return }
+        var next = snapshot
+        next.generatedBundle = prepared
+        var installed = prepared
+        if let target = next.activeTarget(on: now) {
+            installed = installed.injecting(target, now: now)
+        }
+        next.bundle = installed
+        snapshot = next
+        runningTimersRemoveMissing()
+        persist()
     }
 
     private func beginTimer(questId: String, title: String, now: Date) {

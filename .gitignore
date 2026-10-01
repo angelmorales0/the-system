@@ -2,3 +2,8 @@ DerivedData/
 *.xcuserstate
 xcuserdata/
 .DS_Store
+.env
+**/.env
+backend/.venv/
+__pycache__/
+*.pyc

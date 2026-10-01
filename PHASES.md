@@ -1,6 +1,6 @@
 # The System — Implementation Phases
 
-Phases 1, 2, and Targets are in the tree. Later phases follow `docs/MASTER_PLAN.md` §10 and `docs/AI_DAILY_QUEST_ENGINE.md`. The System, Goals, History, and Status chrome stays as it is.
+Phases 1 through 4 are in the tree. Later phases follow `docs/MASTER_PLAN.md` §10 and `docs/AI_DAILY_QUEST_ENGINE.md`. The System, Goals, History, and Status chrome stays as it is.
 
 ## Phase 1 — Models, fallback quests, live binding (done)
 
@@ -45,13 +45,16 @@ Master plan steps 8 and 9.
 - HealthKit authorization and observers (workouts, nutrition, body mass, sleep fallback).
 - Protein quests verify from HealthKit dietary protein. MacroFactor writes Apple Health; there is no MacroFactor API.
 
-## Phase 4 — Backend and AI quest generation
+## Phase 4 — Backend and AI quest generation (done)
 
-Master plan steps 10 and 13.
+Master plan steps 10 and 13, scoped to generation. Session auth and the secrets vault are still later.
 
-- Personal backend: session auth, secrets vault, `POST /v1/quests/generate`.
-- On-device morning context, schema re-check, and safety filter. The model cannot change a rules-locked mode or mark quests complete.
-- The fallback catalog stays the offline path. One successful bundle per day key.
+- `ContextBuilder` assembles `MorningContext` from the player, the active Target, placeholder readiness, streaks, recent titles, and constraints. Token-shaped text is redacted. WHOOP, Strava, Mercury, and Screen Time are marked unavailable.
+- The rules-locked mode picker stays authoritative. A generated bundle whose mode does not match is rejected.
+- `QuestGenerating` has a mock client and an HTTP client. The mock returns the fallback catalog for the locked mode, with the active Target injected. The HTTP client `POST`s to `{base}/v1/quests/generate`. Set `QUEST_GENERATE_BASE_URL` or UserDefaults `com.angelmorales.thesystem.questGenerateBaseURL` to an `http` or `https` URL. With no URL, the app uses the mock. Timeout or an unsafe bundle keeps the catalog (`generatedBy: fallback`).
+- The morning refresh tries generation once per `dayKey`, including a failed attempt, and caches an accepted bundle. Completing a quest or starting a timer before the reply arrives keeps the catalog. A new local day clears that attempt.
+- On-device validation strips `completed`, status, evidence, and grants. It rejects protein outside 80–250g, a run over 90 minutes on yellow, a hard STR session on red, calories under 1500, an absurd Mercury cap, and unsafe phrases. Target requirements must be present as `target_injection`.
+- `backend/` is a FastAPI stub. Without `XAI_API_KEY` it returns a template. With that variable it calls xAI Grok (`grok-4.6`, or `XAI_MODEL`) and re-validates. The key is read from the environment only. See `backend/README.md`.
 
 ## Phase 5 — WHOOP and Strava
 
