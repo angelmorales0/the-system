@@ -1,6 +1,6 @@
 import Foundation
 
-/// Seven persistent stats. FIN is finance discipline (Mercury aggregates later).
+/// Seven persistent stats. FIN is quest XP plus a small Mercury projection, not a balance.
 enum Stat: String, Codable, CaseIterable, Equatable {
     case STR, END, INT, AGI, FOC, REC, FIN
 }

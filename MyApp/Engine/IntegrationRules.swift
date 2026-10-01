@@ -167,7 +167,94 @@ enum IntegrationRules {
         } else {
             errors.append("HealthKit can see a deduped run, got \(hkRun)")
         }
+
+        let spendQuest = quest(method: .mercurySpendUnder, params: ["maxDiscretionaryUsd": .number(40)])
+        let unconfigured = MercurySpendUnderVerifier().evaluate(quest: spendQuest, context: context(day, now: start))
+        if case .incomplete(let reason) = unconfigured {
+            if !reason.contains("TODO") {
+                errors.append("disconnected Mercury should explain the TODO")
+            }
+        } else {
+            errors.append("disconnected Mercury must not complete, got \(unconfigured)")
+        }
+        if VerificationMethod.mercurySpendUnder.allowsLocalCheckbox {
+            errors.append("mercury should not use the local checkbox")
+        }
+        var openDay = day
+        openDay.mercury = reading(spent: 0, settled: false, pace: "NORMAL", ytd: 0)
+        let early = MercurySpendUnderVerifier().evaluate(quest: spendQuest, context: context(openDay, now: start))
+        if case .completed = early {
+            errors.append("zero spend before the day settles must not complete")
+        } else if case .progress = early {
+        } else {
+            errors.append("an open day under the cap should be progress, got \(early)")
+        }
+        var settledDay = day
+        settledDay.mercury = reading(spent: 10, settled: true, pace: "NORMAL", ytd: 0)
+        let clearedSpend = MercurySpendUnderVerifier().evaluate(quest: spendQuest, context: context(settledDay, now: start))
+        if case .completed(let evidence) = clearedSpend {
+            if evidence.source != "mercury" || evidence.externalId != "mercury:spend:2026-10-01" {
+                errors.append("mercury completion should cite the day, got \(evidence.externalId)")
+            }
+        } else {
+            errors.append("settled spend under the cap should complete, got \(clearedSpend)")
+        }
+        var overDay = day
+        overDay.mercury = reading(spent: 50, settled: true, pace: "CRITICAL", ytd: 0)
+        let over = MercurySpendUnderVerifier().evaluate(quest: spendQuest, context: context(overDay, now: start))
+        if case .failed = over {
+        } else {
+            errors.append("spend over the cap should fail, got \(over)")
+        }
+
+        var rich = GameSnapshot(version: 1, player: .starter, signals: .placeholder, bundle: .empty)
+        let recBefore = rich.player.stats.REC
+        rich.player.stats.FIN = 110
+        rich.applyFinance(reading(spent: 10, settled: true, pace: "NORMAL", ytd: 500_000))
+        if rich.player.stats.FIN != 130 {
+            errors.append("FIN projection should add 20 points, got \(rich.player.stats.FIN)")
+        }
+        if rich.player.stats.FIN == 500_000 {
+            errors.append("FIN must not become the YTD dollar total")
+        }
+        rich.player.stats.FIN += 4
+        rich.applyFinance(reading(spent: 10, settled: true, pace: "NORMAL", ytd: 500_000))
+        if rich.player.stats.FIN != 134 {
+            errors.append("applying the same snapshot should keep the quest grant, got \(rich.player.stats.FIN)")
+        }
+        if rich.player.stats.REC != recBefore {
+            errors.append("finance projection must not touch REC")
+        }
+        rich.bundle.dayKey = "2026-10-01"
+        if let when = QuestDay.date(from: "2026-10-01") {
+            let morning = ContextBuilder.make(snapshot: rich, now: when)
+            if !morning.mercury.available || morning.mercury.state != "NORMAL" || morning.mercury.spendTodayUsd != 10 {
+                errors.append("morning context should carry the finance summary")
+            }
+            if let data = try? JSONEncoder().encode(morning), let encoded = String(data: data, encoding: .utf8), encoded.contains("secret-token") {
+                errors.append("morning context leaked a mercury token")
+            }
+        }
         return errors
+    }
+
+    private static func reading(spent: Double, settled: Bool, pace: String, ytd: Double) -> MercuryDayReading {
+        MercuryDayReading(
+            available: true,
+            configured: true,
+            reason: "",
+            dayKey: "2026-10-01",
+            discretionarySpendUsd: spent,
+            necessarySpendUsd: 0,
+            capUsd: 40,
+            paceState: pace,
+            ytdIncomeUsd: ytd,
+            ytdGoalUsd: 500_000,
+            discretionary7dUsd: spent,
+            underCap: spent <= 40,
+            settled: settled,
+            synced: true
+        )
     }
 
     private static func event(_ source: String, _ id: String, _ sport: String, _ start: Date, _ seconds: TimeInterval, _ meters: Double?) -> WorkoutEvent {

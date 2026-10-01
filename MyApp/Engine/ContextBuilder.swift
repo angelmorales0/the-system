@@ -2,13 +2,14 @@ import Foundation
 
 /// Assembles the JSON the quest generator sees. Secrets and raw feeds never go in.
 enum ContextBuilder {
-    private static let secretMarkers = ["sk-", "xai-", "bearer ", "api_key", "api-key", "apikey"]
+    private static let secretMarkers = ["sk-", "xai-", "bearer ", "api_key", "api-key", "apikey", "secret-token"]
 
     static func make(snapshot: GameSnapshot, now: Date = .now) -> MorningContext {
         let dayKey = QuestDay.key(for: now)
         let decision = ModePicker.decide(snapshot.modeInput(now: now))
         let player = snapshot.player
         let readinessToday = snapshot.readiness?.capturedOn == dayKey ? snapshot.readiness : nil
+        let financeToday = snapshot.finance?.dayKey == dayKey ? snapshot.finance : nil
         return MorningContext(
             schemaVersion: 1,
             player: MorningPlayer(
@@ -51,11 +52,11 @@ enum ContextBuilder {
                 asOf: nil
             ),
             mercury: MorningMercury(
-                available: false,
-                spendTodayUsd: nil,
-                softDailyCapUsd: nil,
-                discretionary7dUsd: nil,
-                state: "unavailable"
+                available: financeToday != nil,
+                spendTodayUsd: financeToday?.discretionarySpendUsd,
+                softDailyCapUsd: financeToday?.capUsd,
+                discretionary7dUsd: financeToday?.discretionary7dUsd,
+                state: financeToday?.paceState ?? "unavailable"
             ),
             focus: MorningFocus(
                 screenTimeAvailable: false,
@@ -67,7 +68,7 @@ enum ContextBuilder {
                 whoop: readinessToday == nil ? "unavailable" : "ok",
                 strava: "unavailable",
                 healthkit: "unavailable",
-                mercury: "unavailable",
+                mercury: financeToday == nil ? "unavailable" : "ok",
                 screenTime: "unavailable"
             ),
             recentQuestTitles: snapshot.recentQuestTitles.prefix(8).map(redact),

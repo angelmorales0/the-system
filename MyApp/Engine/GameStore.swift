@@ -206,8 +206,14 @@ final class GameStore: ObservableObject {
             self.refreshingIntegrations = false
             var next = self.snapshot
             let rebuilt = next.applyWhoopReadiness(remote.whoop, catalog: self.catalog, now: now)
+            next.applyFinance(remote.mercury)
             self.snapshot = next
-            self.integrations = DayIntegrationSnapshot.make(whoop: remote.whoop, strava: remote.strava, health: health)
+            self.integrations = DayIntegrationSnapshot.make(
+                whoop: remote.whoop,
+                strava: remote.strava,
+                health: health,
+                mercury: remote.mercury
+            )
             if rebuilt {
                 self.runningTimersRemoveMissing()
             }

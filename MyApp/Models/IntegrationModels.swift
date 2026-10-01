@@ -112,10 +112,82 @@ struct StravaDayReading: Codable, Equatable {
     }
 }
 
+/// Backend Mercury summary for one local day. No token and no raw transaction list.
+struct MercuryDayReading: Codable, Equatable {
+    var available: Bool
+    var configured: Bool
+    var reason: String
+    var dayKey: String
+    var discretionarySpendUsd: Double
+    var necessarySpendUsd: Double
+    var capUsd: Double
+    var paceState: String
+    var ytdIncomeUsd: Double
+    var ytdGoalUsd: Double
+    var discretionary7dUsd: Double
+    var underCap: Bool
+    var settled: Bool
+    var synced: Bool
+
+    static func disconnected(dayKey: String, reason: String) -> MercuryDayReading {
+        MercuryDayReading(
+            available: false,
+            configured: false,
+            reason: reason,
+            dayKey: dayKey,
+            discretionarySpendUsd: 0,
+            necessarySpendUsd: 0,
+            capUsd: 40,
+            paceState: "NORMAL",
+            ytdIncomeUsd: 0,
+            ytdGoalUsd: 500_000,
+            discretionary7dUsd: 0,
+            underCap: false,
+            settled: false,
+            synced: false
+        )
+    }
+}
+
+/// Stored finance summary. The radar FIN number is quest XP plus a small projection, not a balance.
+struct FinanceSnapshot: Codable, Equatable {
+    var dayKey: String
+    var discretionarySpendUsd: Double
+    var necessarySpendUsd: Double
+    var capUsd: Double
+    var discretionary7dUsd: Double
+    var paceState: String
+    var ytdIncomeUsd: Double
+    var ytdGoalUsd: Double
+    var settled: Bool
+}
+
+enum FinanceProjection {
+    /// Bounded points layered on quest-granted FIN. A full year toward $500K adds at most 12, pace at most 8.
+    static func points(pace: String, ytdIncomeUsd: Double, ytdGoalUsd: Double) -> Int {
+        let pacePoints: Int
+        switch pace {
+        case "NORMAL":
+            pacePoints = 8
+        case "CAUTION":
+            pacePoints = 4
+        case "WARNING":
+            pacePoints = 1
+        default:
+            pacePoints = 0
+        }
+        let goal = ytdGoalUsd > 0 ? ytdGoalUsd : 500_000
+        let ratio = min(max(ytdIncomeUsd / goal, 0), 1)
+        let ytdPoints = Int((ratio * 12).rounded(.down))
+        return min(pacePoints + ytdPoints, 20)
+    }
+}
+
 struct DayIntegrationSnapshot: Equatable {
     var whoop: WhoopDayReading
     var strava: StravaDayReading
     var health: HealthDaySummary
+    var mercury: MercuryDayReading = .disconnected(dayKey: "", reason: "TODO: Mercury is not connected.")
     var workouts: [CanonicalWorkout]
 
     static func empty(dayKey: String) -> DayIntegrationSnapshot {
@@ -123,16 +195,23 @@ struct DayIntegrationSnapshot: Equatable {
             whoop: .disconnected(dayKey: dayKey, reason: "TODO: WHOOP is not connected."),
             strava: .disconnected(dayKey: dayKey, reason: "TODO: Strava is not connected."),
             health: .unavailable,
+            mercury: .disconnected(dayKey: dayKey, reason: "TODO: Mercury is not connected."),
             workouts: []
         )
     }
 
-    static func make(whoop: WhoopDayReading, strava: StravaDayReading, health: HealthDaySummary) -> DayIntegrationSnapshot {
+    static func make(
+        whoop: WhoopDayReading,
+        strava: StravaDayReading,
+        health: HealthDaySummary,
+        mercury: MercuryDayReading = .disconnected(dayKey: "", reason: "TODO: Mercury is not connected.")
+    ) -> DayIntegrationSnapshot {
         let events = whoop.workouts + strava.activities + health.workouts
         return DayIntegrationSnapshot(
             whoop: whoop,
             strava: strava,
             health: health,
+            mercury: mercury,
             workouts: WorkoutDedupe.canonical(events)
         )
     }

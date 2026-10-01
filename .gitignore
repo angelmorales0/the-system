@@ -6,5 +6,6 @@ xcuserdata/
 **/.env
 backend/.venv/
 backend/.secrets/
+backend/mercury_categories.json
 __pycache__/
 *.pyc

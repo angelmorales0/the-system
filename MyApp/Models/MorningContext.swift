@@ -144,7 +144,7 @@ struct MorningConstraints: Codable, Equatable {
     )
 }
 
-/// Redacted morning summary. Live WHOOP, Strava, Mercury, and Screen Time stay disconnected.
+/// Redacted morning summary. Mercury is category totals only, and only after a backend snapshot.
 struct MorningContext: Codable, Equatable {
     var schemaVersion: Int
     var player: MorningPlayer

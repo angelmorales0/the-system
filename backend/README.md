@@ -52,3 +52,44 @@ Strava scope: `activity:read_all`. Redirect: `http://127.0.0.1:8787/v1/oauth/str
 `POST /v1/oauth/whoop/refresh` and `POST /v1/oauth/strava/refresh` exchange the stored refresh token. WHOOP rotates that token; the new one replaces the file. A failed refresh does not invent workouts.
 
 HealthKit is on-device only. In Apple Health, allow workouts, protein, dietary energy, weight, and sleep. MacroFactor has no API: turn on More → Integrations → Apple Health so its protein and weight samples are preferred when they are present. The HealthKit entitlement is in `MyApp.entitlements` for iOS; turn on HealthKit for the App ID in the developer portal before running on a device.
+
+## Mercury
+
+The Read Only token stays in the environment. The app never sees it. Copy `backend/.env.example` and export the variables in the same shell that runs `python app.py`.
+
+1. In Mercury, open the organization menu and choose **All Settings → Tokens**.
+2. Create an API token and choose **Read Only**. Read and Write is not required and needs an IP whitelist. If Tokens is missing, the signed-in user cannot create tokens; an admin has to grant that, or write personal@mercury.com / api@mercury.com.
+3. Copy the token once. Mercury will not show it again. Export it as `MERCURY_API_TOKEN`. Do not commit it. A gitignored `.env` is fine if you source it yourself; this process does not load dotenv.
+4. Production base URL is `https://api.mercury.com/api/v1` (`MERCURY_API_BASE_URL`). For a sandbox token, set that variable to the sandbox host Mercury documents for the token. Webhooks are not available in sandbox.
+5. Start the server and sync. Sync lists accounts and transactions (cursor pages of up to 1000) and stores summaries in `backend/.secrets/mercury_ledger.json`. Account numbers and routing numbers are not stored.
+
+```bash
+export MERCURY_API_TOKEN
+export MERCURY_API_BASE_URL=https://api.mercury.com/api/v1
+python app.py
+```
+
+```bash
+curl -X POST http://127.0.0.1:8787/v1/integrations/mercury/sync
+curl "http://127.0.0.1:8787/v1/integrations/mercury/snapshot?day=YYYY-MM-DD"
+```
+
+`GET /v1/integrations/mercury/accounts` and `GET /v1/integrations/mercury/transactions?limit=100&start_after=` read that cache. Without a token the snapshot is `configured: false` with a TODO reason, and the spend quest stays incomplete.
+
+Point the app at this server with `QUEST_GENERATE_BASE_URL`. The phone calls the snapshot URL only.
+
+Spend is split with an on-server category map: Grocery, Utilities, Insurance, Medical, Taxes, and rent-like counterparties are necessary. Restaurants, Entertainment, Retail, and the other merchant types are discretionary. Uncategorized debits count as discretionary. Copy `mercury_categories.example.json` to `mercury_categories.json` (gitignored) or set `MERCURY_CATEGORY_MAP` to a JSON object of category name → `necessary` or `discretionary`.
+
+YTD income is credits in the calendar year, in America/Los_Angeles, excluding `internalTransfer`, `treasuryTransfer`, and `interestPayment`. The goal is $500,000 pre-tax. Set `MERCURY_INCOME_COUNTERPARTY_REGEX` to count only matching counterparties; leave it empty to count every other credit.
+
+Pace states are undecided defaults, not a locked budget:
+
+- Daily soft cap $40, weekly soft cap $280, balance floor $500.
+- Burn under 0.75 of the elapsed cap is `NORMAL`, under 1.00 is `CAUTION`, under 1.25 is `WARNING`, otherwise `CRITICAL`.
+- Available balance under the floor is at least `WARNING`.
+
+`mercury_spend_under` completes only after a sync has landed, the local day is settled, and discretionary spend is still at or under the quest cap (default $40). Settlement is `MERCURY_SETTLE_HOUR` (default 21) in America/Los_Angeles, or any time the requested day is already in the past. Spend over the cap fails and does not clear the quest. A missing token, or a webhook that arrived before the first sync, does not clear it either.
+
+The FIN radar adds at most 20 projection points on top of quest XP (pace 0–8, progress toward the $500K goal 0–12). It is not the account balance.
+
+Webhooks: create an endpoint in Mercury aimed at `POST /v1/webhooks/mercury` for `transaction.created`, `transaction.updated`, `checkingAccount.balance.updated`, `savingsAccount.balance.updated`, and `creditAccount.balance.updated`. Put that endpoint's secret in `MERCURY_WEBHOOK_SECRET`. The server checks `Mercury-Signature` as HMAC-SHA256 of `timestamp.raw_body` and rejects a skew over 5 minutes. A transaction event refetches `GET /transaction/{resourceId}` and updates the cache. Unused tokens are deleted after 45 days; a sync or any other GET inside 30 days keeps the token.

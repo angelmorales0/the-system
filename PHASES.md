@@ -1,6 +1,6 @@
 # The System — Implementation Phases
 
-Phases 1 through 5 are in the tree. Later phases follow `docs/MASTER_PLAN.md` §10 and `docs/AI_DAILY_QUEST_ENGINE.md`. The System, Goals, History, and Status chrome stays as it is.
+Phases 1 through 6 are in the tree. Later phases follow `docs/MASTER_PLAN.md` §10 and `docs/AI_DAILY_QUEST_ENGINE.md`. The System, Goals, History, and Status chrome stays as it is.
 
 ## Phase 1 — Models, fallback quests, live binding (done)
 
@@ -42,7 +42,7 @@ Full Recovery spend, the Sunday OPTIONAL bank, and History cards are still open.
 
 Master plan steps 10 and 13, scoped to generation. Session auth and the secrets vault are still later.
 
-- `ContextBuilder` assembles `MorningContext` from the player, the active Target, readiness, streaks, recent titles, and constraints. Token-shaped text is redacted. Strava, Mercury, and Screen Time stay unavailable in that payload. WHOOP is included only after a readiness snapshot exists.
+- `ContextBuilder` assembles `MorningContext` from the player, the active Target, readiness, streaks, recent titles, and constraints. Token-shaped text is redacted. Strava and Screen Time stay unavailable in that payload. WHOOP is included only after a readiness snapshot exists. Mercury totals are included only after a finance snapshot exists (Phase 6).
 - The rules-locked mode picker stays authoritative. A generated bundle whose mode does not match is rejected.
 - `QuestGenerating` has a mock client and an HTTP client. The mock returns the fallback catalog for the locked mode, with the active Target injected. The HTTP client `POST`s to `{base}/v1/quests/generate`. Set `QUEST_GENERATE_BASE_URL` or UserDefaults `com.angelmorales.thesystem.questGenerateBaseURL` to an `http` or `https` URL. With no URL, the app uses the mock. Timeout or an unsafe bundle keeps the catalog (`generatedBy: fallback`).
 - The morning refresh tries generation once per `dayKey`, including a failed attempt, and caches an accepted bundle. Completing a quest or starting a timer before the reply arrives keeps the catalog. A new local day clears that attempt.
@@ -51,7 +51,7 @@ Master plan steps 10 and 13, scoped to generation. Session auth and the secrets 
 
 ## Phase 5 — WHOOP, Strava, and HealthKit (done)
 
-Master plan steps 8, 9, 11, and 12. Mercury and Screen Time stay later.
+Master plan steps 8, 9, 11, and 12. Screen Time stays in Phase 7.
 
 - `HealthKitBridge` asks to read body mass, dietary protein, dietary energy, sleep, and workouts. Observers refresh quests when those samples change. MacroFactor is preferred when the HealthKit source name or bundle id contains `macrofactor`. There is no MacroFactor API.
 - `healthkit_workout`, `healthkit_nutrition`, and `macrofactor_protein` complete from those queries after authorization. Without access they stay incomplete and the row explains the TODO. They cannot be checked off by hand.
@@ -59,17 +59,29 @@ Master plan steps 8, 9, 11, and 12. Mercury and Screen Time stay later.
 - `WorkoutDedupe` treats recordings as the same session when the sport family matches and the intervals overlap inside a 5-minute pad and a 10-minute start gap. The canonical id prefers Strava, then WHOOP, then HealthKit.
 - WHOOP `recovery_score` is stored as readiness (green ≥ 67, yellow ≥ 34, otherwise red) and can change a quiet morning's mode. It is not copied into the REC stat. REC stays the XP-driven radar value. A rolling average is kept aside until at least seven days exist.
 
-## Phase 6 — Full Recovery bank (open)
+## Phase 6 — Mercury FIN (done)
 
-Master plan step 15. Targets themselves landed in Phase 3.
+Master plan §7 and step 16. The Read Only token stays on the backend.
+
+- `MERCURY_API_TOKEN` is read from the environment only. `MERCURY_API_BASE_URL` selects production (`https://api.mercury.com/api/v1`) or a sandbox host. The phone never receives the token.
+- `POST /v1/integrations/mercury/sync` pages through accounts and transactions. `GET /v1/integrations/mercury/snapshot?day=` returns discretionary and necessary totals, pace, and YTD income toward $500,000. `GET` accounts and transactions read the same cache.
+- `POST /v1/webhooks/mercury` checks `Mercury-Signature` (HMAC-SHA256 of `timestamp.raw_body`, 5-minute skew) for `transaction.created`, `transaction.updated`, and the balance-updated events.
+- Category totals use a default map (Grocery and rent-like necessary; Restaurants and Retail discretionary). Override it with `mercury_categories.json` or `MERCURY_CATEGORY_MAP`. Internal transfers and interest are excluded from YTD income.
+- Pace states `NORMAL` / `CAUTION` / `WARNING` / `CRITICAL` use undecided defaults (daily cap $40, weekly $280, balance floor $500, cutoffs 0.75 / 1.00 / 1.25).
+- `mercury_spend_under` completes from that snapshot when the day is settled and spend is still under the cap. It cannot be checked off by hand. Without a token it stays incomplete.
+- Status FIN stays the quest-granted stat plus at most 20 projection points. It is not the account balance.
+- Performance Training fallback rows include an optional Light Spend Cap. Finance Discipline already had Spend Under Cap.
+
+## Full Recovery bank (open)
+
+Master plan step 15. Not part of the Mercury slice.
 
 - Sunday OPTIONAL section banks a Full Recovery token (cap 3). The Status row spends a token through a confirm sheet.
 
-## Phase 7 — FIN, penalties, push
+## Phase 7 — Screen Time, penalties, push (open)
 
-Master plan steps 16, 17, and 18.
+Master plan steps 17 and 18.
 
-- Mercury Read Only token stays on the backend. FIN aggregates, spend-under quests, and the FIN radar stat update from those aggregates.
 - Screen Time: FamilyControls picker, penalty shields on selected distractors, DeviceActivity monitor, Live Activity. Shields are not a full phone lock.
 - Silent push when a verifier clears a quest.
 

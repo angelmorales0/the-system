@@ -20,6 +20,10 @@ struct GameSnapshot: Codable, Equatable {
     var readiness: ReadinessSnapshot?
     /// Rolling recovery-capacity placeholder. The radar REC stat stays XP-driven.
     var recoveryComposite: RecoveryComposite = RecoveryComposite()
+    /// Mercury aggregates for the quest day. Not a dollar balance.
+    var finance: FinanceSnapshot?
+    /// FIN points already added from `FinanceProjection`. Quest grants sit on top of this.
+    var appliedFinProjection: Int = 0
     /// Titles from the previous quest day. Sent as summaries, never as evidence.
     var recentQuestTitles: [String] = []
     /// Local day that already spent its one generation attempt, including a failed one.
@@ -239,6 +243,34 @@ struct GameSnapshot: Codable, Equatable {
         return true
     }
 
+    /// Moves the FIN radar by the projection delta. Does not replace FIN with a balance or a dollar total.
+    mutating func applyFinance(_ reading: MercuryDayReading) {
+        guard reading.configured, reading.available, reading.synced else { return }
+        let previousREC = player.stats.REC
+        let points = FinanceProjection.points(
+            pace: reading.paceState,
+            ytdIncomeUsd: reading.ytdIncomeUsd,
+            ytdGoalUsd: reading.ytdGoalUsd
+        )
+        let delta = points - appliedFinProjection
+        if delta != 0 {
+            player.stats.FIN = max(0, player.stats.FIN + delta)
+        }
+        appliedFinProjection = points
+        finance = FinanceSnapshot(
+            dayKey: reading.dayKey,
+            discretionarySpendUsd: reading.discretionarySpendUsd,
+            necessarySpendUsd: reading.necessarySpendUsd,
+            capUsd: reading.capUsd,
+            discretionary7dUsd: reading.discretionary7dUsd,
+            paceState: reading.paceState,
+            ytdIncomeUsd: reading.ytdIncomeUsd,
+            ytdGoalUsd: reading.ytdGoalUsd,
+            settled: reading.settled
+        )
+        player.stats.REC = previousREC
+    }
+
     private mutating func rebuildBundle(catalog: FallbackCatalog, now: Date) {
         reconcileTargets(now: now)
         let decision = ModePicker.decide(modeInput(now: now))
@@ -318,6 +350,7 @@ extension GameSnapshot {
     private enum CodingKeys: String, CodingKey {
         case version, player, signals, bundle, evidenceLog, runningTimers, targets
         case recentQuestTitles, generationAttemptDayKey, generatedBundle, readiness, recoveryComposite
+        case finance, appliedFinProjection
     }
 
     init(from decoder: Decoder) throws {
@@ -332,6 +365,8 @@ extension GameSnapshot {
         recentQuestTitles = try container.decodeIfPresent([String].self, forKey: .recentQuestTitles) ?? []
         readiness = try container.decodeIfPresent(ReadinessSnapshot.self, forKey: .readiness)
         recoveryComposite = try container.decodeIfPresent(RecoveryComposite.self, forKey: .recoveryComposite) ?? RecoveryComposite()
+        finance = try container.decodeIfPresent(FinanceSnapshot.self, forKey: .finance)
+        appliedFinProjection = try container.decodeIfPresent(Int.self, forKey: .appliedFinProjection) ?? 0
         generationAttemptDayKey = try container.decodeIfPresent(String.self, forKey: .generationAttemptDayKey)
         generatedBundle = try container.decodeIfPresent(QuestBundle.self, forKey: .generatedBundle)
         targetToast = nil
@@ -349,6 +384,8 @@ extension GameSnapshot {
         try container.encode(recentQuestTitles, forKey: .recentQuestTitles)
         try container.encodeIfPresent(readiness, forKey: .readiness)
         try container.encode(recoveryComposite, forKey: .recoveryComposite)
+        try container.encodeIfPresent(finance, forKey: .finance)
+        try container.encode(appliedFinProjection, forKey: .appliedFinProjection)
         try container.encodeIfPresent(generationAttemptDayKey, forKey: .generationAttemptDayKey)
         try container.encodeIfPresent(generatedBundle, forKey: .generatedBundle)
     }

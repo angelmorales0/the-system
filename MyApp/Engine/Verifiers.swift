@@ -58,10 +58,9 @@ enum VerifierRegistry {
         case .macrofactorProtein:
             return MacroFactorProteinVerifier()
         case .mercurySpendUnder:
-            // TODO: Phase 7 — Mercury discretionary debits for this local day. The token stays on the backend.
-            return IncompleteVerifier(method: method, reason: "Mercury is not connected")
+            return MercurySpendUnderVerifier()
         case .screenTimeLimit:
-            // TODO: Phase 7 — DeviceActivity thresholds for distractors or deep work. No Screen Time OAuth in this slice.
+            // TODO: Phase 7 — DeviceActivity thresholds for distractors or deep work. No Screen Time in this slice.
             return IncompleteVerifier(method: method, reason: "Screen Time is not connected")
         }
     }
@@ -150,10 +149,10 @@ struct IncompleteVerifier: Verifier {
 }
 
 extension VerificationMethod {
-    /// Mercury and Screen Time are still later. Connected sources cannot be checked off by hand.
+    /// Screen Time is still a local checkbox. Connected sources, including Mercury, cannot be checked off by hand.
     var allowsLocalCheckbox: Bool {
         switch self {
-        case .mercurySpendUnder, .screenTimeLimit:
+        case .screenTimeLimit:
             return true
         default:
             return false

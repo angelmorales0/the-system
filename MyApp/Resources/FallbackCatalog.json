@@ -100,6 +100,27 @@
             "unit": "g"
           },
           "reward": null
+        },
+        {
+          "id": "light_spend",
+          "title": "Light Spend Cap",
+          "kind": "optional",
+          "stat": "FIN",
+          "verification": {
+            "method": "mercury_spend_under",
+            "params": {
+              "maxDiscretionaryUsd": 40
+            }
+          },
+          "xp": 15,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 40,
+            "unit": "usd"
+          },
+          "reward": null
         }
       ]
     },
@@ -203,6 +224,27 @@
             "unit": "g"
           },
           "reward": null
+        },
+        {
+          "id": "light_spend",
+          "title": "Light Spend Cap",
+          "kind": "optional",
+          "stat": "FIN",
+          "verification": {
+            "method": "mercury_spend_under",
+            "params": {
+              "maxDiscretionaryUsd": 40
+            }
+          },
+          "xp": 15,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 40,
+            "unit": "usd"
+          },
+          "reward": null
         }
       ]
     },
@@ -281,6 +323,27 @@
             "current": 0,
             "target": 150,
             "unit": "g"
+          },
+          "reward": null
+        },
+        {
+          "id": "light_spend",
+          "title": "Light Spend Cap",
+          "kind": "optional",
+          "stat": "FIN",
+          "verification": {
+            "method": "mercury_spend_under",
+            "params": {
+              "maxDiscretionaryUsd": 40
+            }
+          },
+          "xp": 15,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 40,
+            "unit": "usd"
           },
           "reward": null
         }

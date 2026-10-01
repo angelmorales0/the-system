@@ -173,6 +173,39 @@ private func scalarResult(
     return .completed(evidence: evidence)
 }
 
+struct MercurySpendUnderVerifier: Verifier {
+    static let source = "mercury"
+    var method: VerificationMethod { .mercurySpendUnder }
+
+    func evaluate(quest: Quest, context: VerificationContext) -> VerificationResult {
+        guard quest.verification.method == method else { return .unchanged }
+        let reading = context.integrations.mercury
+        guard reading.configured, reading.available, reading.synced else {
+            let reason = reading.reason.isEmpty ? "TODO: Mercury is not connected." : reading.reason
+            return .incomplete(reason: reason)
+        }
+        let cap = quest.verification.params["maxDiscretionaryUsd"]?.doubleValue ?? reading.capUsd
+        let spent = reading.discretionarySpendUsd
+        if spent > cap + 0.001 {
+            return .failed(reason: "Discretionary spend is over the cap.")
+        }
+        let evidence = Evidence.make(
+            source: Self.source,
+            externalId: "mercury:spend:\(context.dayKey)",
+            payload: "mercury|spend|\(context.dayKey)|\(spent)|\(cap)",
+            timestamp: context.now
+        )
+        if context.claimedKeys.contains(evidence.reuseKey) {
+            return .failed(reason: "That evidence was already used for another quest today.")
+        }
+        // $0 in the morning is not a clear. The backend marks the day settled at the settle hour, or once the day is past.
+        guard reading.settled else {
+            return .progress(current: min(max(spent, 0), quest.progress.target), evidence: evidence)
+        }
+        return .completed(evidence: evidence)
+    }
+}
+
 enum IntegrationMatch {
     static func strings(_ value: JSONValue?) -> [String] {
         guard case .array(let values)? = value else { return [] }

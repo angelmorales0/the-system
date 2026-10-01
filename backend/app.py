@@ -19,6 +19,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 
 import integrations
+import mercury
 
 app = FastAPI(title="the-system quest stub")
 
@@ -97,6 +98,7 @@ def health() -> dict[str, Any]:
         "model": xai_model(),
         "whoop": "configured" if integrations.configured("whoop") else "missing",
         "strava": "configured" if integrations.configured("strava") else "missing",
+        "mercury": "configured" if mercury.configured() else "missing",
     }
 
 
@@ -657,6 +659,46 @@ async def strava_webhook(request: Request) -> dict[str, bool]:
     return {"ok": True}
 
 
+@app.post("/v1/integrations/mercury/sync")
+def mercury_sync() -> dict[str, Any]:
+    if not mercury.configured():
+        raise HTTPException(status_code=503, detail={"error": "MERCURY_API_TOKEN is not set"})
+    result = mercury.sync()
+    if not result:
+        raise HTTPException(status_code=503, detail={"error": "Mercury sync failed"})
+    return result
+
+
+@app.get("/v1/integrations/mercury/snapshot")
+def mercury_snapshot(day: str) -> dict[str, Any]:
+    require_day(day)
+    return mercury.snapshot(day)
+
+
+@app.get("/v1/integrations/mercury/accounts")
+def mercury_accounts() -> dict[str, Any]:
+    return mercury.accounts_payload()
+
+
+@app.get("/v1/integrations/mercury/transactions")
+def mercury_transactions(limit: int = 100, start_after: str = "") -> dict[str, Any]:
+    return mercury.list_cached_transactions(limit=limit, start_after=start_after)
+
+
+@app.post("/v1/webhooks/mercury")
+async def mercury_webhook(request: Request) -> dict[str, Any]:
+    body = await request.body()
+    if not mercury.verify_signature(body, request.headers.get("mercury-signature", "")):
+        raise HTTPException(status_code=401, detail={"error": "invalid signature"})
+    try:
+        event = json.loads(body.decode() or "{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail={"error": "invalid json"}) from exc
+    if not isinstance(event, dict):
+        raise HTTPException(status_code=400, detail={"error": "invalid json"})
+    return mercury.ingest_event(event, fetch_transaction=mercury.pull_transaction)
+
+
 def oauth_callback(provider: str, code: str) -> dict[str, Any]:
     if not code:
         raise HTTPException(status_code=400, detail={"error": "missing code"})
@@ -681,6 +723,7 @@ def require_day(day: str) -> None:
 
 def self_check() -> None:
     integrations.self_check()
+    mercury.self_check()
     source = open(__file__, encoding="utf-8").read()
     if "api." + "openai.com" in source:
         raise SystemExit("openai endpoint is not the quest author")
