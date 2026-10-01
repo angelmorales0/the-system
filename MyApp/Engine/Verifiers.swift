@@ -15,6 +15,7 @@ struct VerificationContext: Equatable {
     var claimedKeys: Set<String>
     var timerElapsedSec: TimeInterval?
     var userConfirmed: Bool
+    var integrations: DayIntegrationSnapshot = .empty(dayKey: "")
 }
 
 enum VerificationResult: Equatable {
@@ -45,23 +46,17 @@ enum VerifierRegistry {
         case .timerSession:
             return TimerSessionVerifier()
         case .whoopStrain:
-            // TODO: Phase 5 — WHOOP cycle or workout strain, SCORED, compared with the quest minimum.
-            return IncompleteVerifier(method: method, reason: "WHOOP strain is not connected")
+            return WhoopStrainVerifier()
         case .whoopRecovery:
-            // TODO: Phase 5 — WHOOP recovery score. REC on Status stays a rolling composite, not this score.
-            return IncompleteVerifier(method: method, reason: "WHOOP recovery is not connected")
+            return WhoopRecoveryVerifier()
         case .stravaActivity:
-            // TODO: Phase 5 — Strava activity whose type and moving time match the quest.
-            return IncompleteVerifier(method: method, reason: "Strava is not connected")
+            return StravaActivityVerifier()
         case .healthkitWorkout:
-            // TODO: Phase 3 — HealthKit workout matching type and duration for this local day.
-            return IncompleteVerifier(method: method, reason: "HealthKit workouts are not connected")
+            return HealthKitWorkoutVerifier()
         case .healthkitNutrition:
-            // TODO: Phase 3 — HealthKit dietary samples. MacroFactor writes Apple Health; there is no MacroFactor API.
-            return IncompleteVerifier(method: method, reason: "HealthKit nutrition is not connected")
+            return HealthKitNutritionVerifier()
         case .macrofactorProtein:
-            // TODO: Phase 3 — dietary protein from HealthKit, preferring samples written by MacroFactor.
-            return IncompleteVerifier(method: method, reason: "Protein verification is not connected")
+            return MacroFactorProteinVerifier()
         case .mercurySpendUnder:
             // TODO: Phase 7 — Mercury discretionary debits for this local day. The token stays on the backend.
             return IncompleteVerifier(method: method, reason: "Mercury is not connected")
@@ -155,13 +150,13 @@ struct IncompleteVerifier: Verifier {
 }
 
 extension VerificationMethod {
-    /// Stubbed integrations still accept an on-device checkbox. Timer and manual confirm do not.
+    /// Mercury and Screen Time are still later. Connected sources cannot be checked off by hand.
     var allowsLocalCheckbox: Bool {
         switch self {
-        case .manualConfirm, .timerSession:
-            return false
-        default:
+        case .mercurySpendUnder, .screenTimeLimit:
             return true
+        default:
+            return false
         }
     }
 }

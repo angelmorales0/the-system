@@ -16,7 +16,9 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+
+import integrations
 
 app = FastAPI(title="the-system quest stub")
 
@@ -88,8 +90,14 @@ def xai_model() -> str:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"ok": "true", "author": "grok" if xai_api_key() else "template", "model": xai_model()}
+def health() -> dict[str, Any]:
+    return {
+        "ok": "true",
+        "author": "grok" if xai_api_key() else "template",
+        "model": xai_model(),
+        "whoop": "configured" if integrations.configured("whoop") else "missing",
+        "strava": "configured" if integrations.configured("strava") else "missing",
+    }
 
 
 @app.post("/v1/quests/generate")
@@ -571,7 +579,108 @@ def sample_request(mode: str = "performance_training", band: str = "green", targ
     return body
 
 
+@app.get("/v1/oauth/whoop/start")
+def whoop_start() -> dict[str, str]:
+    client_id = integrations.env("WHOOP_CLIENT_ID")
+    if not client_id:
+        raise HTTPException(status_code=400, detail={"error": "WHOOP_CLIENT_ID is not set"})
+    redirect = integrations.env("WHOOP_REDIRECT_URI") or "http://127.0.0.1:8787/v1/oauth/whoop/callback"
+    return {"authorizeUrl": integrations.whoop_authorize_url(client_id, redirect, "local")}
+
+
+@app.get("/v1/oauth/whoop/callback")
+def whoop_callback(code: str = "") -> dict[str, Any]:
+    return oauth_callback("whoop", code)
+
+
+@app.post("/v1/oauth/whoop/refresh")
+def whoop_refresh() -> dict[str, Any]:
+    return oauth_refresh("whoop")
+
+
+@app.get("/v1/oauth/strava/start")
+def strava_start() -> dict[str, str]:
+    client_id = integrations.env("STRAVA_CLIENT_ID")
+    if not client_id:
+        raise HTTPException(status_code=400, detail={"error": "STRAVA_CLIENT_ID is not set"})
+    redirect = integrations.env("STRAVA_REDIRECT_URI") or "http://127.0.0.1:8787/v1/oauth/strava/callback"
+    return {"authorizeUrl": integrations.strava_authorize_url(client_id, redirect, "local")}
+
+
+@app.get("/v1/oauth/strava/callback")
+def strava_callback(code: str = "") -> dict[str, Any]:
+    return oauth_callback("strava", code)
+
+
+@app.post("/v1/oauth/strava/refresh")
+def strava_refresh() -> dict[str, Any]:
+    return oauth_refresh("strava")
+
+
+@app.get("/v1/integrations/whoop/snapshot")
+def whoop_snapshot(day: str) -> dict[str, Any]:
+    require_day(day)
+    return integrations.public_payload(integrations.whoop_snapshot(day))
+
+
+@app.get("/v1/integrations/strava/snapshot")
+def strava_snapshot(day: str) -> dict[str, Any]:
+    require_day(day)
+    return integrations.public_payload(integrations.strava_snapshot(day))
+
+
+@app.post("/v1/webhooks/whoop")
+async def whoop_webhook(request: Request) -> dict[str, bool]:
+    body = await request.body()
+    if not integrations.verify_whoop_signature(
+        body,
+        request.headers.get("x-whoop-signature-timestamp", ""),
+        request.headers.get("x-whoop-signature", ""),
+    ):
+        raise HTTPException(status_code=401, detail={"error": "invalid signature"})
+    return {"ok": True}
+
+
+@app.get("/v1/webhooks/strava")
+def strava_webhook_handshake(request: Request) -> dict[str, str]:
+    result = integrations.strava_handshake(dict(request.query_params))
+    if result is None:
+        raise HTTPException(status_code=401, detail={"error": "invalid subscription"})
+    return result
+
+
+@app.post("/v1/webhooks/strava")
+async def strava_webhook(request: Request) -> dict[str, bool]:
+    if not integrations.strava_event_allowed():
+        raise HTTPException(status_code=401, detail={"error": "STRAVA_WEBHOOK_VERIFY_TOKEN is not set"})
+    await request.body()
+    return {"ok": True}
+
+
+def oauth_callback(provider: str, code: str) -> dict[str, Any]:
+    if not code:
+        raise HTTPException(status_code=400, detail={"error": "missing code"})
+    tokens = integrations.exchange_code(provider, code)
+    if not tokens or not tokens.get("access_token"):
+        raise HTTPException(status_code=503, detail={"error": f"{provider} token exchange failed"})
+    integrations.save_tokens(provider, tokens)
+    return {"connected": True, "provider": provider}
+
+
+def oauth_refresh(provider: str) -> dict[str, Any]:
+    tokens = integrations.refresh_tokens(provider)
+    if not tokens or not tokens.get("access_token"):
+        raise HTTPException(status_code=503, detail={"error": f"{provider} refresh failed"})
+    return {"connected": True, "provider": provider}
+
+
+def require_day(day: str) -> None:
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        raise HTTPException(status_code=400, detail={"error": "day must be YYYY-MM-DD"})
+
+
 def self_check() -> None:
+    integrations.self_check()
     source = open(__file__, encoding="utf-8").read()
     if "api." + "openai.com" in source:
         raise SystemExit("openai endpoint is not the quest author")

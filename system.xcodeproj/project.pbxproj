@@ -255,7 +255,11 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				CODE_SIGN_ENTITLEMENTS = MyApp.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "";
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "The System reads workouts, protein, weight, and sleep to check daily quests.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "The System does not write health data.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -292,7 +296,11 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				CODE_SIGN_ENTITLEMENTS = MyApp.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "";
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "The System reads workouts, protein, weight, and sleep to check daily quests.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "The System does not write health data.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;

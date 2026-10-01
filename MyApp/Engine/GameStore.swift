@@ -17,10 +17,12 @@ final class GameStore: ObservableObject {
     private let generator: any QuestGenerating
     private let persistence: GamePersistence
     private var ticker: Timer?
+    private var integrations: DayIntegrationSnapshot = .empty(dayKey: "")
+    private var refreshingIntegrations = false
 
     init(persistence: GamePersistence = .standard) {
         #if DEBUG
-        let problems = VerificationFixtures.check() + TargetRules.check() + QuestGenerationRules.check()
+        let problems = VerificationFixtures.check() + TargetRules.check() + QuestGenerationRules.check() + IntegrationRules.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         #endif
 
@@ -40,6 +42,8 @@ final class GameStore: ObservableObject {
         requestGenerationIfNeeded(now: .now)
         persist()
         ensureTicker()
+        observeHealthUpdates()
+        refreshIntegrations(now: .now)
     }
 
     var player: PlayerState { snapshot.player }
@@ -136,12 +140,33 @@ final class GameStore: ObservableObject {
             let result = ManualConfirmVerifier().evaluate(quest: quest, context: context)
             commit(result, questId: id, now: now)
         default:
-            var next = snapshot
-            let outcome = next.applyLocalOverride(questId: id, now: now)
-            snapshot = next
-            clock = now
-            note(for: outcome, title: quest.title)
-            persist()
+            if quest.verification.method.allowsLocalCheckbox {
+                var next = snapshot
+                let outcome = next.applyLocalOverride(questId: id, now: now)
+                snapshot = next
+                clock = now
+                note(for: outcome, title: quest.title)
+                persist()
+            } else {
+                let context = snapshot.verificationContext(
+                    for: quest,
+                    now: now,
+                    timerElapsed: nil,
+                    userConfirmed: false,
+                    integrations: integrations
+                )
+                let result = VerifierRegistry.verifier(for: quest.verification.method).evaluate(quest: quest, context: context)
+                switch result {
+                case .incomplete(let reason):
+                    verificationNote = reason
+                    clock = now
+                case .unchanged:
+                    verificationNote = "No matching sample yet."
+                    clock = now
+                case .failed, .progress, .completed:
+                    commit(result, questId: id, now: now)
+                }
+            }
         }
     }
 
@@ -158,6 +183,37 @@ final class GameStore: ObservableObject {
         requestGenerationIfNeeded(now: now)
         persist()
         ensureTicker()
+        refreshIntegrations(now: now)
+    }
+
+    private func observeHealthUpdates() {
+        HealthKitBridge.startObservers()
+        Task { @MainActor [weak self] in
+            for await _ in NotificationCenter.default.notifications(named: .healthDataDidChange) {
+                self?.refreshIntegrations(now: .now)
+            }
+        }
+    }
+
+    private func refreshIntegrations(now: Date) {
+        guard !refreshingIntegrations else { return }
+        refreshingIntegrations = true
+        let dayKey = QuestDay.key(for: now)
+        Task { @MainActor [weak self] in
+            let health = await HealthKitBridge.summary(on: now)
+            let remote = await IntegrationClient.load(dayKey: dayKey)
+            guard let self else { return }
+            self.refreshingIntegrations = false
+            var next = self.snapshot
+            let rebuilt = next.applyWhoopReadiness(remote.whoop, catalog: self.catalog, now: now)
+            self.snapshot = next
+            self.integrations = DayIntegrationSnapshot.make(whoop: remote.whoop, strava: remote.strava, health: health)
+            if rebuilt {
+                self.runningTimersRemoveMissing()
+            }
+            self.evaluateConnectedVerifiers(now: now)
+            self.persist()
+        }
     }
 
     /// One attempt per local day. The catalog bundle stays on screen until a valid bundle returns.
@@ -271,7 +327,13 @@ final class GameStore: ObservableObject {
             default:
                 break
             }
-            let context = next.verificationContext(for: quest, now: now, timerElapsed: nil, userConfirmed: false)
+            let context = next.verificationContext(
+                for: quest,
+                now: now,
+                timerElapsed: nil,
+                userConfirmed: false,
+                integrations: integrations
+            )
             let result = VerifierRegistry.verifier(for: quest.verification.method).evaluate(quest: quest, context: context)
             switch result {
             case .progress, .completed:

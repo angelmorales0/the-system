@@ -16,6 +16,10 @@ struct GameSnapshot: Codable, Equatable {
     var evidenceLog: [EvidenceUse] = []
     var runningTimers: [TimerRun] = []
     var targets: [Target] = []
+    /// Today's WHOOP recovery. Not copied into `player.stats.REC`.
+    var readiness: ReadinessSnapshot?
+    /// Rolling recovery-capacity placeholder. The radar REC stat stays XP-driven.
+    var recoveryComposite: RecoveryComposite = RecoveryComposite()
     /// Titles from the previous quest day. Sent as summaries, never as evidence.
     var recentQuestTitles: [String] = []
     /// Local day that already spent its one generation attempt, including a failed one.
@@ -54,7 +58,8 @@ struct GameSnapshot: Codable, Equatable {
         for quest: Quest,
         now: Date,
         timerElapsed: TimeInterval?,
-        userConfirmed: Bool
+        userConfirmed: Bool,
+        integrations: DayIntegrationSnapshot = .empty(dayKey: "")
     ) -> VerificationContext {
         let claimed = Set(
             evidenceLog
@@ -68,7 +73,8 @@ struct GameSnapshot: Codable, Equatable {
             manualConfirmsToday: manualConfirmCount(on: bundle.dayKey, excluding: quest.id),
             claimedKeys: claimed,
             timerElapsedSec: timerElapsed,
-            userConfirmed: userConfirmed
+            userConfirmed: userConfirmed,
+            integrations: integrations
         )
     }
 
@@ -204,6 +210,35 @@ struct GameSnapshot: Codable, Equatable {
         return nil
     }
 
+    /// Stores WHOOP recovery as readiness. Does not write `player.stats.REC`.
+    /// A quiet morning rebuilds the catalog when the locked mode changes.
+    @discardableResult
+    mutating func applyWhoopReadiness(_ reading: WhoopDayReading, catalog: FallbackCatalog, now: Date) -> Bool {
+        guard reading.available, let score = reading.recoveryScore else { return false }
+        let previousREC = player.stats.REC
+        let previousMode = bundle.mode
+        let band = ReadinessBand.from(recoveryScore: score)
+        readiness = ReadinessSnapshot(
+            recoveryScore: score,
+            restingHr: reading.restingHr,
+            hrv: reading.hrv,
+            sleepPerformance: reading.sleepPerformance,
+            band: band,
+            capturedOn: reading.dayKey
+        )
+        signals.readinessBand = band
+        if let sleep = reading.sleepPerformance {
+            signals.sleepPerformance = sleep
+        }
+        recoveryComposite.record(score: score, on: reading.dayKey)
+        player.stats.REC = previousREC
+        let nextMode = ModePicker.decide(modeInput(now: now)).selectedMode
+        let quiet = runningTimers.isEmpty && !bundle.quests.contains { $0.status == .completed }
+        guard quiet, nextMode != previousMode, bundle.dayKey == QuestDay.key(for: now) else { return false }
+        rebuildBundle(catalog: catalog, now: now)
+        return true
+    }
+
     private mutating func rebuildBundle(catalog: FallbackCatalog, now: Date) {
         reconcileTargets(now: now)
         let decision = ModePicker.decide(modeInput(now: now))
@@ -282,7 +317,7 @@ struct GameSnapshot: Codable, Equatable {
 extension GameSnapshot {
     private enum CodingKeys: String, CodingKey {
         case version, player, signals, bundle, evidenceLog, runningTimers, targets
-        case recentQuestTitles, generationAttemptDayKey, generatedBundle
+        case recentQuestTitles, generationAttemptDayKey, generatedBundle, readiness, recoveryComposite
     }
 
     init(from decoder: Decoder) throws {
@@ -295,6 +330,8 @@ extension GameSnapshot {
         runningTimers = try container.decodeIfPresent([TimerRun].self, forKey: .runningTimers) ?? []
         targets = try container.decodeIfPresent([Target].self, forKey: .targets) ?? []
         recentQuestTitles = try container.decodeIfPresent([String].self, forKey: .recentQuestTitles) ?? []
+        readiness = try container.decodeIfPresent(ReadinessSnapshot.self, forKey: .readiness)
+        recoveryComposite = try container.decodeIfPresent(RecoveryComposite.self, forKey: .recoveryComposite) ?? RecoveryComposite()
         generationAttemptDayKey = try container.decodeIfPresent(String.self, forKey: .generationAttemptDayKey)
         generatedBundle = try container.decodeIfPresent(QuestBundle.self, forKey: .generatedBundle)
         targetToast = nil
@@ -310,6 +347,8 @@ extension GameSnapshot {
         try container.encode(runningTimers, forKey: .runningTimers)
         try container.encode(targets, forKey: .targets)
         try container.encode(recentQuestTitles, forKey: .recentQuestTitles)
+        try container.encodeIfPresent(readiness, forKey: .readiness)
+        try container.encode(recoveryComposite, forKey: .recoveryComposite)
         try container.encodeIfPresent(generationAttemptDayKey, forKey: .generationAttemptDayKey)
         try container.encodeIfPresent(generatedBundle, forKey: .generatedBundle)
     }

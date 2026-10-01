@@ -8,6 +8,7 @@ enum ContextBuilder {
         let dayKey = QuestDay.key(for: now)
         let decision = ModePicker.decide(snapshot.modeInput(now: now))
         let player = snapshot.player
+        let readinessToday = snapshot.readiness?.capturedOn == dayKey ? snapshot.readiness : nil
         return MorningContext(
             schemaVersion: 1,
             player: MorningPlayer(
@@ -24,10 +25,10 @@ enum ContextBuilder {
             ),
             modeDecision: MorningModeDecision(decision),
             whoop: MorningWhoop(
-                available: false,
-                recoveryScore: nil,
-                restingHr: nil,
-                hrv: nil,
+                available: readinessToday != nil,
+                recoveryScore: readinessToday?.recoveryScore,
+                restingHr: readinessToday?.restingHr,
+                hrv: readinessToday?.hrv,
                 sleepPerformance: snapshot.signals.sleepPerformance,
                 dayStrainYesterday: nil,
                 readinessBand: snapshot.signals.readinessBand
@@ -62,7 +63,13 @@ enum ContextBuilder {
                 deepWorkMinutesYesterday: nil,
                 pickupCountYesterday: nil
             ),
-            integrationsFreshness: .offline,
+            integrationsFreshness: MorningFreshness(
+                whoop: readinessToday == nil ? "unavailable" : "ok",
+                strava: "unavailable",
+                healthkit: "unavailable",
+                mercury: "unavailable",
+                screenTime: "unavailable"
+            ),
             recentQuestTitles: snapshot.recentQuestTitles.prefix(8).map(redact),
             constraints: .standard
         )
