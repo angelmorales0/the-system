@@ -133,6 +133,16 @@ enum JSONValue: Codable, Equatable {
             try container.encodeNil()
         }
     }
+
+    var doubleValue: Double? {
+        if case .number(let value) = self { return value }
+        return nil
+    }
+
+    var stringValue: String? {
+        if case .string(let value) = self { return value }
+        return nil
+    }
 }
 
 struct VerificationSpec: Codable, Equatable {
@@ -189,6 +199,62 @@ struct Quest: Identifiable, Codable, Equatable {
     var grantedXP: Int
     var grantedStatPoints: Int
     var grantedRecoveryToken: Bool
+    /// Observations that moved this quest. Empty until a verifier applies one.
+    var evidence: [Evidence] = []
+    /// Manual confirm waits 30 seconds after this. Model output cannot choose it.
+    var assignedAt: Date = .distantPast
+}
+
+extension Quest {
+    private enum CodingKeys: String, CodingKey {
+        case id, title, kind, stat, verification, deadline, xp, difficulty, mode
+        case targetId, progress, reward, status, grantedXP, grantedStatPoints, grantedRecoveryToken
+        case evidence, assignedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        kind = try container.decode(QuestKind.self, forKey: .kind)
+        stat = try container.decode(Stat.self, forKey: .stat)
+        verification = try container.decode(VerificationSpec.self, forKey: .verification)
+        deadline = try container.decode(Date.self, forKey: .deadline)
+        xp = try container.decode(Int.self, forKey: .xp)
+        difficulty = try container.decode(Difficulty.self, forKey: .difficulty)
+        mode = try container.decode(QuestMode.self, forKey: .mode)
+        targetId = try container.decodeIfPresent(String.self, forKey: .targetId)
+        progress = try container.decode(QuestProgress.self, forKey: .progress)
+        reward = try container.decodeIfPresent(QuestReward.self, forKey: .reward)
+        status = try container.decode(QuestStatus.self, forKey: .status)
+        grantedXP = try container.decodeIfPresent(Int.self, forKey: .grantedXP) ?? 0
+        grantedStatPoints = try container.decodeIfPresent(Int.self, forKey: .grantedStatPoints) ?? 0
+        grantedRecoveryToken = try container.decodeIfPresent(Bool.self, forKey: .grantedRecoveryToken) ?? false
+        evidence = try container.decodeIfPresent([Evidence].self, forKey: .evidence) ?? []
+        assignedAt = try container.decodeIfPresent(Date.self, forKey: .assignedAt) ?? .distantPast
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(stat, forKey: .stat)
+        try container.encode(verification, forKey: .verification)
+        try container.encode(deadline, forKey: .deadline)
+        try container.encode(xp, forKey: .xp)
+        try container.encode(difficulty, forKey: .difficulty)
+        try container.encode(mode, forKey: .mode)
+        try container.encodeIfPresent(targetId, forKey: .targetId)
+        try container.encode(progress, forKey: .progress)
+        try container.encodeIfPresent(reward, forKey: .reward)
+        try container.encode(status, forKey: .status)
+        try container.encode(grantedXP, forKey: .grantedXP)
+        try container.encode(grantedStatPoints, forKey: .grantedStatPoints)
+        try container.encode(grantedRecoveryToken, forKey: .grantedRecoveryToken)
+        try container.encode(evidence, forKey: .evidence)
+        try container.encode(assignedAt, forKey: .assignedAt)
+    }
 }
 
 struct QuestBundle: Codable, Equatable {
@@ -212,6 +278,23 @@ struct QuestBundle: Codable, Equatable {
     }
 
     static let defaultWarning = "Failure to complete\nthe daily quest will result\nin a penalty."
+
+    /// Generated bundles may propose method and params only. Completion, evidence, and assign time are local.
+    func strippingModelCompletion(assignedAt: Date) -> QuestBundle {
+        var copy = self
+        copy.quests = quests.map { quest in
+            var quest = quest
+            quest.status = .pending
+            quest.evidence = []
+            quest.grantedXP = 0
+            quest.grantedStatPoints = 0
+            quest.grantedRecoveryToken = false
+            quest.progress.current = 0
+            quest.assignedAt = assignedAt
+            return quest
+        }
+        return copy
+    }
 }
 
 struct StatValues: Codable, Equatable {

@@ -1,5 +1,10 @@
 import Foundation
 
+struct TimerRun: Codable, Equatable {
+    var questId: String
+    var startedAt: Date
+}
+
 struct GameSnapshot: Codable, Equatable {
     static let currentVersion = 1
     static let storageKey = "com.angelmorales.thesystem.snapshot.v1"
@@ -8,6 +13,8 @@ struct GameSnapshot: Codable, Equatable {
     var player: PlayerState
     var signals: MorningSignals
     var bundle: QuestBundle
+    var evidenceLog: [EvidenceUse] = []
+    var runningTimers: [TimerRun] = []
 
     static func fresh(
         catalog: FallbackCatalog,
@@ -20,20 +27,106 @@ struct GameSnapshot: Codable, Equatable {
         return snapshot
     }
 
-    /// New local day swaps in a fallback bundle. Penalty rollover is Phase 2.
+    /// New local day swaps in a fallback bundle. Penalty rollover is still later.
     mutating func refreshIfNeeded(catalog: FallbackCatalog, now: Date = .now) {
         let key = QuestDay.key(for: now)
         guard bundle.dayKey != key else { return }
         rebuildBundle(catalog: catalog, now: now)
+        runningTimers.removeAll()
     }
 
-    mutating func toggleQuest(id: String) {
-        guard let index = bundle.quests.firstIndex(where: { $0.id == id }) else { return }
-        if bundle.quests[index].status == .completed {
-            undoCompletion(at: index)
-        } else {
+    func verificationContext(
+        for quest: Quest,
+        now: Date,
+        timerElapsed: TimeInterval?,
+        userConfirmed: Bool
+    ) -> VerificationContext {
+        let claimed = Set(
+            evidenceLog
+                .filter { $0.dayKey == bundle.dayKey && $0.questId != quest.id }
+                .map(\.evidence.reuseKey)
+        )
+        return VerificationContext(
+            now: now,
+            dayKey: bundle.dayKey,
+            assignedAt: quest.assignedAt,
+            manualConfirmsToday: manualConfirmCount(on: bundle.dayKey, excluding: quest.id),
+            claimedKeys: claimed,
+            timerElapsedSec: timerElapsed,
+            userConfirmed: userConfirmed
+        )
+    }
+
+    func manualConfirmCount(on dayKey: String, excluding questId: String) -> Int {
+        Set(
+            evidenceLog
+                .filter {
+                    $0.dayKey == dayKey
+                        && $0.questId != questId
+                        && $0.evidence.source == ManualConfirmVerifier.source
+                }
+                .map(\.questId)
+        ).count
+    }
+
+    /// Applies a verifier result. XP is granted only from `.completed`, and only once.
+    @discardableResult
+    mutating func apply(_ result: VerificationResult, questId: String, now: Date) -> VerificationApply {
+        guard let index = bundle.quests.firstIndex(where: { $0.id == questId }) else { return .ignored }
+        guard bundle.quests[index].status != .completed else { return .ignored }
+        switch result {
+        case .unchanged, .incomplete:
+            return .ignored
+        case .failed(let reason):
+            return .rejected(reason)
+        case .progress(let current, _):
+            var quest = bundle.quests[index]
+            let next = min(max(current, quest.progress.current), quest.progress.target)
+            guard next != quest.progress.current else { return .ignored }
+            quest.progress.current = next
+            bundle.quests[index] = quest
+            return .updated
+        case .completed(let evidence):
+            if let reason = rejection(for: evidence, questId: questId) {
+                return .rejected(reason)
+            }
+            var quest = bundle.quests[index]
+            if !quest.evidence.contains(where: { $0.payloadHash == evidence.payloadHash }) {
+                quest.evidence.append(evidence)
+            }
+            bundle.quests[index] = quest
+            if !evidenceLog.contains(where: { $0.dayKey == bundle.dayKey && $0.questId == questId && $0.evidence.reuseKey == evidence.reuseKey }) {
+                evidenceLog.append(EvidenceUse(dayKey: bundle.dayKey, questId: questId, evidence: evidence))
+            }
             complete(at: index)
+            return .completed
         }
+    }
+
+    /// Local checkbox for adapters that are still stubs. Does not pretend to be Strava, WHOOP, or the other live sources.
+    @discardableResult
+    mutating func applyLocalOverride(questId: String, now: Date) -> VerificationApply {
+        guard let quest = bundle.quests.first(where: { $0.id == questId }) else { return .ignored }
+        guard quest.verification.method.allowsLocalCheckbox else { return .ignored }
+        let evidence = Evidence.make(
+            source: "manual_override",
+            externalId: "override:\(quest.id):\(bundle.dayKey)",
+            payload: "override|\(quest.id)|\(bundle.dayKey)|\(now.timeIntervalSince1970)",
+            timestamp: now
+        )
+        return apply(.completed(evidence: evidence), questId: questId, now: now)
+    }
+
+    mutating func undoQuest(id: String) {
+        guard let index = bundle.quests.firstIndex(where: { $0.id == id }) else { return }
+        guard bundle.quests[index].status == .completed else { return }
+        undoCompletion(at: index)
+        // Manual confirms stay in the log so undo cannot refund the 3-per-day cap.
+        evidenceLog.removeAll { $0.questId == id && $0.evidence.source != ManualConfirmVerifier.source }
+        runningTimers.removeAll { $0.questId == id }
+        var quest = bundle.quests[index]
+        quest.evidence = []
+        bundle.quests[index] = quest
     }
 
     static func xpGrant(for quest: Quest, mode: QuestMode) -> Int {
@@ -79,6 +172,19 @@ struct GameSnapshot: Codable, Equatable {
             throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Unsupported snapshot version"))
         }
         return snapshot
+    }
+
+    private func rejection(for evidence: Evidence, questId: String) -> String? {
+        if evidence.source == "llm" || evidence.externalId.isEmpty {
+            return "Completion has to come from a verifier."
+        }
+        let reused = evidenceLog.contains {
+            $0.dayKey == bundle.dayKey && $0.questId != questId && $0.evidence.reuseKey == evidence.reuseKey
+        }
+        if reused {
+            return "That evidence was already used for another quest today."
+        }
+        return nil
     }
 
     private mutating func rebuildBundle(catalog: FallbackCatalog, now: Date) {
@@ -136,6 +242,32 @@ struct GameSnapshot: Codable, Equatable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
+    }
+}
+
+extension GameSnapshot {
+    private enum CodingKeys: String, CodingKey {
+        case version, player, signals, bundle, evidenceLog, runningTimers
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        player = try container.decode(PlayerState.self, forKey: .player)
+        signals = try container.decode(MorningSignals.self, forKey: .signals)
+        bundle = try container.decode(QuestBundle.self, forKey: .bundle)
+        evidenceLog = try container.decodeIfPresent([EvidenceUse].self, forKey: .evidenceLog) ?? []
+        runningTimers = try container.decodeIfPresent([TimerRun].self, forKey: .runningTimers) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(version, forKey: .version)
+        try container.encode(player, forKey: .player)
+        try container.encode(signals, forKey: .signals)
+        try container.encode(bundle, forKey: .bundle)
+        try container.encode(evidenceLog, forKey: .evidenceLog)
+        try container.encode(runningTimers, forKey: .runningTimers)
     }
 }
 

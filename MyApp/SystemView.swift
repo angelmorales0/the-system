@@ -28,12 +28,12 @@ struct SystemView: View {
                         VStack(spacing: 19) {
                             ForEach(store.goalQuests) { quest in
                                 Button {
-                                    store.toggleQuest(id: quest.id)
+                                    store.handleQuestTap(id: quest.id)
                                 } label: {
                                     HStack {
                                         Text(quest.title).foregroundStyle(.white)
                                         Spacer()
-                                        Text(quest.progress.bracketLabel).font(.subheadline.monospacedDigit()).foregroundStyle(SystemTheme.muted)
+                                        Text(store.rowLabel(for: quest)).font(.subheadline.monospacedDigit()).foregroundStyle(SystemTheme.muted)
                                         Image(systemName: quest.status == .completed ? "checkmark.square.fill" : "square")
                                             .font(.body)
                                             .foregroundStyle(SystemTheme.cyan)
@@ -44,8 +44,17 @@ struct SystemView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel(quest.title)
-                                .accessibilityValue(quest.status == .completed ? "Completed" : "Not completed")
+                                .accessibilityHint(questRowHint(quest))
+                                .accessibilityValue(store.accessibilityValue(for: quest))
                             }
+                        }
+
+                        if let note = store.verificationNote, !note.isEmpty {
+                            Text(note)
+                                .font(.caption)
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(SystemTheme.muted)
+                                .padding(.top, 14)
                         }
 
                         Spacer()
@@ -70,6 +79,17 @@ struct SystemView: View {
                 }
             }
         }
+    }
+}
+
+private func questRowHint(_ quest: Quest) -> String {
+    switch quest.verification.method {
+    case .timerSession:
+        return "Starts the in-app timer"
+    case .manualConfirm:
+        return "Confirms this quest"
+    default:
+        return "Checks this quest on this device"
     }
 }
 

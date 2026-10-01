@@ -88,7 +88,9 @@ struct FallbackCatalog {
                 status: .pending,
                 grantedXP: 0,
                 grantedStatPoints: 0,
-                grantedRecoveryToken: false
+                grantedRecoveryToken: false,
+                evidence: [],
+                assignedAt: now
             )
         }
         return QuestBundle(
@@ -100,7 +102,7 @@ struct FallbackCatalog {
             quests: quests,
             warnings: entry.warnings,
             generatedBy: "fallback"
-        )
+        ).strippingModelCompletion(assignedAt: now)
     }
 
     private func resolve(mode: QuestMode, band: ReadinessBand) -> CatalogEntry {

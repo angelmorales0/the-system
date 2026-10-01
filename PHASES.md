@@ -1,6 +1,6 @@
 # The System — Implementation Phases
 
-Phase 1 is in the tree. Phases 2–7 follow `docs/MASTER_PLAN.md` §10 and `docs/AI_DAILY_QUEST_ENGINE.md`. The System, Goals, History, and Status chrome stays as it is.
+Phases 1 and 2 are in the tree. Later phases follow `docs/MASTER_PLAN.md` §10 and `docs/AI_DAILY_QUEST_ENGINE.md`. The System, Goals, History, and Status chrome stays as it is.
 
 ## Phase 1 — Models, fallback quests, live binding (done)
 
@@ -9,16 +9,21 @@ Phase 1 is in the tree. Phases 2–7 follow `docs/MASTER_PLAN.md` §10 and `docs
 - Deterministic mode picker. Readiness is a placeholder, not WHOOP.
 - System GOAL rows and `[Daily Quest: … has arrived.]` bind to today’s fallback bundle.
 - Status binds display name (default Angel), the seven-stat radar, XP / level, and `FULL RECOVERY xN`.
-- A checkbox toggles completion and grants stub XP. Real verifiers are not wired.
+- A checkbox toggled completion and granted stub XP. Verifiers were not wired yet.
 - Not in this phase: Mercury, WHOOP, Strava, HealthKit, Screen Time, Live Activities, live LLM calls, Target UI, midnight penalty rollover.
 
-## Phase 2 — Verifiers, history log, midnight rollover
+## Phase 2 — Verifiers (done)
 
-Master plan MVP steps 3, 6, and 7.
+Master plan MVP step 3.
 
-- Real `timer_session` and `manual_confirm` verifiers (rate limits, evidence). The checkbox stops completing every method.
-- History appends day-clear and quest-log cards. Keep the existing Goals / STATS charts.
-- Local midnight in `America/Los_Angeles`: missed required quests raise `penaltyTier`, and the next bundle comes from the penalty catalog.
+- `Evidence` carries `source`, `externalId`, `payloadHash`, and `timestamp`. A `Verifier` returns unchanged, progress, completed, failed, or incomplete.
+- `manual_confirm` is a tap. It waits 30 seconds after the quest is assigned and allows 3 confirms per local day. Face ID stays later.
+- `timer_session` is an in-app timer. The quest completes when wall-clock time reaches `minSec`.
+- Stubs return incomplete for `whoop_strain`, `whoop_recovery`, `strava_activity`, `healthkit_workout`, `healthkit_nutrition`, `macrofactor_protein`, `mercury_spend_under`, and `screen_time_limit`. Each stub is marked with the phase that connects the live API.
+- System rows go through a verifier. Timer rows start the timer. Manual rows confirm through the verifier. Stubbed rows still take a local checkbox, stored as on-device evidence rather than a forged API event.
+- One `externalId` cannot clear a second quest on the same day. New bundles run through `strippingModelCompletion()`, so a model cannot mark a quest complete.
+
+History day-clear cards and local midnight penalty rollover (master plan steps 6 and 7) are still open. They are not part of this slice.
 
 ## Phase 3 — HealthKit and nutrition
 
