@@ -1,0 +1,1553 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "mode": "performance_training",
+      "readinessBands": [
+        "green"
+      ],
+      "headerLine": "Performance Training",
+      "narrative": "Train. The daily quest is waiting.",
+      "warnings": [
+        "Failure to complete\nthe daily quest will result\nin a penalty."
+      ],
+      "quests": [
+        {
+          "id": "run_intervals",
+          "title": "Run Intervals",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "strava_activity",
+            "params": {
+              "types": [
+                "Run"
+              ],
+              "minMovingTimeSec": 1200
+            }
+          },
+          "xp": 40,
+          "difficulty": "normal",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 6,
+            "unit": "reps"
+          },
+          "reward": null
+        },
+        {
+          "id": "bench_press",
+          "title": "Bench Press",
+          "kind": "daily",
+          "stat": "STR",
+          "verification": {
+            "method": "healthkit_workout",
+            "params": {
+              "activityType": "traditionalStrengthTraining",
+              "sets": 4
+            }
+          },
+          "xp": 40,
+          "difficulty": "normal",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 4,
+            "unit": "sets"
+          },
+          "reward": null
+        },
+        {
+          "id": "mobility",
+          "title": "Mobility",
+          "kind": "daily",
+          "stat": "AGI",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 600,
+              "label": "Mobility"
+            }
+          },
+          "xp": 20,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 10,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "protein",
+          "title": "Protein",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "macrofactor_protein",
+            "params": {
+              "minProteinG": 150
+            }
+          },
+          "xp": 25,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 150,
+            "unit": "g"
+          },
+          "reward": null
+        }
+      ]
+    },
+    {
+      "mode": "performance_training",
+      "readinessBands": [
+        "yellow"
+      ],
+      "headerLine": "Performance Training",
+      "narrative": "Moderate day. Keep the work inside the yellow band.",
+      "warnings": [
+        "Failure to complete\nthe daily quest will result\nin a penalty."
+      ],
+      "quests": [
+        {
+          "id": "zone2",
+          "title": "Zone 2 Walk/Run",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "strava_activity",
+            "params": {
+              "types": [
+                "Run",
+                "Walk"
+              ],
+              "minMovingTimeSec": 1200
+            }
+          },
+          "xp": 30,
+          "difficulty": "normal",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 20,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "push_session",
+          "title": "Push Session",
+          "kind": "daily",
+          "stat": "STR",
+          "verification": {
+            "method": "healthkit_workout",
+            "params": {
+              "activityType": "traditionalStrengthTraining",
+              "minDurationSec": 1800
+            }
+          },
+          "xp": 30,
+          "difficulty": "normal",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 30,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "mobility",
+          "title": "Mobility",
+          "kind": "daily",
+          "stat": "AGI",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 600,
+              "label": "Mobility"
+            }
+          },
+          "xp": 20,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 10,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "protein",
+          "title": "Protein",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "macrofactor_protein",
+            "params": {
+              "minProteinG": 150
+            }
+          },
+          "xp": 25,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 150,
+            "unit": "g"
+          },
+          "reward": null
+        }
+      ]
+    },
+    {
+      "mode": "performance_training",
+      "readinessBands": [
+        "red"
+      ],
+      "headerLine": "Performance Training",
+      "narrative": "Red readiness. This stub stays light; the picker should already have chosen recovery.",
+      "warnings": [
+        "Failure to complete\nthe daily quest will result\nin a penalty."
+      ],
+      "quests": [
+        {
+          "id": "easy_walk",
+          "title": "Easy Walk",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "strava_activity",
+            "params": {
+              "types": [
+                "Walk"
+              ],
+              "minMovingTimeSec": 900
+            }
+          },
+          "xp": 15,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 15,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "mobility",
+          "title": "Mobility",
+          "kind": "daily",
+          "stat": "AGI",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 600,
+              "label": "Mobility"
+            }
+          },
+          "xp": 20,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 10,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "protein",
+          "title": "Protein",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "macrofactor_protein",
+            "params": {
+              "minProteinG": 150
+            }
+          },
+          "xp": 25,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 150,
+            "unit": "g"
+          },
+          "reward": null
+        }
+      ]
+    },
+    {
+      "mode": "recovery",
+      "readinessBands": [
+        "green"
+      ],
+      "headerLine": "Recovery",
+      "narrative": "Low load. Bank nothing unless the optional walk is finished.",
+      "warnings": [
+        "Failure to complete\nthe daily quest will result\nin a penalty."
+      ],
+      "quests": [
+        {
+          "id": "zone2",
+          "title": "Zone 2 Walk",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "strava_activity",
+            "params": {
+              "types": [
+                "Walk",
+                "Run"
+              ],
+              "minMovingTimeSec": 1200
+            }
+          },
+          "xp": 20,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 20,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "mobility",
+          "title": "Mobility",
+          "kind": "daily",
+          "stat": "AGI",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 600,
+              "label": "Mobility"
+            }
+          },
+          "xp": 20,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 10,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "protein",
+          "title": "Protein",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "macrofactor_protein",
+            "params": {
+              "minProteinG": 150
+            }
+          },
+          "xp": 25,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 150,
+            "unit": "g"
+          },
+          "reward": null
+        },
+        {
+          "id": "evening_walk",
+          "title": "Evening Walk",
+          "kind": "optional",
+          "stat": "REC",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 900,
+              "label": "Evening Walk"
+            }
+          },
+          "xp": 15,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 15,
+            "unit": "min"
+          },
+          "reward": {
+            "type": "full_recovery_token",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "mode": "recovery",
+      "readinessBands": [
+        "yellow"
+      ],
+      "headerLine": "Recovery",
+      "narrative": "Yellow recovery. Walk, mobility, and protein.",
+      "warnings": [
+        "Failure to complete\nthe daily quest will result\nin a penalty."
+      ],
+      "quests": [
+        {
+          "id": "easy_walk",
+          "title": "Easy Walk",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "strava_activity",
+            "params": {
+              "types": [
+                "Walk"
+              ],
+              "minMovingTimeSec": 900
+            }
+          },
+          "xp": 15,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 15,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "mobility",
+          "title": "Mobility",
+          "kind": "daily",
+          "stat": "AGI",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 600,
+              "label": "Mobility"
+            }
+          },
+          "xp": 20,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 10,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "protein",
+          "title": "Protein",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "macrofactor_protein",
+            "params": {
+              "minProteinG": 150
+            }
+          },
+          "xp": 25,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 150,
+            "unit": "g"
+          },
+          "reward": null
+        },
+        {
+          "id": "evening_walk",
+          "title": "Evening Walk",
+          "kind": "optional",
+          "stat": "REC",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 900,
+              "label": "Evening Walk"
+            }
+          },
+          "xp": 15,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 15,
+            "unit": "min"
+          },
+          "reward": {
+            "type": "full_recovery_token",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "mode": "recovery",
+      "readinessBands": [
+        "red"
+      ],
+      "headerLine": "Recovery",
+      "narrative": "Red day. Sleep and a short mobility block. No hard lifting.",
+      "warnings": [
+        "Failure to complete\nthe daily quest will result\nin a penalty."
+      ],
+      "quests": [
+        {
+          "id": "sleep_hygiene",
+          "title": "Sleep Hygiene",
+          "kind": "daily",
+          "stat": "REC",
+          "verification": {
+            "method": "whoop_recovery",
+            "params": {
+              "minRecoveryScore": 40
+            }
+          },
+          "xp": 20,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 1,
+            "unit": "session"
+          },
+          "reward": null
+        },
+        {
+          "id": "mobility",
+          "title": "Mobility",
+          "kind": "daily",
+          "stat": "AGI",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 600,
+              "label": "Mobility"
+            }
+          },
+          "xp": 20,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 10,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "protein",
+          "title": "Protein",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "macrofactor_protein",
+            "params": {
+              "minProteinG": 150
+            }
+          },
+          "xp": 25,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 150,
+            "unit": "g"
+          },
+          "reward": null
+        },
+        {
+          "id": "evening_walk",
+          "title": "Evening Walk",
+          "kind": "optional",
+          "stat": "REC",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 900,
+              "label": "Evening Walk"
+            }
+          },
+          "xp": 15,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 15,
+            "unit": "min"
+          },
+          "reward": {
+            "type": "full_recovery_token",
+            "amount": 1
+          }
+        }
+      ]
+    },
+    {
+      "mode": "hybrid",
+      "readinessBands": [
+        "green"
+      ],
+      "headerLine": "Hybrid Training",
+      "narrative": "Target window open. Training stays on the card with the injection.",
+      "warnings": [
+        "Failure to complete\nthe daily quest will result\nin a penalty."
+      ],
+      "quests": [
+        {
+          "id": "leetcode",
+          "title": "LeetCode Mediums",
+          "kind": "target_injection",
+          "stat": "INT",
+          "verification": {
+            "method": "manual_confirm",
+            "params": {
+              "prompt": "Confirm 3 LeetCode mediums solved"
+            }
+          },
+          "xp": 40,
+          "difficulty": "normal",
+          "targetId": "tgt_stub_interview",
+          "progress": {
+            "current": 0,
+            "target": 3,
+            "unit": "problems"
+          },
+          "reward": null
+        },
+        {
+          "id": "run_intervals",
+          "title": "Run Intervals",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "strava_activity",
+            "params": {
+              "types": [
+                "Run"
+              ],
+              "minMovingTimeSec": 1200
+            }
+          },
+          "xp": 35,
+          "difficulty": "normal",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 6,
+            "unit": "reps"
+          },
+          "reward": null
+        },
+        {
+          "id": "bench_press",
+          "title": "Bench Press",
+          "kind": "daily",
+          "stat": "STR",
+          "verification": {
+            "method": "healthkit_workout",
+            "params": {
+              "activityType": "traditionalStrengthTraining",
+              "sets": 4
+            }
+          },
+          "xp": 35,
+          "difficulty": "normal",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 4,
+            "unit": "sets"
+          },
+          "reward": null
+        },
+        {
+          "id": "protein",
+          "title": "Protein",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "macrofactor_protein",
+            "params": {
+              "minProteinG": 150
+            }
+          },
+          "xp": 25,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 150,
+            "unit": "g"
+          },
+          "reward": null
+        }
+      ]
+    },
+    {
+      "mode": "hybrid",
+      "readinessBands": [
+        "yellow"
+      ],
+      "headerLine": "Hybrid Training",
+      "narrative": "Target window open. Keep strain moderate; clear the LeetCode quota.",
+      "warnings": [
+        "Failure to complete\nthe daily quest will result\nin a penalty."
+      ],
+      "quests": [
+        {
+          "id": "leetcode",
+          "title": "LeetCode Mediums",
+          "kind": "target_injection",
+          "stat": "INT",
+          "verification": {
+            "method": "manual_confirm",
+            "params": {
+              "prompt": "Confirm 3 LeetCode mediums solved"
+            }
+          },
+          "xp": 40,
+          "difficulty": "normal",
+          "targetId": "tgt_stub_interview",
+          "progress": {
+            "current": 0,
+            "target": 3,
+            "unit": "problems"
+          },
+          "reward": null
+        },
+        {
+          "id": "easy_run",
+          "title": "Easy Run",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "strava_activity",
+            "params": {
+              "types": [
+                "Run"
+              ],
+              "minMovingTimeSec": 1200
+            }
+          },
+          "xp": 35,
+          "difficulty": "normal",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 20,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "protein",
+          "title": "Protein",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "macrofactor_protein",
+            "params": {
+              "minProteinG": 150
+            }
+          },
+          "xp": 25,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 150,
+            "unit": "g"
+          },
+          "reward": null
+        }
+      ]
+    },
+    {
+      "mode": "hybrid",
+      "readinessBands": [
+        "red"
+      ],
+      "headerLine": "Hybrid Training",
+      "narrative": "Readiness is red. Physical work stays soft; the target row remains.",
+      "warnings": [
+        "Failure to complete\nthe daily quest will result\nin a penalty."
+      ],
+      "quests": [
+        {
+          "id": "leetcode",
+          "title": "LeetCode Mediums",
+          "kind": "target_injection",
+          "stat": "INT",
+          "verification": {
+            "method": "manual_confirm",
+            "params": {
+              "prompt": "Confirm 3 LeetCode mediums solved"
+            }
+          },
+          "xp": 40,
+          "difficulty": "normal",
+          "targetId": "tgt_stub_interview",
+          "progress": {
+            "current": 0,
+            "target": 3,
+            "unit": "problems"
+          },
+          "reward": null
+        },
+        {
+          "id": "mobility",
+          "title": "Mobility",
+          "kind": "daily",
+          "stat": "AGI",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 600,
+              "label": "Mobility"
+            }
+          },
+          "xp": 20,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 10,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "protein",
+          "title": "Protein",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "macrofactor_protein",
+            "params": {
+              "minProteinG": 150
+            }
+          },
+          "xp": 25,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 150,
+            "unit": "g"
+          },
+          "reward": null
+        }
+      ]
+    },
+    {
+      "mode": "full_recovery",
+      "readinessBands": [
+        "green",
+        "yellow",
+        "red"
+      ],
+      "headerLine": "Full Recovery Day",
+      "narrative": "A banked rest day. Hard training is waived.",
+      "warnings": [
+        "Training is waived today.\nA soft recovery quest remains."
+      ],
+      "quests": [
+        {
+          "id": "sleep_hygiene",
+          "title": "Sleep Hygiene",
+          "kind": "daily",
+          "stat": "REC",
+          "verification": {
+            "method": "manual_confirm",
+            "params": {
+              "prompt": "Confirm a full recovery day"
+            }
+          },
+          "xp": 15,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 1,
+            "unit": "session"
+          },
+          "reward": null
+        }
+      ]
+    },
+    {
+      "mode": "penalty",
+      "readinessBands": [
+        "green"
+      ],
+      "headerLine": "Penalty Quest",
+      "narrative": "Yesterday was missed. Clear every penalty row.",
+      "warnings": [
+        "Failure to complete\nthe penalty quest will extend\nthe penalty."
+      ],
+      "quests": [
+        {
+          "id": "penalty_run",
+          "title": "Penalty Run",
+          "kind": "penalty",
+          "stat": "END",
+          "verification": {
+            "method": "strava_activity",
+            "params": {
+              "types": [
+                "Run"
+              ],
+              "minMovingTimeSec": 1800
+            }
+          },
+          "xp": 30,
+          "difficulty": "penalty",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 30,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "penalty_lift",
+          "title": "Penalty Lift",
+          "kind": "penalty",
+          "stat": "STR",
+          "verification": {
+            "method": "healthkit_workout",
+            "params": {
+              "activityType": "traditionalStrengthTraining",
+              "minDurationSec": 1800
+            }
+          },
+          "xp": 30,
+          "difficulty": "penalty",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 30,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "mobility",
+          "title": "Mobility",
+          "kind": "penalty",
+          "stat": "AGI",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 900,
+              "label": "Mobility"
+            }
+          },
+          "xp": 15,
+          "difficulty": "penalty",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 15,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "protein",
+          "title": "Protein",
+          "kind": "penalty",
+          "stat": "END",
+          "verification": {
+            "method": "macrofactor_protein",
+            "params": {
+              "minProteinG": 160
+            }
+          },
+          "xp": 20,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 160,
+            "unit": "g"
+          },
+          "reward": null
+        }
+      ]
+    },
+    {
+      "mode": "penalty",
+      "readinessBands": [
+        "yellow"
+      ],
+      "headerLine": "Penalty Quest",
+      "narrative": "Penalty day, moderate readiness. Still required.",
+      "warnings": [
+        "Failure to complete\nthe penalty quest will extend\nthe penalty."
+      ],
+      "quests": [
+        {
+          "id": "penalty_run",
+          "title": "Penalty Run",
+          "kind": "penalty",
+          "stat": "END",
+          "verification": {
+            "method": "whoop_strain",
+            "params": {
+              "minStrain": 10
+            }
+          },
+          "xp": 30,
+          "difficulty": "penalty",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 25,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "penalty_lift",
+          "title": "Penalty Lift",
+          "kind": "penalty",
+          "stat": "STR",
+          "verification": {
+            "method": "healthkit_workout",
+            "params": {
+              "activityType": "traditionalStrengthTraining",
+              "minDurationSec": 1500
+            }
+          },
+          "xp": 30,
+          "difficulty": "penalty",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 25,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "mobility",
+          "title": "Mobility",
+          "kind": "penalty",
+          "stat": "AGI",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 900,
+              "label": "Mobility"
+            }
+          },
+          "xp": 15,
+          "difficulty": "penalty",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 15,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "protein",
+          "title": "Protein",
+          "kind": "penalty",
+          "stat": "END",
+          "verification": {
+            "method": "macrofactor_protein",
+            "params": {
+              "minProteinG": 160
+            }
+          },
+          "xp": 20,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 160,
+            "unit": "g"
+          },
+          "reward": null
+        }
+      ]
+    },
+    {
+      "mode": "penalty",
+      "readinessBands": [
+        "red"
+      ],
+      "headerLine": "Penalty Quest",
+      "narrative": "Penalty day on red readiness. Hard lifting stays off the card.",
+      "warnings": [
+        "Failure to complete\nthe penalty quest will extend\nthe penalty."
+      ],
+      "quests": [
+        {
+          "id": "penalty_walk",
+          "title": "Penalty Walk",
+          "kind": "penalty",
+          "stat": "END",
+          "verification": {
+            "method": "strava_activity",
+            "params": {
+              "types": [
+                "Walk"
+              ],
+              "minMovingTimeSec": 1500
+            }
+          },
+          "xp": 25,
+          "difficulty": "penalty",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 25,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "mobility",
+          "title": "Mobility",
+          "kind": "penalty",
+          "stat": "AGI",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 900,
+              "label": "Mobility"
+            }
+          },
+          "xp": 15,
+          "difficulty": "penalty",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 15,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "protein",
+          "title": "Protein",
+          "kind": "penalty",
+          "stat": "END",
+          "verification": {
+            "method": "macrofactor_protein",
+            "params": {
+              "minProteinG": 160
+            }
+          },
+          "xp": 20,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 160,
+            "unit": "g"
+          },
+          "reward": null
+        },
+        {
+          "id": "focus_block",
+          "title": "Focus Block",
+          "kind": "penalty",
+          "stat": "FOC",
+          "verification": {
+            "method": "manual_confirm",
+            "params": {
+              "prompt": "Confirm the penalty focus block"
+            }
+          },
+          "xp": 20,
+          "difficulty": "penalty",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 20,
+            "unit": "min"
+          },
+          "reward": null
+        }
+      ]
+    },
+    {
+      "mode": "interview_prep",
+      "readinessBands": [
+        "green",
+        "yellow",
+        "red"
+      ],
+      "headerLine": "Interview Prep",
+      "narrative": "Deep work on the hiring loop.",
+      "warnings": [
+        "Failure to complete\nthe daily quest will result\nin a penalty."
+      ],
+      "quests": [
+        {
+          "id": "leetcode",
+          "title": "LeetCode Mediums",
+          "kind": "target_injection",
+          "stat": "INT",
+          "verification": {
+            "method": "manual_confirm",
+            "params": {
+              "prompt": "Confirm 3 LeetCode mediums solved"
+            }
+          },
+          "xp": 40,
+          "difficulty": "normal",
+          "targetId": "tgt_stub_interview",
+          "progress": {
+            "current": 0,
+            "target": 3,
+            "unit": "problems"
+          },
+          "reward": null
+        },
+        {
+          "id": "system_design",
+          "title": "System Design Notes",
+          "kind": "daily",
+          "stat": "FOC",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 1200,
+              "label": "System Design"
+            }
+          },
+          "xp": 30,
+          "difficulty": "normal",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 20,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "protein",
+          "title": "Protein",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "macrofactor_protein",
+            "params": {
+              "minProteinG": 150
+            }
+          },
+          "xp": 25,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 150,
+            "unit": "g"
+          },
+          "reward": null
+        }
+      ]
+    },
+    {
+      "mode": "study_block",
+      "readinessBands": [
+        "green",
+        "yellow",
+        "red"
+      ],
+      "headerLine": "Study Block",
+      "narrative": "A learning block. Keep it finite.",
+      "warnings": [
+        "Failure to complete\nthe daily quest will result\nin a penalty."
+      ],
+      "quests": [
+        {
+          "id": "study",
+          "title": "Study Block",
+          "kind": "daily",
+          "stat": "INT",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 2700,
+              "label": "Study"
+            }
+          },
+          "xp": 35,
+          "difficulty": "normal",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 45,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "review",
+          "title": "Review Notes",
+          "kind": "daily",
+          "stat": "FOC",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 900,
+              "label": "Review"
+            }
+          },
+          "xp": 20,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 15,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "protein",
+          "title": "Protein",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "macrofactor_protein",
+            "params": {
+              "minProteinG": 150
+            }
+          },
+          "xp": 25,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 150,
+            "unit": "g"
+          },
+          "reward": null
+        }
+      ]
+    },
+    {
+      "mode": "nutrition_focus",
+      "readinessBands": [
+        "green",
+        "yellow",
+        "red"
+      ],
+      "headerLine": "Nutrition Focus",
+      "narrative": "Hit protein and log the day. Training stays light.",
+      "warnings": [
+        "Failure to complete\nthe daily quest will result\nin a penalty."
+      ],
+      "quests": [
+        {
+          "id": "protein",
+          "title": "Protein",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "macrofactor_protein",
+            "params": {
+              "minProteinG": 150
+            }
+          },
+          "xp": 30,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 150,
+            "unit": "g"
+          },
+          "reward": null
+        },
+        {
+          "id": "calories",
+          "title": "Calories",
+          "kind": "daily",
+          "stat": "REC",
+          "verification": {
+            "method": "healthkit_nutrition",
+            "params": {
+              "nutrient": "dietaryEnergy",
+              "minKcal": 1800
+            }
+          },
+          "xp": 20,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 1800,
+            "unit": "kcal"
+          },
+          "reward": null
+        },
+        {
+          "id": "easy_walk",
+          "title": "Easy Walk",
+          "kind": "daily",
+          "stat": "END",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 1200,
+              "label": "Easy Walk"
+            }
+          },
+          "xp": 15,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 20,
+            "unit": "min"
+          },
+          "reward": null
+        }
+      ]
+    },
+    {
+      "mode": "finance_discipline",
+      "readinessBands": [
+        "green",
+        "yellow",
+        "red"
+      ],
+      "headerLine": "Finance Discipline",
+      "narrative": "Stay under the soft daily cap.",
+      "warnings": [
+        "Failure to complete\nthe daily quest will result\nin a penalty."
+      ],
+      "quests": [
+        {
+          "id": "spend_cap",
+          "title": "Spend Under Cap",
+          "kind": "daily",
+          "stat": "FIN",
+          "verification": {
+            "method": "mercury_spend_under",
+            "params": {
+              "maxDiscretionaryUsd": 40
+            }
+          },
+          "xp": 30,
+          "difficulty": "normal",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 40,
+            "unit": "usd"
+          },
+          "reward": null
+        },
+        {
+          "id": "review_spend",
+          "title": "Review Spend",
+          "kind": "daily",
+          "stat": "FIN",
+          "verification": {
+            "method": "manual_confirm",
+            "params": {
+              "prompt": "Confirm today's discretionary spend was reviewed"
+            }
+          },
+          "xp": 15,
+          "difficulty": "easy",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 1,
+            "unit": "session"
+          },
+          "reward": null
+        }
+      ]
+    },
+    {
+      "mode": "focus_deepwork",
+      "readinessBands": [
+        "green",
+        "yellow",
+        "red"
+      ],
+      "headerLine": "Deep Work",
+      "narrative": "A busy calendar. Protect one deep block.",
+      "warnings": [
+        "Failure to complete\nthe daily quest will result\nin a penalty."
+      ],
+      "quests": [
+        {
+          "id": "deep_work",
+          "title": "Deep Work",
+          "kind": "daily",
+          "stat": "FOC",
+          "verification": {
+            "method": "timer_session",
+            "params": {
+              "minSec": 5400,
+              "label": "Deep Work"
+            }
+          },
+          "xp": 40,
+          "difficulty": "normal",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 90,
+            "unit": "min"
+          },
+          "reward": null
+        },
+        {
+          "id": "distraction_cap",
+          "title": "Distraction Cap",
+          "kind": "daily",
+          "stat": "FOC",
+          "verification": {
+            "method": "screen_time_limit",
+            "params": {
+              "maxDistractingMin": 60,
+              "orMinDeepWorkMin": 90
+            }
+          },
+          "xp": 25,
+          "difficulty": "normal",
+          "targetId": null,
+          "progress": {
+            "current": 0,
+            "target": 60,
+            "unit": "min"
+          },
+          "reward": null
+        }
+      ]
+    }
+  ]
+}

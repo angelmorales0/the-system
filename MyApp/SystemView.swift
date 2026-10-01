@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct SystemView: View {
-    private let quests = [("Run Intervals", "[0/6]"), ("Bench Press", "[0/4]"), ("Mobility", "[0/10min]"), ("Protein", "[0/150g]")]
+    @EnvironmentObject private var store: GameStore
+
     var body: some View {
         ScreenContainer {
             GeometryReader { proxy in
@@ -9,7 +10,7 @@ struct SystemView: View {
                     Spacer(minLength: 32)
                     SystemPanel {
                         VStack(spacing: 0) {
-                        Text("[Daily Quest: Performance Training\nhas arrived.]")
+                        Text("[Daily Quest: \(store.bundle.headerLine)\nhas arrived.]")
                             .font(.subheadline.weight(.medium))
                             .multilineTextAlignment(.center)
                             .foregroundStyle(.white.opacity(0.94))
@@ -25,14 +26,25 @@ struct SystemView: View {
                             .padding(.bottom, 30)
 
                         VStack(spacing: 19) {
-                            ForEach(quests, id: \.0) { quest in
-                                HStack {
-                                    Text(quest.0).foregroundStyle(.white)
-                                    Spacer()
-                                    Text(quest.1).font(.subheadline.monospacedDigit()).foregroundStyle(SystemTheme.muted)
-                                    Image(systemName: "square").font(.body).foregroundStyle(SystemTheme.cyan)
+                            ForEach(store.goalQuests) { quest in
+                                Button {
+                                    store.toggleQuest(id: quest.id)
+                                } label: {
+                                    HStack {
+                                        Text(quest.title).foregroundStyle(.white)
+                                        Spacer()
+                                        Text(quest.progress.bracketLabel).font(.subheadline.monospacedDigit()).foregroundStyle(SystemTheme.muted)
+                                        Image(systemName: quest.status == .completed ? "checkmark.square.fill" : "square")
+                                            .font(.body)
+                                            .foregroundStyle(SystemTheme.cyan)
+                                    }
+                                    .font(.subheadline)
+                                    .frame(maxWidth: .infinity)
+                                    .contentShape(Rectangle())
                                 }
-                                .font(.subheadline)
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(quest.title)
+                                .accessibilityValue(quest.status == .completed ? "Completed" : "Not completed")
                             }
                         }
 
@@ -44,7 +56,7 @@ struct SystemView: View {
                             .font(.caption.weight(.bold))
                             .tracking(1.8)
                             .foregroundStyle(SystemTheme.cyan)
-                        Text("Failure to complete\nthe daily quest will result\nin a penalty.")
+                        Text(store.bundle.warningCopy)
                             .font(.footnote)
                             .multilineTextAlignment(.center)
                             .foregroundStyle(SystemTheme.muted)
@@ -61,4 +73,7 @@ struct SystemView: View {
     }
 }
 
-#Preview { SystemView() }
+#Preview {
+    SystemView()
+        .environmentObject(GameStore(persistence: .memory))
+}

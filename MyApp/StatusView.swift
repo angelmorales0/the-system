@@ -1,14 +1,11 @@
 import SwiftUI
 
 struct StatusView: View {
-    private let stats = [
-        RadarStat(label: "STR", value: 142),
-        RadarStat(label: "END", value: 155),
-        RadarStat(label: "INT", value: 128),
-        RadarStat(label: "AGI", value: 134),
-        RadarStat(label: "FOC", value: 121),
-        RadarStat(label: "REC", value: 118)
-    ]
+    @EnvironmentObject private var store: GameStore
+
+    private var stats: [RadarStat] {
+        store.player.stats.radar.map { RadarStat(label: $0.label, value: $0.value) }
+    }
 
     var body: some View {
         ScreenContainer {
@@ -19,18 +16,18 @@ struct StatusView: View {
                     VStack(spacing: 20) {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("DANIEL")
+                                Text(store.player.statusDisplayName)
                                     .font(.title2.weight(.semibold))
                                     .tracking(1.2)
                                     .foregroundStyle(.white)
-                                Text("LEVEL 42")
+                                Text("LEVEL \(store.player.level)")
                                     .font(.subheadline.weight(.medium))
                                     .foregroundStyle(SystemTheme.muted)
                             }
                             Spacer()
                         }
 
-                        SystemProgressBar(progress: 0.684, label: "XP     3,420 / 5,000")
+                        SystemProgressBar(progress: store.player.xpProgress, label: store.player.xpLabel)
                         SystemDivider()
 
                         RadarChart(stats: stats)
@@ -44,7 +41,7 @@ struct StatusView: View {
                                     .font(.caption.weight(.semibold))
                                     .tracking(1.1)
                                     .foregroundStyle(SystemTheme.muted)
-                                Text("x2")
+                                Text("x\(store.player.fullRecoveryBank)")
                                     .font(.title2.weight(.bold))
                                     .foregroundStyle(.white)
                             }
@@ -65,7 +62,7 @@ struct StatusView: View {
 }
 
 private struct RadarStat: Identifiable {
-    let id = UUID()
+    var id: String { label }
     let label: String
     let value: Double
 }
@@ -142,4 +139,7 @@ private struct RadarChart: View {
     }
 }
 
-#Preview { StatusView() }
+#Preview {
+    StatusView()
+        .environmentObject(GameStore(persistence: .memory))
+}

@@ -1,0 +1,63 @@
+# The System — Implementation Phases
+
+Phase 1 is in the tree. Phases 2–7 follow `docs/MASTER_PLAN.md` §10 and `docs/AI_DAILY_QUEST_ENGINE.md`. The System, Goals, History, and Status chrome stays as it is.
+
+## Phase 1 — Models, fallback quests, live binding (done)
+
+- `Quest`, `QuestMode`, `QuestKind`, `Stat` (including FIN), `QuestBundle`, verification-method enum, `PlayerState` (level, XP, display name, Full Recovery bank).
+- On-device `Resources/FallbackCatalog.json` keyed by mode × readiness band, including performance training, recovery, hybrid, full recovery, and penalty.
+- Deterministic mode picker. Readiness is a placeholder, not WHOOP.
+- System GOAL rows and `[Daily Quest: … has arrived.]` bind to today’s fallback bundle.
+- Status binds display name (default Angel), the seven-stat radar, XP / level, and `FULL RECOVERY xN`.
+- A checkbox toggles completion and grants stub XP. Real verifiers are not wired.
+- Not in this phase: Mercury, WHOOP, Strava, HealthKit, Screen Time, Live Activities, live LLM calls, Target UI, midnight penalty rollover.
+
+## Phase 2 — Verifiers, history log, midnight rollover
+
+Master plan MVP steps 3, 6, and 7.
+
+- Real `timer_session` and `manual_confirm` verifiers (rate limits, evidence). The checkbox stops completing every method.
+- History appends day-clear and quest-log cards. Keep the existing Goals / STATS charts.
+- Local midnight in `America/Los_Angeles`: missed required quests raise `penaltyTier`, and the next bundle comes from the penalty catalog.
+
+## Phase 3 — HealthKit and nutrition
+
+Master plan steps 8 and 9.
+
+- HealthKit authorization and observers (workouts, nutrition, body mass, sleep fallback).
+- Protein quests verify from HealthKit dietary protein. MacroFactor writes Apple Health; there is no MacroFactor API.
+
+## Phase 4 — Backend and AI quest generation
+
+Master plan steps 10 and 13.
+
+- Personal backend: session auth, secrets vault, `POST /v1/quests/generate`.
+- On-device morning context, schema re-check, and safety filter. The model cannot change a rules-locked mode or mark quests complete.
+- The fallback catalog stays the offline path. One successful bundle per day key.
+
+## Phase 5 — WHOOP and Strava
+
+Master plan steps 11 and 12.
+
+- WHOOP OAuth, recovery / sleep / workout sync, and webhooks. Readiness replaces the placeholder in the mode picker. REC stays a rolling composite, not today’s recovery score.
+- Strava OAuth, activities, and webhooks. Run quests verify from Strava, with workout dedupe against WHOOP and HealthKit.
+
+## Phase 6 — Targets and Full Recovery bank
+
+Master plan steps 14 and 15.
+
+- Goals screen segmented `GOALS | TARGETS` using the existing card chrome.
+- System banner `TARGET ACTIVE` and `⟪TARGET⟫` rows. At most one active Target.
+- Sunday OPTIONAL section banks a Full Recovery token (cap 3). The Status row spends a token through a confirm sheet.
+
+## Phase 7 — FIN, penalties, push
+
+Master plan steps 16, 17, and 18.
+
+- Mercury Read Only token stays on the backend. FIN aggregates, spend-under quests, and the FIN radar stat update from those aggregates.
+- Screen Time: FamilyControls picker, penalty shields on selected distractors, DeviceActivity monitor, Live Activity. Shields are not a full phone lock.
+- Silent push when a verifier clears a quest.
+
+## Later (master plan steps 19–25)
+
+Plaid for non-Mercury accounts, EventKit calendar detail, DeviceActivityReport FOC charts, an on-device model as an offline author, a watchOS companion, a Target pause on Full Recovery, and penalty tier 3 polish.
