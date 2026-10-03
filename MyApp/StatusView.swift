@@ -1,14 +1,13 @@
 import SwiftUI
 
 struct StatusView: View {
-    private let stats = [
-        RadarStat(label: "STR", value: 142),
-        RadarStat(label: "END", value: 155),
-        RadarStat(label: "INT", value: 128),
-        RadarStat(label: "AGI", value: 134),
-        RadarStat(label: "FOC", value: 121),
-        RadarStat(label: "REC", value: 118)
-    ]
+    @EnvironmentObject private var store: GameStore
+    @State private var confirmRecovery = false
+    @State private var showShields = false
+
+    private var stats: [RadarStat] {
+        store.player.stats.radar.map { RadarStat(label: $0.label, value: $0.value) }
+    }
 
     var body: some View {
         ScreenContainer {
@@ -19,18 +18,18 @@ struct StatusView: View {
                     VStack(spacing: 20) {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("DANIEL")
+                                Text(store.player.statusDisplayName)
                                     .font(.title2.weight(.semibold))
                                     .tracking(1.2)
                                     .foregroundStyle(.white)
-                                Text("LEVEL 42")
+                                Text("LEVEL \(store.player.level)")
                                     .font(.subheadline.weight(.medium))
                                     .foregroundStyle(SystemTheme.muted)
                             }
                             Spacer()
                         }
 
-                        SystemProgressBar(progress: 0.684, label: "XP     3,420 / 5,000")
+                        SystemProgressBar(progress: store.player.xpProgress, label: store.player.xpLabel)
                         SystemDivider()
 
                         RadarChart(stats: stats)
@@ -38,23 +37,47 @@ struct StatusView: View {
                             .padding(.vertical, 6)
 
                         SystemDivider()
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("FULL RECOVERY")
-                                    .font(.caption.weight(.semibold))
-                                    .tracking(1.1)
-                                    .foregroundStyle(SystemTheme.muted)
-                                Text("x2")
-                                    .font(.title2.weight(.bold))
-                                    .foregroundStyle(.white)
+                        Button {
+                            confirmRecovery = true
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("FULL RECOVERY")
+                                        .font(.caption.weight(.semibold))
+                                        .tracking(1.1)
+                                        .foregroundStyle(SystemTheme.muted)
+                                    Text("x\(store.player.fullRecoveryBank)")
+                                        .font(.title2.weight(.bold))
+                                        .foregroundStyle(.white)
+                                }
+                                Spacer()
+                                Image(systemName: "bolt.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(SystemTheme.cyan)
+                                    .shadow(color: SystemTheme.cyan.opacity(0.35), radius: 4)
                             }
-                            Spacer()
-                            Image(systemName: "bolt.fill")
-                                .font(.title2)
-                                .foregroundStyle(SystemTheme.cyan)
-                                .shadow(color: SystemTheme.cyan.opacity(0.35), radius: 4)
                         }
+                        .buttonStyle(.plain)
+                        Button {
+                            showShields = true
+                        } label: {
+                            Text("DISTRACTOR SHIELDS")
+                                .font(.caption2.weight(.semibold))
+                                .tracking(1.1)
+                                .foregroundStyle(SystemTheme.muted)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
                     }
+                }
+                .confirmationDialog("Spend one Full Recovery token?", isPresented: $confirmRecovery, titleVisibility: .visible) {
+                    Button("Spend token") { store.spendFullRecovery() }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("A quiet morning switches today. A day already underway is queued for tomorrow. That day does not open a penalty if training is missed.")
+                }
+                .sheet(isPresented: $showShields) {
+                    PenaltyTargetsSheet()
                 }
                 .padding(.horizontal, 22)
 
@@ -65,7 +88,7 @@ struct StatusView: View {
 }
 
 private struct RadarStat: Identifiable {
-    let id = UUID()
+    var id: String { label }
     let label: String
     let value: Double
 }
@@ -142,4 +165,7 @@ private struct RadarChart: View {
     }
 }
 
-#Preview { StatusView() }
+#Preview {
+    StatusView()
+        .environmentObject(GameStore(persistence: .memory))
+}

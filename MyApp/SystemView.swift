@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct SystemView: View {
-    private let quests = [("Run Intervals", "[0/6]"), ("Bench Press", "[0/4]"), ("Mobility", "[0/10min]"), ("Protein", "[0/150g]")]
+    @EnvironmentObject private var store: GameStore
+
     var body: some View {
         ScreenContainer {
             GeometryReader { proxy in
@@ -9,10 +10,19 @@ struct SystemView: View {
                     Spacer(minLength: 32)
                     SystemPanel {
                         VStack(spacing: 0) {
-                        Text("[Daily Quest: Performance Training\nhas arrived.]")
+                        Text("[Daily Quest: \(store.bundle.headerLine)\nhas arrived.]")
                             .font(.subheadline.weight(.medium))
                             .multilineTextAlignment(.center)
                             .foregroundStyle(.white.opacity(0.94))
+
+                        if let banner = store.targetBanner {
+                            Text(banner)
+                                .font(.caption2.weight(.semibold))
+                                .tracking(0.6)
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(SystemTheme.cyan)
+                                .padding(.top, 8)
+                        }
 
                         Spacer()
 
@@ -25,15 +35,37 @@ struct SystemView: View {
                             .padding(.bottom, 30)
 
                         VStack(spacing: 19) {
-                            ForEach(quests, id: \.0) { quest in
-                                HStack {
-                                    Text(quest.0).foregroundStyle(.white)
-                                    Spacer()
-                                    Text(quest.1).font(.subheadline.monospacedDigit()).foregroundStyle(SystemTheme.muted)
-                                    Image(systemName: "square").font(.body).foregroundStyle(SystemTheme.cyan)
+                            ForEach(store.goalQuests) { quest in
+                                Button {
+                                    store.handleQuestTap(id: quest.id)
+                                } label: {
+                                    HStack {
+                                        Text(quest.kind == .targetInjection ? "⟪TARGET⟫ \(quest.title)" : quest.title)
+                                            .foregroundStyle(.white)
+                                            .lineLimit(1)
+                                        Spacer()
+                                        Text(store.rowLabel(for: quest)).font(.subheadline.monospacedDigit()).foregroundStyle(SystemTheme.muted)
+                                        Image(systemName: quest.status == .completed ? "checkmark.square.fill" : "square")
+                                            .font(.body)
+                                            .foregroundStyle(SystemTheme.cyan)
+                                    }
+                                    .font(.subheadline)
+                                    .frame(maxWidth: .infinity)
+                                    .contentShape(Rectangle())
                                 }
-                                .font(.subheadline)
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(quest.title)
+                                .accessibilityHint(questRowHint(quest))
+                                .accessibilityValue(store.accessibilityValue(for: quest))
                             }
+                        }
+
+                        if let note = store.verificationNote, !note.isEmpty {
+                            Text(note)
+                                .font(.caption)
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(SystemTheme.muted)
+                                .padding(.top, 14)
                         }
 
                         Spacer()
@@ -44,7 +76,7 @@ struct SystemView: View {
                             .font(.caption.weight(.bold))
                             .tracking(1.8)
                             .foregroundStyle(SystemTheme.cyan)
-                        Text("Failure to complete\nthe daily quest will result\nin a penalty.")
+                        Text(store.bundle.warningCopy)
                             .font(.footnote)
                             .multilineTextAlignment(.center)
                             .foregroundStyle(SystemTheme.muted)
@@ -61,4 +93,18 @@ struct SystemView: View {
     }
 }
 
-#Preview { SystemView() }
+private func questRowHint(_ quest: Quest) -> String {
+    switch quest.verification.method {
+    case .timerSession:
+        return "Starts the in-app timer"
+    case .manualConfirm:
+        return "Confirms this quest"
+    default:
+        return "Checks this quest on this device"
+    }
+}
+
+#Preview {
+    SystemView()
+        .environmentObject(GameStore(persistence: .memory))
+}

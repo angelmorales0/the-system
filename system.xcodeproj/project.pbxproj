@@ -6,8 +6,67 @@
 	objectVersion = 90;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		B20000000000000000000001 /* PenaltyMonitor.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* PenaltyMonitor.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B30000000000000000000001 /* PenaltyShieldConfig.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F30000000000000000000001 /* PenaltyShieldConfig.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B40000000000000000000001 /* PenaltyShieldAction.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F40000000000000000000001 /* PenaltyShieldAction.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B50000000000000000000001 /* PenaltyActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F50000000000000000000001 /* PenaltyActivity.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		P20000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 000000000000000200000000;
+			remoteInfo = PenaltyMonitor;
+		};
+		P30000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 000000000000000300000000;
+			remoteInfo = PenaltyShieldConfig;
+		};
+		P40000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 000000000000000400000000;
+			remoteInfo = PenaltyShieldAction;
+		};
+		P50000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 000000000000000500000000;
+			remoteInfo = PenaltyActivity;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		C20000000000000000000001 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B20000000000000000000001 /* PenaltyMonitor.appex in Embed Foundation Extensions */,
+				B30000000000000000000001 /* PenaltyShieldConfig.appex in Embed Foundation Extensions */,
+				B40000000000000000000001 /* PenaltyShieldAction.appex in Embed Foundation Extensions */,
+				B50000000000000000000001 /* PenaltyActivity.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* MyApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MyApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F20000000000000000000001 /* PenaltyMonitor.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PenaltyMonitor.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F30000000000000000000001 /* PenaltyShieldConfig.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PenaltyShieldConfig.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F40000000000000000000001 /* PenaltyShieldAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PenaltyShieldAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F50000000000000000000001 /* PenaltyActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PenaltyActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -16,7 +75,74 @@
 			path = MyApp;
 			sourceTree = "<group>";
 		};
+		G20000000000000000000001 /* PenaltyMonitor */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				X20000000000000000000001 /* Exceptions for "PenaltyMonitor" folder in "PenaltyMonitor" target */,
+			);
+			path = PenaltyMonitor;
+			sourceTree = "<group>";
+		};
+		G30000000000000000000001 /* PenaltyShieldConfig */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				X30000000000000000000001 /* Exceptions for "PenaltyShieldConfig" folder in "PenaltyShieldConfig" target */,
+			);
+			path = PenaltyShieldConfig;
+			sourceTree = "<group>";
+		};
+		G40000000000000000000001 /* PenaltyShieldAction */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				X40000000000000000000001 /* Exceptions for "PenaltyShieldAction" folder in "PenaltyShieldAction" target */,
+			);
+			path = PenaltyShieldAction;
+			sourceTree = "<group>";
+		};
+		G50000000000000000000001 /* PenaltyActivity */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				X50000000000000000000001 /* Exceptions for "PenaltyActivity" folder in "PenaltyActivity" target */,
+			);
+			path = PenaltyActivity;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		X20000000000000000000001 /* Exceptions for "PenaltyMonitor" folder in "PenaltyMonitor" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				PenaltyMonitor.entitlements,
+			);
+			target = 000000000000000200000000 /* PenaltyMonitor */;
+		};
+		X30000000000000000000001 /* Exceptions for "PenaltyShieldConfig" folder in "PenaltyShieldConfig" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				PenaltyShieldConfig.entitlements,
+			);
+			target = 000000000000000300000000 /* PenaltyShieldConfig */;
+		};
+		X40000000000000000000001 /* Exceptions for "PenaltyShieldAction" folder in "PenaltyShieldAction" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				PenaltyShieldAction.entitlements,
+			);
+			target = 000000000000000400000000 /* PenaltyShieldAction */;
+		};
+		X50000000000000000000001 /* Exceptions for "PenaltyActivity" folder in "PenaltyActivity" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				PenaltyActivity.entitlements,
+			);
+			target = 000000000000000500000000 /* PenaltyActivity */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		000000000000000130000000 /* Frameworks */ = {
@@ -31,6 +157,10 @@
 			isa = PBXGroup;
 			children = (
 				000000000000000000000010 /* MyApp */,
+				G20000000000000000000001 /* PenaltyMonitor */,
+				G30000000000000000000001 /* PenaltyShieldConfig */,
+				G40000000000000000000001 /* PenaltyShieldAction */,
+				G50000000000000000000001 /* PenaltyActivity */,
 				000000000000000000000020 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -39,6 +169,10 @@
 			isa = PBXGroup;
 			children = (
 				000000000000000000000120 /* MyApp.app */,
+				F20000000000000000000001 /* PenaltyMonitor.appex */,
+				F30000000000000000000001 /* PenaltyShieldConfig.appex */,
+				F40000000000000000000001 /* PenaltyShieldAction.appex */,
+				F50000000000000000000001 /* PenaltyActivity.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -53,8 +187,15 @@
 				000000000000000120000000 /* Sources */,
 				000000000000000130000000 /* Frameworks */,
 				000000000000000140000000 /* Resources */,
+				C20000000000000000000001 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
+			);
+			dependencies = (
+				D20000000000000000000001 /* PBXTargetDependency */,
+				D30000000000000000000001 /* PBXTargetDependency */,
+				D40000000000000000000001 /* PBXTargetDependency */,
+				D50000000000000000000001 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				000000000000000000000010 /* MyApp */,
@@ -63,6 +204,78 @@
 			productName = MyApp;
 			productReference = 000000000000000000000120 /* MyApp.app */;
 			productType = "com.apple.product-type.application";
+		};
+		000000000000000200000000 /* PenaltyMonitor */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = L20000000000000000000001 /* Build configuration list for PBXNativeTarget "PenaltyMonitor" */;
+			buildPhases = (
+				S20000000000000000000001 /* Sources */,
+				R20000000000000000000001 /* Frameworks */,
+				E20000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			fileSystemSynchronizedGroups = (
+				G20000000000000000000001 /* PenaltyMonitor */,
+			);
+			name = PenaltyMonitor;
+			productName = PenaltyMonitor;
+			productReference = F20000000000000000000001 /* PenaltyMonitor.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		000000000000000300000000 /* PenaltyShieldConfig */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = L30000000000000000000001 /* Build configuration list for PBXNativeTarget "PenaltyShieldConfig" */;
+			buildPhases = (
+				S30000000000000000000001 /* Sources */,
+				R30000000000000000000001 /* Frameworks */,
+				E30000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			fileSystemSynchronizedGroups = (
+				G30000000000000000000001 /* PenaltyShieldConfig */,
+			);
+			name = PenaltyShieldConfig;
+			productName = PenaltyShieldConfig;
+			productReference = F30000000000000000000001 /* PenaltyShieldConfig.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		000000000000000400000000 /* PenaltyShieldAction */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = L40000000000000000000001 /* Build configuration list for PBXNativeTarget "PenaltyShieldAction" */;
+			buildPhases = (
+				S40000000000000000000001 /* Sources */,
+				R40000000000000000000001 /* Frameworks */,
+				E40000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			fileSystemSynchronizedGroups = (
+				G40000000000000000000001 /* PenaltyShieldAction */,
+			);
+			name = PenaltyShieldAction;
+			productName = PenaltyShieldAction;
+			productReference = F40000000000000000000001 /* PenaltyShieldAction.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		000000000000000500000000 /* PenaltyActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = L50000000000000000000001 /* Build configuration list for PBXNativeTarget "PenaltyActivity" */;
+			buildPhases = (
+				S50000000000000000000001 /* Sources */,
+				R50000000000000000000001 /* Frameworks */,
+				E50000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			fileSystemSynchronizedGroups = (
+				G50000000000000000000001 /* PenaltyActivity */,
+			);
+			name = PenaltyActivity;
+			productName = PenaltyActivity;
+			productReference = F50000000000000000000001 /* PenaltyActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -74,10 +287,22 @@
 				LastSwiftUpdateCheck = 2630;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
-					000000000000000100000000 = {
-						CreatedOnToolsVersion = 26.3;
-					};
+				000000000000000100000000 = {
+					CreatedOnToolsVersion = 26.3;
 				};
+				000000000000000200000000 = {
+					CreatedOnToolsVersion = 26.3;
+				};
+				000000000000000300000000 = {
+					CreatedOnToolsVersion = 26.3;
+				};
+				000000000000000400000000 = {
+					CreatedOnToolsVersion = 26.3;
+				};
+				000000000000000500000000 = {
+					CreatedOnToolsVersion = 26.3;
+				};
+			};
 			};
 			buildConfigurationList = 000000000000000010000000 /* Build configuration list for PBXProject "system" */;
 			developmentRegion = en;
@@ -94,9 +319,44 @@
 			projectRoot = "";
 			targets = (
 				000000000000000100000000 /* MyApp */,
+				000000000000000200000000 /* PenaltyMonitor */,
+				000000000000000300000000 /* PenaltyShieldConfig */,
+				000000000000000400000000 /* PenaltyShieldAction */,
+				000000000000000500000000 /* PenaltyActivity */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		R20000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		R30000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		R40000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		R50000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXResourcesBuildPhase section */
 		000000000000000140000000 /* Resources */ = {
@@ -104,7 +364,89 @@
 			files = (
 			);
 		};
+		E20000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E30000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E40000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E50000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		S20000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		S30000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		S40000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		S50000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D20000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000200000000 /* PenaltyMonitor */;
+			targetProxy = P20000000000000000000001 /* PBXContainerItemProxy */;
+		};
+		D30000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000300000000 /* PenaltyShieldConfig */;
+			targetProxy = P30000000000000000000001 /* PBXContainerItemProxy */;
+		};
+		D40000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000400000000 /* PenaltyShieldAction */;
+			targetProxy = P40000000000000000000001 /* PBXContainerItemProxy */;
+		};
+		D50000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000500000000 /* PenaltyActivity */;
+			targetProxy = P50000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXSourcesBuildPhase section */
 		000000000000000120000000 /* Sources */ = {
@@ -255,7 +597,15 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				CODE_SIGN_ENTITLEMENTS = MyApp.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = MyApp-iOS.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = MyApp-iOS.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "";
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "The System reads workouts, protein, weight, and sleep to check daily quests.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "The System does not write health data.";
+				"INFOPLIST_KEY_NSSupportsLiveActivities[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_NSSupportsLiveActivities[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -292,7 +642,15 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				CODE_SIGN_ENTITLEMENTS = MyApp.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = MyApp-iOS.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = MyApp-iOS.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "";
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "The System reads workouts, protein, weight, and sleep to check daily quests.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "The System does not write health data.";
+				"INFOPLIST_KEY_NSSupportsLiveActivities[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_NSSupportsLiveActivities[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -323,6 +681,232 @@
 		};
 /* End XCBuildConfiguration section */
 
+		2000000000000000000000D1 /* Debug configuration for PBXNativeTarget "PenaltyMonitor" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PenaltyMonitor/PenaltyMonitor.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PenaltyMonitor/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).MyApp.PenaltyMonitor";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		2000000000000000000000D2 /* Release configuration for PBXNativeTarget "PenaltyMonitor" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PenaltyMonitor/PenaltyMonitor.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PenaltyMonitor/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).MyApp.PenaltyMonitor";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		3000000000000000000000D1 /* Debug configuration for PBXNativeTarget "PenaltyShieldConfig" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PenaltyShieldConfig/PenaltyShieldConfig.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PenaltyShieldConfig/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).MyApp.PenaltyShieldConfig";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		3000000000000000000000D2 /* Release configuration for PBXNativeTarget "PenaltyShieldConfig" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PenaltyShieldConfig/PenaltyShieldConfig.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PenaltyShieldConfig/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).MyApp.PenaltyShieldConfig";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		4000000000000000000000D1 /* Debug configuration for PBXNativeTarget "PenaltyShieldAction" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PenaltyShieldAction/PenaltyShieldAction.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PenaltyShieldAction/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).MyApp.PenaltyShieldAction";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		4000000000000000000000D2 /* Release configuration for PBXNativeTarget "PenaltyShieldAction" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PenaltyShieldAction/PenaltyShieldAction.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PenaltyShieldAction/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).MyApp.PenaltyShieldAction";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		5000000000000000000000D1 /* Debug configuration for PBXNativeTarget "PenaltyActivity" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PenaltyActivity/PenaltyActivity.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PenaltyActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).MyApp.PenaltyActivity";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		5000000000000000000000D2 /* Release configuration for PBXNativeTarget "PenaltyActivity" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PenaltyActivity/PenaltyActivity.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PenaltyActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).MyApp.PenaltyActivity";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
 /* Begin XCConfigurationList section */
 		000000000000000010000000 /* Build configuration list for PBXProject "system" */ = {
 			isa = XCConfigurationList;
@@ -337,6 +921,38 @@
 			buildConfigurations = (
 				000000000000000111000000 /* Debug configuration for PBXNativeTarget "MyApp" */,
 				000000000000000112000000 /* Release configuration for PBXNativeTarget "MyApp" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		L20000000000000000000001 /* Build configuration list for PBXNativeTarget "PenaltyMonitor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2000000000000000000000D1 /* Debug configuration for PBXNativeTarget "PenaltyMonitor" */,
+				2000000000000000000000D2 /* Release configuration for PBXNativeTarget "PenaltyMonitor" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		L30000000000000000000001 /* Build configuration list for PBXNativeTarget "PenaltyShieldConfig" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3000000000000000000000D1 /* Debug configuration for PBXNativeTarget "PenaltyShieldConfig" */,
+				3000000000000000000000D2 /* Release configuration for PBXNativeTarget "PenaltyShieldConfig" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		L40000000000000000000001 /* Build configuration list for PBXNativeTarget "PenaltyShieldAction" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4000000000000000000000D1 /* Debug configuration for PBXNativeTarget "PenaltyShieldAction" */,
+				4000000000000000000000D2 /* Release configuration for PBXNativeTarget "PenaltyShieldAction" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		L50000000000000000000001 /* Build configuration list for PBXNativeTarget "PenaltyActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5000000000000000000000D1 /* Debug configuration for PBXNativeTarget "PenaltyActivity" */,
+				5000000000000000000000D2 /* Release configuration for PBXNativeTarget "PenaltyActivity" */,
 			);
 			defaultConfigurationName = Release;
 		};
