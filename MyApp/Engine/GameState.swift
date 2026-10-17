@@ -15,7 +15,6 @@ struct GameSnapshot: Codable, Equatable {
     var bundle: QuestBundle
     var evidenceLog: [EvidenceUse] = []
     var runningTimers: [TimerRun] = []
-    var targets: [Target] = []
     /// Today's WHOOP recovery. Not copied into `player.stats.REC`.
     var readiness: ReadinessSnapshot?
     /// Rolling recovery-capacity placeholder. The radar REC stat stays XP-driven.
@@ -30,8 +29,6 @@ struct GameSnapshot: Codable, Equatable {
     var generationAttemptDayKey: String?
     /// Last accepted generated bundle for that day, before the player’s progress.
     var generatedBundle: QuestBundle?
-    /// Shown once, then cleared. Not stored.
-    var targetToast: String?
     /// Day that should run as Full Recovery. Set when a token is spent for today.
     var fullRecoveryDayKey: String?
     /// Token spent after today's quests already started. Applied on the next rollover.
@@ -207,10 +204,8 @@ struct GameSnapshot: Codable, Equatable {
     mutating func undoQuest(id: String) {
         guard let index = bundle.quests.firstIndex(where: { $0.id == id }) else { return }
         guard bundle.quests[index].status == .completed else { return }
-        let completedQuest = bundle.quests[index]
         undoCompletion(at: index)
         restorePenaltyIfNeeded()
-        reverseTargetProgress(for: completedQuest)
         // Manual confirms stay in the log so undo cannot refund the 3-per-day cap.
         evidenceLog.removeAll { $0.questId == id && $0.evidence.source != ManualConfirmVerifier.source }
         runningTimers.removeAll { $0.questId == id }
@@ -238,7 +233,6 @@ struct GameSnapshot: Codable, Equatable {
             isSunday: QuestDay.isSunday(now),
             readinessBand: signals.readinessBand,
             sleepPerformance: signals.sleepPerformance,
-            activeTarget: activeTarget(on: now) != nil,
             calendarBusyMinutes: signals.calendarBusyMinutes
         )
     }
@@ -318,9 +312,11 @@ struct GameSnapshot: Codable, Equatable {
         )
         let delta = points - appliedFinProjection
         if delta != 0 {
-            player.stats.FIN = max(0, player.stats.FIN + delta)
+            // Track only the points that really moved FIN, so the stat cap cannot make a later drop remove quest points.
+            let before = player.stats.FIN
+            player.stats.FIN = min(StatValues.maximum, max(0, before + delta))
+            appliedFinProjection += player.stats.FIN - before
         }
-        appliedFinProjection = points
         finance = FinanceSnapshot(
             dayKey: reading.dayKey,
             discretionarySpendUsd: reading.discretionarySpendUsd,
@@ -336,36 +332,28 @@ struct GameSnapshot: Codable, Equatable {
     }
 
     mutating func rebuildBundle(catalog: FallbackCatalog, now: Date) {
-        reconcileTargets(now: now)
         let decision = ModePicker.decide(modeInput(now: now))
         let dayKey = QuestDay.key(for: now)
-        if var cached = generatedBundle,
+        if let cached = generatedBundle,
            cached.dayKey == dayKey,
            cached.mode == decision.selectedMode {
-            cached = cached.strippingModelCompletion(assignedAt: now)
-            if let target = activeTarget(on: now) {
-                cached = cached.injecting(target, now: now)
-            }
-            bundle = cached
+            bundle = cached.strippingModelCompletion(assignedAt: now)
             return
         }
-        var built = catalog.makeBundle(
+        bundle = catalog.makeBundle(
             mode: decision.selectedMode,
             band: signals.readinessBand,
             dayKey: dayKey,
             now: now
         )
-        if let target = activeTarget(on: now) {
-            built = built.injecting(target, now: now)
-        }
-        bundle = built
     }
 
     private mutating func complete(at index: Int) {
         var quest = bundle.quests[index]
         guard quest.status != .completed else { return }
         let xpGain = Self.xpGrant(for: quest, mode: bundle.mode)
-        let statGain = quest.difficulty.statWeight
+        // Only the points under the cap are granted, so undo removes exactly what was added.
+        let statGain = min(quest.difficulty.statWeight, player.stats.room(for: quest.stat))
         player.addXP(xpGain)
         player.stats[quest.stat] += statGain
         var grantedToken = false
@@ -378,7 +366,6 @@ struct GameSnapshot: Codable, Equatable {
         quest.status = .completed
         quest.progress.current = quest.progress.target
         bundle.quests[index] = quest
-        recordTargetProgress(for: quest)
         liftPenaltyIfCleared()
     }
 
@@ -430,7 +417,7 @@ struct GameSnapshot: Codable, Equatable {
 
 extension GameSnapshot {
     private enum CodingKeys: String, CodingKey {
-        case version, player, signals, bundle, evidenceLog, runningTimers, targets
+        case version, player, signals, bundle, evidenceLog, runningTimers
         case recentQuestTitles, generationAttemptDayKey, generatedBundle, readiness, recoveryComposite
         case finance, appliedFinProjection
         case fullRecoveryDayKey, queuedFullRecoveryDayKey, heldPenaltyTier, hasDistractorSelection
@@ -440,11 +427,11 @@ extension GameSnapshot {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         version = try container.decode(Int.self, forKey: .version)
         player = try container.decode(PlayerState.self, forKey: .player)
+        player.stats = player.stats.capped()
         signals = try container.decode(MorningSignals.self, forKey: .signals)
         bundle = try container.decode(QuestBundle.self, forKey: .bundle)
         evidenceLog = try container.decodeIfPresent([EvidenceUse].self, forKey: .evidenceLog) ?? []
         runningTimers = try container.decodeIfPresent([TimerRun].self, forKey: .runningTimers) ?? []
-        targets = try container.decodeIfPresent([Target].self, forKey: .targets) ?? []
         recentQuestTitles = try container.decodeIfPresent([String].self, forKey: .recentQuestTitles) ?? []
         readiness = try container.decodeIfPresent(ReadinessSnapshot.self, forKey: .readiness)
         recoveryComposite = try container.decodeIfPresent(RecoveryComposite.self, forKey: .recoveryComposite) ?? RecoveryComposite()
@@ -456,7 +443,6 @@ extension GameSnapshot {
         hasDistractorSelection = try container.decodeIfPresent(Bool.self, forKey: .hasDistractorSelection) ?? false
         generationAttemptDayKey = try container.decodeIfPresent(String.self, forKey: .generationAttemptDayKey)
         generatedBundle = try container.decodeIfPresent(QuestBundle.self, forKey: .generatedBundle)
-        targetToast = nil
     }
 
     func encode(to encoder: Encoder) throws {
@@ -467,7 +453,6 @@ extension GameSnapshot {
         try container.encode(bundle, forKey: .bundle)
         try container.encode(evidenceLog, forKey: .evidenceLog)
         try container.encode(runningTimers, forKey: .runningTimers)
-        try container.encode(targets, forKey: .targets)
         try container.encode(recentQuestTitles, forKey: .recentQuestTitles)
         try container.encodeIfPresent(readiness, forKey: .readiness)
         try container.encode(recoveryComposite, forKey: .recoveryComposite)
@@ -479,149 +464,6 @@ extension GameSnapshot {
         try container.encode(hasDistractorSelection, forKey: .hasDistractorSelection)
         try container.encodeIfPresent(generationAttemptDayKey, forKey: .generationAttemptDayKey)
         try container.encodeIfPresent(generatedBundle, forKey: .generatedBundle)
-    }
-}
-
-extension GameSnapshot {
-    func activeTarget(on now: Date) -> Target? {
-        let today = QuestDay.key(for: now)
-        return targets.first { $0.status == .active && $0.contains(today) }
-    }
-
-    func targetBanner(on dayKey: String) -> String? {
-        guard let target = targets.first(where: { $0.status == .active && $0.contains(dayKey) }) else { return nil }
-        return "TARGET ACTIVE · \(target.title) · Day \(target.dayNumber(on: dayKey))/\(target.spanDays)"
-    }
-
-    /// Saves a Target. Activates it when the window includes today and nothing else is active.
-    mutating func upsertTarget(_ incoming: Target, catalog: FallbackCatalog, now: Date) -> String? {
-        var target = incoming
-        let trimmed = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "Title is required." }
-        target.title = trimmed
-        guard target.endsOn >= target.startsOn else { return "End date is before the start date." }
-        guard !target.dailyRequirements.isEmpty else { return "Add a daily requirement." }
-        guard target.dailyRequirements.allSatisfy({ !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.quota > 0 }) else {
-            return "Each requirement needs a title and a quota."
-        }
-        if target.unitsGoal == nil {
-            let perDay = target.dailyRequirements.reduce(0) { $0 + Int($1.quota.rounded()) }
-            target.unitsGoal = perDay * target.spanDays
-        }
-
-        let today = QuestDay.key(for: now)
-        let wasActive = targets.first { $0.id == target.id }?.status == .active
-        let someoneElseActive = targets.contains { $0.status == .active && $0.id != target.id && $0.contains(today) }
-        if target.contains(today) && !someoneElseActive && target.status != .aborted && target.status != .completed && target.status != .expired {
-            target.status = .active
-        } else if today < target.startsOn {
-            target.status = .scheduled
-        } else if today > target.endsOn {
-            target.status = .expired
-        } else if someoneElseActive && target.status != .completed && target.status != .aborted && target.status != .expired {
-            target.status = .scheduled
-        }
-
-        if let index = targets.firstIndex(where: { $0.id == target.id }) {
-            targets[index] = target
-        } else {
-            targets.append(target)
-        }
-        if target.status == .active || wasActive {
-            rebuildBundle(catalog: catalog, now: now)
-        }
-        if someoneElseActive && target.contains(today) {
-            return "Scheduled. Abort the active Target first."
-        }
-        return nil
-    }
-
-    mutating func activateTarget(id: String, catalog: FallbackCatalog, now: Date) -> String? {
-        guard let index = targets.firstIndex(where: { $0.id == id }) else { return "Missing Target." }
-        let today = QuestDay.key(for: now)
-        if today < targets[index].startsOn {
-            targets[index].status = .scheduled
-            return "Scheduled for \(targets[index].startsOn)."
-        }
-        if today > targets[index].endsOn {
-            targets[index].status = .expired
-            return "That window has ended."
-        }
-        if targets.contains(where: { $0.status == .active && $0.id != id && $0.contains(today) }) {
-            return "Another Target is already active."
-        }
-        targets[index].status = .active
-        rebuildBundle(catalog: catalog, now: now)
-        return nil
-    }
-
-    mutating func abortTarget(id: String, catalog: FallbackCatalog, now: Date) {
-        guard let index = targets.firstIndex(where: { $0.id == id }) else { return }
-        guard targets[index].status == .active || targets[index].status == .scheduled || targets[index].status == .draft else { return }
-        targets[index].status = .aborted
-        rebuildBundle(catalog: catalog, now: now)
-    }
-
-    private mutating func reconcileTargets(now: Date) {
-        let today = QuestDay.key(for: now)
-        for index in targets.indices where targets[index].status == .active {
-            if today > targets[index].endsOn {
-                if targets[index].markCompletedIfNeeded(today: today) {
-                    player.addXP(Target.completionXP)
-                    targetToast = "[Target Complete.]"
-                } else if targets[index].status == .active {
-                    targets[index].status = .expired
-                }
-            }
-        }
-        for index in targets.indices where targets[index].status == .active && today < targets[index].startsOn {
-            targets[index].status = .scheduled
-        }
-        guard activeTarget(on: now) == nil else { return }
-        let next = targets.indices
-            .filter { targets[$0].status == .scheduled && targets[$0].contains(today) }
-            .sorted { targets[$0].startsOn < targets[$1].startsOn }
-            .first
-        if let next {
-            targets[next].status = .active
-        }
-    }
-
-    private mutating func recordTargetProgress(for quest: Quest) {
-        guard quest.kind == .targetInjection, let targetId = quest.targetId,
-              let index = targets.firstIndex(where: { $0.id == targetId }) else { return }
-        let dayFullyCleared = dayIsCleared(targetId: targetId)
-        targets[index].noteQuestCompleted(
-            questId: quest.id,
-            quota: Int(quest.progress.target.rounded()),
-            dayKey: bundle.dayKey,
-            dayFullyCleared: dayFullyCleared
-        )
-        if targets[index].markCompletedIfNeeded(today: bundle.dayKey) {
-            player.addXP(Target.completionXP)
-            targetToast = "[Target Complete.]"
-        }
-    }
-
-    private mutating func reverseTargetProgress(for quest: Quest) {
-        guard quest.kind == .targetInjection, let targetId = quest.targetId,
-              let index = targets.firstIndex(where: { $0.id == targetId }) else { return }
-        let dayFullyCleared = dayIsCleared(targetId: targetId)
-        targets[index].noteQuestUndone(
-            questId: quest.id,
-            quota: Int(quest.progress.target.rounded()),
-            dayKey: bundle.dayKey,
-            dayFullyCleared: dayFullyCleared
-        )
-        if targets[index].reopenIfIncomplete(today: bundle.dayKey) {
-            player.removeXP(Target.completionXP)
-            targetToast = nil
-        }
-    }
-
-    private func dayIsCleared(targetId: String) -> Bool {
-        let rows = bundle.quests.filter { $0.kind == .targetInjection && $0.targetId == targetId }
-        return !rows.isEmpty && rows.allSatisfy { $0.status == .completed }
     }
 }
 

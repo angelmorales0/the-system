@@ -72,13 +72,14 @@ private struct GoalHistoryCard: View {
 }
 
 private struct StatHistoryCard: View {
+    @EnvironmentObject private var store: GameStore
     let samples: [ChartSample]
     var body: some View {
         SystemPanel {
             VStack(alignment: .leading, spacing: 15) {
                 VStack(alignment: .leading, spacing: 3) { Text("END").font(.title3.weight(.semibold)).foregroundStyle(.white); Text("Endurance").font(.caption).foregroundStyle(SystemTheme.muted) }
                 SystemDivider()
-                HStack { CompactMetric(label: "CURRENT", value: "155"); Spacer() }
+                HStack { CompactMetric(label: "CURRENT", value: "\(store.player.stats.END)"); Spacer() }
                 SystemHistoryChart(samples: samples)
                 ChartLegend()
             }
@@ -128,4 +129,4 @@ private struct ChartLegend: View {
     }
 }
 
-#Preview { HistoryView() }
+#Preview { HistoryView().environmentObject(GameStore(persistence: .memory)) }

@@ -7,37 +7,38 @@ enum Stat: String, Codable, CaseIterable, Equatable {
 
 enum QuestMode: String, Codable, CaseIterable, Equatable {
     case performanceTraining = "performance_training"
-    case interviewPrep = "interview_prep"
     case studyBlock = "study_block"
     case recovery
     case fullRecovery = "full_recovery"
     case nutritionFocus = "nutrition_focus"
     case financeDiscipline = "finance_discipline"
     case focusDeepwork = "focus_deepwork"
-    case hybrid
     case penalty
 
     /// Text inside `[Daily Quest: {headerLine} has arrived.]`
     var headerLine: String {
         switch self {
         case .performanceTraining: "Performance Training"
-        case .interviewPrep: "Interview Prep"
         case .studyBlock: "Study Block"
         case .recovery: "Recovery"
         case .fullRecovery: "Full Recovery Day"
         case .nutritionFocus: "Nutrition Focus"
         case .financeDiscipline: "Finance Discipline"
         case .focusDeepwork: "Deep Work"
-        case .hybrid: "Hybrid Training"
         case .penalty: "Penalty Quest"
         }
+    }
+
+    /// Old saves can name the removed Target modes (`hybrid`, `interview_prep`). Read those as Performance Training.
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = QuestMode(rawValue: raw) ?? .performanceTraining
     }
 }
 
 enum QuestKind: String, Codable, Equatable {
     case daily
     case optional
-    case targetInjection = "target_injection"
     case penalty
 }
 
@@ -191,7 +192,6 @@ struct Quest: Identifiable, Codable, Equatable {
     var xp: Int
     var difficulty: Difficulty
     var mode: QuestMode
-    var targetId: String?
     var progress: QuestProgress
     var reward: QuestReward?
     var status: QuestStatus
@@ -208,7 +208,7 @@ struct Quest: Identifiable, Codable, Equatable {
 extension Quest {
     private enum CodingKeys: String, CodingKey {
         case id, title, kind, stat, verification, deadline, xp, difficulty, mode
-        case targetId, progress, reward, status, grantedXP, grantedStatPoints, grantedRecoveryToken
+        case progress, reward, status, grantedXP, grantedStatPoints, grantedRecoveryToken
         case evidence, assignedAt
     }
 
@@ -223,7 +223,6 @@ extension Quest {
         xp = try container.decode(Int.self, forKey: .xp)
         difficulty = try container.decode(Difficulty.self, forKey: .difficulty)
         mode = try container.decode(QuestMode.self, forKey: .mode)
-        targetId = try container.decodeIfPresent(String.self, forKey: .targetId)
         progress = try container.decode(QuestProgress.self, forKey: .progress)
         reward = try container.decodeIfPresent(QuestReward.self, forKey: .reward)
         // Model JSON omits status. A present value is still cleared by strippingModelCompletion.
@@ -246,7 +245,6 @@ extension Quest {
         try container.encode(xp, forKey: .xp)
         try container.encode(difficulty, forKey: .difficulty)
         try container.encode(mode, forKey: .mode)
-        try container.encodeIfPresent(targetId, forKey: .targetId)
         try container.encode(progress, forKey: .progress)
         try container.encodeIfPresent(reward, forKey: .reward)
         try container.encode(status, forKey: .status)
@@ -255,6 +253,18 @@ extension Quest {
         try container.encode(grantedRecoveryToken, forKey: .grantedRecoveryToken)
         try container.encode(evidence, forKey: .evidence)
         try container.encode(assignedAt, forKey: .assignedAt)
+    }
+}
+
+/// Decodes one quest, or nil when its kind no longer exists.
+private struct SkippableQuest: Decodable {
+    var quest: Quest?
+
+    private enum KindKey: String, CodingKey { case kind }
+
+    init(from decoder: Decoder) throws {
+        let kind = try decoder.container(keyedBy: KindKey.self).decode(String.self, forKey: .kind)
+        quest = QuestKind(rawValue: kind) == nil ? nil : try Quest(from: decoder)
     }
 }
 
@@ -311,7 +321,8 @@ extension QuestBundle {
         let line = try container.decodeIfPresent(String.self, forKey: .headerLine) ?? ""
         headerLine = line.isEmpty ? mode.headerLine : line
         narrative = try container.decodeIfPresent(String.self, forKey: .narrative) ?? ""
-        quests = try container.decodeIfPresent([Quest].self, forKey: .quests) ?? []
+        // Old saves can hold quests of a removed kind (Target quests). Skip those rows so the rest of the save still loads.
+        quests = try container.decodeIfPresent([SkippableQuest].self, forKey: .quests)?.compactMap(\.quest) ?? []
         warnings = try container.decodeIfPresent([String].self, forKey: .warnings) ?? []
         let author = try container.decodeIfPresent(String.self, forKey: .generatedBy) ?? ""
         generatedBy = author.isEmpty ? "llm" : author
@@ -339,7 +350,24 @@ struct StatValues: Codable, Equatable {
     var REC: Int
     var FIN: Int
 
-    static let starter = StatValues(STR: 142, END: 155, INT: 128, AGI: 134, FOC: 121, REC: 118, FIN: 110)
+    /// Highest value any stat can reach.
+    static let maximum = 146
+
+    static let starter = StatValues(STR: 142, END: 146, INT: 128, AGI: 134, FOC: 121, REC: 118, FIN: 110)
+
+    /// Points that still fit under `maximum` for this stat.
+    func room(for stat: Stat) -> Int {
+        max(0, Self.maximum - self[stat])
+    }
+
+    /// Every stat pulled down to `maximum`. Saves from before the cap can hold higher values.
+    func capped() -> StatValues {
+        var copy = self
+        for stat in Stat.allCases where copy[stat] > Self.maximum {
+            copy[stat] = Self.maximum
+        }
+        return copy
+    }
 
     subscript(stat: Stat) -> Int {
         get {
@@ -446,18 +474,16 @@ struct PlayerState: Codable, Equatable {
     }
 }
 
-/// Placeholder morning inputs. WHOOP and calendar replace these later. Active Targets live on the snapshot.
+/// Placeholder morning inputs. WHOOP and calendar replace these later.
 struct MorningSignals: Codable, Equatable {
     var readinessBand: ReadinessBand
     var sleepPerformance: Int?
-    var activeTarget: Bool
     var calendarBusyMinutes: Int
     var spendingFullRecovery: Bool
 
     static let placeholder = MorningSignals(
         readinessBand: .green,
         sleepPerformance: 81,
-        activeTarget: false,
         calendarBusyMinutes: 180,
         spendingFullRecovery: false
     )

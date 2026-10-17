@@ -95,7 +95,7 @@ private struct RadarStat: Identifiable {
 
 private struct RadarChart: View {
     let stats: [RadarStat]
-    private let maximum = 160.0
+    private let maximum = Double(StatValues.maximum)
 
     var body: some View {
         GeometryReader { proxy in

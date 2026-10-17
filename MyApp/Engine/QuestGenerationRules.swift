@@ -40,18 +40,9 @@ enum QuestGenerationRules {
         }
 
         snapshot.signals = .placeholder
-        var target = Target.interviewPrep(starting: dayKey)
-        target.status = .active
-        snapshot.targets = [target]
         snapshot.recentQuestTitles = ["keep sk-shouldNotLeaveDevice", "Mobility"]
-        let hybrid = ContextBuilder.make(snapshot: snapshot, now: now)
-        if hybrid.modeDecision.selectedMode != .hybrid || hybrid.activeTarget?.title != "Interview Prep" {
-            errors.append("active target should lock hybrid and travel with the context")
-        }
-        if hybrid.activeTarget?.dailyRequirements.first?.title != "LeetCode Mediums" {
-            errors.append("target requirement should be in the morning context")
-        }
-        if let data = try? JSONEncoder().encode(hybrid), let encoded = String(data: data, encoding: .utf8) {
+        let morning = ContextBuilder.make(snapshot: snapshot, now: now)
+        if let data = try? JSONEncoder().encode(morning), let encoded = String(data: data, encoding: .utf8) {
             // The time zone "America/Los_Angeles" contains "Angel". It is not the display name.
             let text = encoded.replacingOccurrences(of: "Los_Angeles", with: "")
             if text.contains("sk-") || text.contains("Angel") {
@@ -61,25 +52,24 @@ enum QuestGenerationRules {
             errors.append("morning context did not encode")
         }
 
-        let mock = MockQuestGenerateClient(catalog: catalog).bundle(for: hybrid, now: now)
-        if mock.generatedBy != "mock" || mock.mode != .hybrid {
-            errors.append("mock should return the locked hybrid bundle")
-        }
-        if !mock.quests.contains(where: { $0.kind == .targetInjection && $0.title == "LeetCode Mediums" }) {
-            errors.append("mock should keep the target injection")
+        let mock = MockQuestGenerateClient(catalog: catalog).bundle(for: morning, now: now)
+        if mock.generatedBy != "mock" || mock.mode != .performanceTraining {
+            errors.append("mock should return the locked training bundle")
         }
         if mock.quests.contains(where: { $0.status != .pending || $0.progress.current != 0 || !$0.evidence.isEmpty }) {
             errors.append("mock should strip completion")
         }
 
         var overridden = mock
-        overridden.mode = .performanceTraining
-        if QuestSafety.issues(in: overridden, context: hybrid).isEmpty {
-            errors.append("locked hybrid mode should reject a performance bundle")
+        overridden.mode = .recovery
+        if QuestSafety.issues(in: overridden, context: morning).isEmpty {
+            errors.append("locked training mode should reject a recovery bundle")
         }
-        if QuestSafety.accepting(overridden, context: hybrid, assignedAt: now) != nil {
+        if QuestSafety.accepting(overridden, context: morning, assignedAt: now) != nil {
             errors.append("accepting should drop a mode override")
         }
+
+        errors.append(contentsOf: legacyTargetSaveLoads(catalog: catalog, now: now))
 
         let yellow = sampleContext(mode: .performanceTraining, band: .yellow, dayKey: dayKey)
         var longRun = sampleBundle(mode: .performanceTraining, dayKey: dayKey, now: now)
@@ -193,6 +183,46 @@ enum QuestGenerationRules {
         return errors
     }
 
+    /// Saves from before Targets were removed hold a `targets` array, Target quests, and the Hybrid mode.
+    /// They must still load, so the player keeps level and XP.
+    private static func legacyTargetSaveLoads(catalog: FallbackCatalog, now: Date) -> [String] {
+        var saved = GameSnapshot.fresh(catalog: catalog, now: now)
+        saved.player.xp = 77
+        guard let data = try? saved.encoded(),
+              var json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              var bundle = json["bundle"] as? [String: Any],
+              var quests = bundle["quests"] as? [[String: Any]],
+              var targetQuest = quests.first else {
+            return ["legacy save fixture did not build"]
+        }
+        targetQuest["id"] = "q_legacy_tgt"
+        targetQuest["kind"] = "target_injection"
+        targetQuest["targetId"] = "tgt_legacy"
+        targetQuest["mode"] = "hybrid"
+        quests.append(targetQuest)
+        bundle["quests"] = quests
+        bundle["mode"] = "hybrid"
+        json["bundle"] = bundle
+        json["targets"] = [["id": "tgt_legacy", "title": "Interview Prep"]]
+        guard let legacy = try? JSONSerialization.data(withJSONObject: json) else {
+            return ["legacy save fixture did not encode"]
+        }
+        guard let loaded = try? GameSnapshot.decoded(legacy) else {
+            return ["a save with old Target data should still load"]
+        }
+        var errors: [String] = []
+        if loaded.player.xp != 77 {
+            errors.append("legacy save should keep XP")
+        }
+        if loaded.bundle.quests.contains(where: { $0.id == "q_legacy_tgt" }) || loaded.bundle.quests.count != quests.count - 1 {
+            errors.append("legacy save should drop only the Target quest")
+        }
+        if loaded.bundle.mode != .performanceTraining {
+            errors.append("legacy Hybrid mode should read as Performance Training")
+        }
+        return errors
+    }
+
     private static func sampleContext(mode: QuestMode, band: ReadinessBand, dayKey: String) -> MorningContext {
         MorningContext(
             schemaVersion: 1,
@@ -221,7 +251,6 @@ enum QuestGenerationRules {
                 readinessBand: band
             ),
             calendar: MorningCalendar(busyMinutes: 0, focusBlocks: [], eventsHint: [], wakeWindow: nil),
-            activeTarget: nil,
             goalsBias: [],
             nutrition: MorningNutrition(source: "placeholder", available: false, proteinG: nil, proteinTargetG: 150, calories: nil, calorieTarget: nil, asOf: nil),
             mercury: MorningMercury(available: false, spendTodayUsd: nil, softDailyCapUsd: nil, discretionary7dUsd: nil, state: "unavailable"),
@@ -243,7 +272,6 @@ enum QuestGenerationRules {
             xp: 20,
             difficulty: .easy,
             mode: mode,
-            targetId: nil,
             progress: QuestProgress(current: 0, target: 10, unit: "min"),
             reward: nil,
             status: .pending,

@@ -6,7 +6,6 @@ struct ModePickerInput: Equatable {
     var isSunday: Bool
     var readinessBand: ReadinessBand
     var sleepPerformance: Int?
-    var activeTarget: Bool
     var calendarBusyMinutes: Int
 }
 
@@ -27,9 +26,6 @@ enum ModePicker {
         }
         if input.isSunday && input.readinessBand == .red {
             return lock(.recovery, ["sunday_red"])
-        }
-        if input.activeTarget && input.readinessBand != .red {
-            return lock(.hybrid, ["target_active", "whoop_readiness_ok"])
         }
         if input.readinessBand == .red {
             return lock(.recovery, ["readiness_red"])
@@ -61,10 +57,6 @@ enum ModePicker {
         expect(sample(penaltyTier: 1, spendingFullRecovery: true), .fullRecovery, ["full_recovery_spent"])
         expect(sample(spendingFullRecovery: true, readinessBand: .green), .fullRecovery, ["full_recovery_spent"])
         expect(sample(isSunday: true, readinessBand: .red), .recovery, ["sunday_red"])
-        expect(sample(isSunday: true, readinessBand: .red, activeTarget: true), .recovery, ["sunday_red"])
-        expect(sample(readinessBand: .yellow, sleepPerformance: 50, activeTarget: true), .hybrid, ["target_active", "whoop_readiness_ok"])
-        expect(sample(readinessBand: .green, activeTarget: true), .hybrid, ["target_active", "whoop_readiness_ok"])
-        expect(sample(readinessBand: .red, activeTarget: true), .recovery, ["readiness_red"])
         expect(sample(readinessBand: .red, calendarBusyMinutes: 500), .recovery, ["readiness_red"])
         expect(sample(sleepPerformance: 59), .recovery, ["sleep_low"])
         expect(sample(sleepPerformance: 60), .performanceTraining, ["default_training"])
@@ -86,7 +78,6 @@ enum ModePicker {
         isSunday: Bool = false,
         readinessBand: ReadinessBand = .green,
         sleepPerformance: Int? = 80,
-        activeTarget: Bool = false,
         calendarBusyMinutes: Int = 120
     ) -> ModePickerInput {
         ModePickerInput(
@@ -95,7 +86,6 @@ enum ModePicker {
             isSunday: isSunday,
             readinessBand: readinessBand,
             sleepPerformance: sleepPerformance,
-            activeTarget: activeTarget,
             calendarBusyMinutes: calendarBusyMinutes
         )
     }

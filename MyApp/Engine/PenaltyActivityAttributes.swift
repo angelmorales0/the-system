@@ -4,7 +4,7 @@ import Foundation
 import ActivityKit
 
 /// Keep this struct identical to `PenaltyActivity/PenaltyActivityAttributes.swift`.
-struct PenaltyAttributes: ActivityAttributes {
+nonisolated struct PenaltyAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var questTitle: String
         var tier: Int

@@ -95,6 +95,21 @@ enum PenaltyRules {
         if optionalOnly.player.penaltyTier != 0 {
             errors.append("an optional miss should not open a penalty")
         }
+        var capped = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
+        let run = capped.bundle.quests[0]
+        capped.player.stats[run.stat] = StatValues.maximum - 1
+        _ = capped.apply(.completed(evidence: evidence("cap")), questId: run.id, now: dayOne)
+        if capped.player.stats[run.stat] != StatValues.maximum {
+            errors.append("a quest must not raise a stat above \(StatValues.maximum), got \(capped.player.stats[run.stat])")
+        }
+        capped.undoQuest(id: run.id)
+        if capped.player.stats[run.stat] != StatValues.maximum - 1 {
+            errors.append("undo should remove only the capped grant, got \(capped.player.stats[run.stat])")
+        }
+        if StatValues.starter.capped() != StatValues.starter {
+            errors.append("starter stats must be at or under the cap")
+        }
+
         return errors
     }
 
@@ -105,13 +120,13 @@ enum PenaltyRules {
     private static let catalogJSON = """
     {"schemaVersion":1,"entries":[
       {"mode":"performance_training","readinessBands":["green","yellow","red"],"headerLine":"Performance Training","narrative":"Train.","warnings":[],"quests":[
-        {"id":"run","title":"Run","kind":"daily","stat":"END","verification":{"method":"manual_confirm","params":{}},"xp":30,"difficulty":"normal","targetId":null,"progress":{"current":0,"target":1,"unit":"session"},"reward":null}
+        {"id":"run","title":"Run","kind":"daily","stat":"END","verification":{"method":"manual_confirm","params":{}},"xp":30,"difficulty":"normal","progress":{"current":0,"target":1,"unit":"session"},"reward":null}
       ]},
       {"mode":"penalty","readinessBands":["green","yellow","red"],"headerLine":"Penalty Quest","narrative":"Clear it.","warnings":[],"quests":[
-        {"id":"pen","title":"Penalty Run","kind":"penalty","stat":"END","verification":{"method":"manual_confirm","params":{}},"xp":30,"difficulty":"penalty","targetId":null,"progress":{"current":0,"target":1,"unit":"session"},"reward":null}
+        {"id":"pen","title":"Penalty Run","kind":"penalty","stat":"END","verification":{"method":"manual_confirm","params":{}},"xp":30,"difficulty":"penalty","progress":{"current":0,"target":1,"unit":"session"},"reward":null}
       ]},
       {"mode":"full_recovery","readinessBands":["green","yellow","red"],"headerLine":"Full Recovery Day","narrative":"Rest.","warnings":[],"quests":[
-        {"id":"rest","title":"Rest","kind":"daily","stat":"REC","verification":{"method":"manual_confirm","params":{}},"xp":10,"difficulty":"easy","targetId":null,"progress":{"current":0,"target":1,"unit":"session"},"reward":null}
+        {"id":"rest","title":"Rest","kind":"daily","stat":"REC","verification":{"method":"manual_confirm","params":{}},"xp":10,"difficulty":"easy","progress":{"current":0,"target":1,"unit":"session"},"reward":null}
       ]}
     ]}
     """
