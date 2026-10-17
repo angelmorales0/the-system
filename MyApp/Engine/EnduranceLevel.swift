@@ -13,6 +13,14 @@ struct RunEffort: Codable, Equatable {
     var source: String
 }
 
+/// One timed 1-mile swim (1,609 m, or 1,760 yd in a yard pool), from Strava, Apple Health, or a manual entry.
+/// A longer swim counts only if the source gives a 1-mile split.
+struct SwimEffort: Codable, Equatable {
+    var seconds: Double
+    var date: Date
+    var source: String
+}
+
 /// One VO₂ max estimate in mL/kg/min, from Apple Health (HealthKit VO2Max) or WHOOP.
 struct VO2MaxReading: Codable, Equatable {
     var value: Double
@@ -31,7 +39,7 @@ struct ZoneTwoSession: Codable, Equatable {
 /// Deterministic END (endurance) level 0...146.
 /// Pure: the same inputs and `now` always give the same report. No network and no clock.
 enum EnduranceLevel {
-    /// Run efforts and zone 2 sessions count from the last 180 days.
+    /// Run and swim efforts and zone 2 sessions count from the last 180 days.
     static let effortWindowDays = 180
     /// VO₂ max is a current fitness estimate: the newest reading within 90 days, not the best.
     static let vo2WindowDays = 90
@@ -42,19 +50,23 @@ enum EnduranceLevel {
     static let tenKBand = StatLevel.Band(floor: 5400, target: 3000)    // seconds: 90:00 → 50:00
     static let vo2Band = StatLevel.Band(floor: 25, target: 55)         // mL/kg/min
     static let zoneTwoBand = StatLevel.Band(floor: 0, target: 90)      // continuous minutes
+    static let swimMileBand = StatLevel.Band(floor: 3600, target: 1500) // seconds: 60:00 → 25:00
 
+    /// Six equal requirements.
     enum Weight {
-        static let mile = 20.0
-        static let fiveK = 20.0
-        static let tenK = 20.0
-        static let vo2 = 20.0
-        static let zoneTwo = 20.0
+        static let mile = 100.0 / 6
+        static let fiveK = 100.0 / 6
+        static let tenK = 100.0 / 6
+        static let vo2 = 100.0 / 6
+        static let zoneTwo = 100.0 / 6
+        static let swimMile = 100.0 / 6
     }
 
-    static func evaluate(efforts: [RunEffort], vo2: [VO2MaxReading], zoneTwo: [ZoneTwoSession], now: Date) -> StatLevelReport {
+    static func evaluate(efforts: [RunEffort], swims: [SwimEffort], vo2: [VO2MaxReading], zoneTwo: [ZoneTwoSession], now: Date) -> StatLevelReport {
         let effortStart = now.addingTimeInterval(-Double(effortWindowDays) * 86_400)
         let recentEfforts = efforts.filter { $0.date >= effortStart && $0.seconds > 0 }
         let recentZoneTwo = zoneTwo.filter { $0.date >= effortStart && $0.minutes > 0 }
+        let recentSwims = swims.filter { $0.date >= effortStart && $0.seconds > 0 }
         let vo2Start = now.addingTimeInterval(-Double(vo2WindowDays) * 86_400)
         let recentVO2 = vo2.filter { $0.date >= vo2Start && $0.value > 0 }
         return StatLevelReport(stat: .END, requirements: [
@@ -64,6 +76,7 @@ enum EnduranceLevel {
             runRule("10K easy run", .tenK, recentEfforts, band: tenKBand, weight: Weight.tenK),
             vo2Max(recentVO2),
             zoneTwoEndurance(recentZoneTwo),
+            swimMile(recentSwims),
         ])
     }
 
@@ -85,6 +98,22 @@ enum EnduranceLevel {
             passed: best.seconds <= band.target,
             progress: band.progress(best.seconds),
             weight: weight,
+            detail: "best \(clock(best.seconds)) (\(QuestDay.key(for: best.date)))"
+        )
+    }
+
+    // MARK: - Swim
+
+    /// Strict rule: the fastest 1-mile swim in 180 days is at or under 25:00.
+    private static func swimMile(_ swims: [SwimEffort]) -> StatRequirement {
+        guard let best = swims.min(by: { $0.seconds < $1.seconds }) else {
+            return StatRequirement(category: "1-mile swim", passed: false, progress: 0, weight: Weight.swimMile, detail: "no 1-mile swim in \(effortWindowDays) days")
+        }
+        return StatRequirement(
+            category: "1-mile swim",
+            passed: best.seconds <= swimMileBand.target,
+            progress: swimMileBand.progress(best.seconds),
+            weight: Weight.swimMile,
             detail: "best \(clock(best.seconds)) (\(QuestDay.key(for: best.date)))"
         )
     }
@@ -150,11 +179,12 @@ enum EnduranceLevel {
 
     struct Fixture {
         var efforts: [RunEffort]
+        var swims: [SwimEffort] = []
         var vo2: [VO2MaxReading]
         var zoneTwo: [ZoneTwoSession]
 
         func evaluate(now: Date = checkNow) -> StatLevelReport {
-            EnduranceLevel.evaluate(efforts: efforts, vo2: vo2, zoneTwo: zoneTwo, now: now)
+            EnduranceLevel.evaluate(efforts: efforts, swims: swims, vo2: vo2, zoneTwo: zoneTwo, now: now)
         }
     }
 
@@ -166,6 +196,7 @@ enum EnduranceLevel {
                 RunEffort(distance: .fiveK, seconds: 1190, date: daysAgo(20), source: "Strava"),
                 RunEffort(distance: .tenK, seconds: 2950, date: daysAgo(30), source: "Strava"),
             ],
+            swims: [SwimEffort(seconds: 1470, date: daysAgo(12), source: "Strava")],
             vo2: [VO2MaxReading(value: 57, date: daysAgo(5), source: "Apple Health")],
             zoneTwo: [ZoneTwoSession(minutes: 95, date: daysAgo(15), source: "Strava")]
         )
@@ -179,6 +210,7 @@ enum EnduranceLevel {
                 RunEffort(distance: .fiveK, seconds: 2700, date: daysAgo(20), source: "Strava"),
                 RunEffort(distance: .tenK, seconds: 6000, date: daysAgo(30), source: "Strava"),
             ],
+            swims: [SwimEffort(seconds: 4200, date: daysAgo(12), source: "Strava")],
             vo2: [VO2MaxReading(value: 22, date: daysAgo(5), source: "Apple Health")],
             zoneTwo: []
         )
@@ -191,8 +223,8 @@ enum EnduranceLevel {
         if !report.isMaxLevel {
             errors.append("perfect fixture should reach level 146, failing: " + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
         }
-        if report.requirements.count != 5 {
-            errors.append("END should have 5 requirements, got \(report.requirements.count)")
+        if report.requirements.count != 6 {
+            errors.append("END should have 6 requirements, got \(report.requirements.count)")
         }
         let totalWeight = report.requirements.reduce(0) { $0 + $1.weight }
         if abs(totalWeight - 100) > 0.001 {
@@ -202,7 +234,7 @@ enum EnduranceLevel {
             errors.append("perfect fixture should score 100 and level 146, got \(report.score) level \(report.level)")
         }
 
-        let empty = Fixture(efforts: [], vo2: [], zoneTwo: []).evaluate()
+        let empty = Fixture(efforts: [], swims: [], vo2: [], zoneTwo: []).evaluate()
         if empty.isMaxLevel || empty.level != 0 || empty.score != 0 {
             errors.append("no data must be level 0, got level \(empty.level) score \(empty.score)")
         }
@@ -233,6 +265,27 @@ enum EnduranceLevel {
         failsOnly("10K easy run") { $0.efforts[2].seconds = 3300 }
         failsOnly("VO₂ max") { $0.vo2[0].value = 48 }
         failsOnly("Zone 2 endurance") { $0.zoneTwo[0].minutes = 60 }
+        failsOnly("1-mile swim") { $0.swims[0].seconds = 1800 }
+        failsOnly("1-mile swim") { $0.swims = [] }
+        failsOnly("1-mile swim") { $0.swims[0].date = daysAgo(181) }
+
+        // The swim passes at exactly 25:00 and fails at 25:01. A 42:30 swim is half of the 60:00 → 25:00 band.
+        var exactSwim = perfect
+        exactSwim.swims[0].seconds = 1500
+        if !exactSwim.evaluate().isMaxLevel {
+            errors.append("a 25:00 mile swim should pass")
+        }
+        var slowSwim = perfect
+        slowSwim.swims[0].seconds = 1501
+        if slowSwim.evaluate().failing.map(\.category) != ["1-mile swim"] {
+            errors.append("a 25:01 mile swim should fail")
+        }
+        var halfSwim = perfect
+        halfSwim.swims[0].seconds = 2550
+        let swimRow = halfSwim.evaluate().requirements.first { $0.category == "1-mile swim" }
+        if abs((swimRow?.progress ?? 0) - 0.5) > 0.0001 || swimRow?.detail.hasPrefix("best 42:30") != true {
+            errors.append("a 42:30 swim should give progress 0.5, got \(String(describing: swimRow))")
+        }
 
         // A 5:31 mile misses 5:30 by one second. Strict rule fails; progress stays near 1, so the level caps at 145.
         var slowMile = perfect
