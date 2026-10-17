@@ -83,7 +83,7 @@ Master plan step 15.
 
 Master plan §1.5, §9, and step 17. Device steps are in `docs/PHASE7_DEVICE.md`.
 
-- America/Los_Angeles midnight: an incomplete required set raises `penaltyTier` from 1 to 3 and selects the fallback Penalty Quest bundle. A Full Recovery day waives that miss.
+- Local midnight (the phone's current time zone; a flight west never moves the day back): an incomplete required set raises `penaltyTier` from 1 to 3 and selects the fallback Penalty Quest bundle. A Full Recovery day waives that miss.
 - Family Controls picker on an additive Status sheet. The selection and `penaltyActive` live in the App Group. Morning context does not receive tokens or minute totals.
 - Named `ManagedSettingsStore` `penalty` applies shields on activate and `clearAllSettings()` on clear. A Device Activity monitor re-asserts them, including when its interval ends.
 - ActivityKit Live Activity starts and ends from the foreground. It goes stale after 8 hours. Shields outlive it.

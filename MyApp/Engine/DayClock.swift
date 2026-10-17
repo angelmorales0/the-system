@@ -17,11 +17,17 @@ struct DayClock: Codable, Equatable {
     var startedAt: Date
     var source: Source
 
-    /// Midnight that ends the quest day the ring started on.
-    var deadline: Date {
-        let calendar = QuestDay.calendar
-        let dayStart = calendar.startOfDay(for: startedAt)
-        return calendar.date(byAdding: .day, value: 1, to: dayStart) ?? QuestDay.endOfDay(startedAt)
+    /// Local midnight that ends the ring's quest day, in the phone's current time zone.
+    var deadline: Date { deadline(in: QuestDay.calendar) }
+
+    func deadline(in calendar: Calendar) -> Date {
+        let parts = dayKey.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3,
+              let dayStart = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])),
+              let midnight = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
+            return QuestDay.endOfDay(startedAt)
+        }
+        return midnight
     }
 
     func progress(at now: Date) -> Double {
@@ -39,6 +45,10 @@ struct DayClock: Codable, Equatable {
     static func resolve(current: DayClock?, now: Date, boot: Date?) -> DayClock {
         let key = QuestDay.key(for: now)
         let bootToday = boot.flatMap { $0 <= now && QuestDay.key(for: $0) == key ? $0 : nil }
+        // The local date went back after a flight west. Keep the later day's ring.
+        if let current, current.dayKey > key {
+            return current
+        }
         if let current, current.dayKey == key {
             if current.source == .open, let bootToday, bootToday > current.startedAt {
                 return DayClock(dayKey: key, startedAt: bootToday, source: .boot)
@@ -112,6 +122,30 @@ enum DayClockRules {
         let restarted = DayClock.resolve(current: woke, now: at(2, 15), boot: at(2, 14))
         if restarted != woke {
             errors.append("a later restart should not reset a power-on start")
+        }
+
+        // Flying west after midnight: the local date goes back, the ring keeps the later day.
+        let flewWest = DayClock.resolve(current: woke, now: at(1, 22), boot: at(2, 7))
+        if flewWest != woke {
+            errors.append("an earlier local date should keep the later day's ring")
+        }
+
+        // In New York, the same quest day ends at New York midnight.
+        if let newYork = TimeZone(identifier: "America/New_York") {
+            var eastern = Calendar(identifier: .gregorian)
+            eastern.timeZone = newYork
+            let midnight = eastern.date(from: DateComponents(year: 2026, month: 10, day: 3))
+            if woke.deadline(in: eastern) != midnight {
+                errors.append("the ring should end at local midnight in the phone's time zone")
+            }
+        }
+
+        // A snapshot does not roll back to an earlier local date, so the day is not judged twice.
+        var later = GameSnapshot.fresh(catalog: FallbackCatalog.bundled(), now: at(3, 1))
+        let tier = later.player.penaltyTier
+        later.refreshIfNeeded(catalog: FallbackCatalog.bundled(), now: at(2, 22))
+        if later.bundle.dayKey != "2026-10-03" || later.player.penaltyTier != tier {
+            errors.append("an earlier local date should not roll the quest day back")
         }
 
         // The next quest day starts fresh.

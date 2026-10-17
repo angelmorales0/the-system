@@ -45,7 +45,7 @@ Strava scope: `activity:read_all`. Redirect: `http://127.0.0.1:8787/v1/oauth/str
 
 1. Export `WHOOP_CLIENT_ID`, `WHOOP_CLIENT_SECRET`, and the redirect URI. Do the same for `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET`.
 2. Open `GET /v1/oauth/whoop/start` and visit `authorizeUrl`. After you approve, the callback stores the tokens. Repeat for `/v1/oauth/strava/start`.
-3. `GET /v1/integrations/whoop/snapshot?day=YYYY-MM-DD` and `GET /v1/integrations/strava/snapshot?day=YYYY-MM-DD` return summaries only. Without tokens they return `configured: false` and a TODO reason. The iOS verifiers stay incomplete and do not check the quest off.
+3. `GET /v1/integrations/whoop/snapshot?day=YYYY-MM-DD` and `GET /v1/integrations/strava/snapshot?day=YYYY-MM-DD` return summaries only. The app also sends `tz` (an IANA name such as `America/New_York`), so the day runs from local midnight to local midnight; a missing or unknown `tz` uses America/Los_Angeles. Mercury days stay in America/Los_Angeles. Without tokens they return `configured: false` and a TODO reason. The iOS verifiers stay incomplete and do not check the quest off.
 4. Point the app at this server with `QUEST_GENERATE_BASE_URL`. The phone calls those snapshot URLs. It does not see client secrets or refresh tokens.
 5. WHOOP webhooks: `POST /v1/webhooks/whoop` checks `X-WHOOP-Signature` (base64 HMAC-SHA256 of the timestamp plus the raw body, using `WHOOP_WEBHOOK_SECRET` or the client secret). Strava's subscription handshake is `GET /v1/webhooks/strava` with `hub.verify_token` equal to `STRAVA_WEBHOOK_VERIFY_TOKEN`. Strava does not sign each event; the POST is accepted only after that verify token is set.
 

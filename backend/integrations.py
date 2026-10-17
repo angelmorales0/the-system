@@ -194,7 +194,7 @@ def access_token(provider: str) -> str | None:
     return token or None
 
 
-def whoop_snapshot(day: str) -> dict[str, Any]:
+def whoop_snapshot(day: str, tz: str | None = None) -> dict[str, Any]:
     base = empty_whoop(day)
     if not configured("whoop"):
         base["reason"] = "TODO: WHOOP tokens are not configured on the backend."
@@ -204,7 +204,7 @@ def whoop_snapshot(day: str) -> dict[str, Any]:
         base["configured"] = True
         base["reason"] = "TODO: WHOOP token refresh failed."
         return base
-    start, end = day_bounds(day)
+    start, end = day_bounds(day, tz)
     recovery = whoop_collection(token, "/v2/recovery", start, end)
     cycle = whoop_collection(token, "/v2/cycle", start, end)
     sleep = whoop_collection(token, "/v2/activity/sleep", start, end)
@@ -231,7 +231,7 @@ def whoop_snapshot(day: str) -> dict[str, Any]:
     return base
 
 
-def strava_snapshot(day: str) -> dict[str, Any]:
+def strava_snapshot(day: str, tz: str | None = None) -> dict[str, Any]:
     base = empty_strava(day)
     if not configured("strava"):
         base["reason"] = "TODO: Strava tokens are not configured on the backend."
@@ -241,7 +241,7 @@ def strava_snapshot(day: str) -> dict[str, Any]:
         base["configured"] = True
         base["reason"] = "TODO: Strava token refresh failed."
         return base
-    start, end = day_bounds(day)
+    start, end = day_bounds(day, tz)
     payload = get_json(
         f"{STRAVA_API}/athlete/activities?after={int(start.timestamp())}&before={int(end.timestamp())}&per_page=50",
         token,
@@ -329,9 +329,21 @@ def public_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in payload.items() if key not in hidden}
 
 
-def day_bounds(day: str) -> tuple[datetime, datetime]:
-    start = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=LA)
-    return start, start + timedelta(days=1)
+def local_zone(tz: str | None) -> ZoneInfo:
+    """The phone's time zone, so a quest day ends at local midnight. Unknown names fall back to LA."""
+    if not tz:
+        return LA
+    try:
+        return ZoneInfo(tz)
+    except (ValueError, KeyError):
+        return LA
+
+
+def day_bounds(day: str, tz: str | None = None) -> tuple[datetime, datetime]:
+    zone = local_zone(tz)
+    start = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=zone)
+    end = (start + timedelta(days=1)).replace(tzinfo=zone)
+    return start, end
 
 
 def whoop_collection(token: str, path: str, start: datetime, end: datetime) -> dict[str, Any] | None:
@@ -420,6 +432,11 @@ def strava_activity(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def self_check() -> None:
+    start, end = day_bounds("2026-10-02", "America/New_York")
+    if start.isoformat() != "2026-10-02T00:00:00-04:00" or end.isoformat() != "2026-10-03T00:00:00-04:00":
+        raise SystemExit("day bounds should follow the phone's time zone")
+    if day_bounds("2026-10-02", "Not/AZone")[0].utcoffset() != day_bounds("2026-10-02")[0].utcoffset():
+        raise SystemExit("an unknown time zone should fall back to Los Angeles")
     secret = "test-secret"
     body = b"{}"
     timestamp = "100"

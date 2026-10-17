@@ -620,15 +620,15 @@ def strava_refresh() -> dict[str, Any]:
 
 
 @app.get("/v1/integrations/whoop/snapshot")
-def whoop_snapshot(day: str) -> dict[str, Any]:
+def whoop_snapshot(day: str, tz: str | None = None) -> dict[str, Any]:
     require_day(day)
-    return integrations.public_payload(integrations.whoop_snapshot(day))
+    return integrations.public_payload(integrations.whoop_snapshot(day, tz))
 
 
 @app.get("/v1/integrations/strava/snapshot")
-def strava_snapshot(day: str) -> dict[str, Any]:
+def strava_snapshot(day: str, tz: str | None = None) -> dict[str, Any]:
     require_day(day)
-    return integrations.public_payload(integrations.strava_snapshot(day))
+    return integrations.public_payload(integrations.strava_snapshot(day, tz))
 
 
 @app.post("/v1/webhooks/whoop")
