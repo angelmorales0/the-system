@@ -105,7 +105,7 @@ struct SystemView: View {
                 .shadow(color: QuestLight.blue.opacity(0.7), radius: 6)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 22)
-            QuestSignalRing()
+            QuestSignalRing(dayClock: store.dayClock, missesRequiredSet: store.snapshot.missesRequiredSet)
                 .frame(width: 43, height: 43)
         }
     }
@@ -113,7 +113,7 @@ struct SystemView: View {
     private var warning: AttributedString {
         var text = AttributedString("WARNING: " + store.bundle.warningCopy)
         if let range = text.range(of: "penalty", options: .caseInsensitive) {
-            text[range].foregroundColor = Color(red: 1, green: 0.12, blue: 0.32)
+            text[range].foregroundColor = QuestLight.penalty
         }
         return text
     }
@@ -135,6 +135,7 @@ private enum QuestLight {
     static let ink = Color(red: 0.87, green: 0.97, blue: 1)
     static let cyan = Color(red: 0.20, green: 0.80, blue: 1)
     static let blue = Color(red: 0.08, green: 0.42, blue: 1)
+    static let penalty = Color(red: 1, green: 0.12, blue: 0.32)
 }
 
 private struct QuestBackdrop: View {
@@ -224,33 +225,41 @@ private struct QuestCheckbox: View {
     }
 }
 
+/// Counts down the quest day: empty at power-on, one more dash lit each 1/28 of the time left, full at midnight.
+/// It turns penalty red once midnight passes with the required set still open.
 private struct QuestSignalRing: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.scenePhase) private var scenePhase
-    @State private var visible = false
+    let dayClock: DayClock
+    let missesRequiredSet: Bool
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 12,
-                                paused: reduceMotion || scenePhase != .active || !visible)) { timeline in
-            let phase = reduceMotion ? 0 : Int(timeline.date.timeIntervalSinceReferenceDate * 7) % 28
+        TimelineView(.periodic(from: .now, by: 30)) { timeline in
+            let lit = dayClock.litSegments(at: timeline.date)
+            let failed = missesRequiredSet && timeline.date >= dayClock.deadline
+            let tint = failed ? QuestLight.penalty : QuestLight.ink
             Canvas { context, size in
-                for index in 0..<28 {
+                for index in 0..<DayClock.segments {
                     var segment = context
                     segment.translateBy(x: size.width / 2, y: size.height / 2)
-                    segment.rotate(by: .degrees(Double(index) * 360 / 28))
+                    segment.rotate(by: .degrees(Double(index) * 360 / Double(DayClock.segments)))
                     let rect = CGRect(x: -1.15, y: -size.height / 2 + 1, width: 2.3, height: 5.3)
                     let path = Path(roundedRect: rect, cornerRadius: 0.8)
-                    let lit = (index + phase) % 28 > 19
-                    segment.fill(path, with: .color(QuestLight.ink.opacity(lit ? 0.9 : 0.05)))
-                    segment.stroke(path, with: .color(QuestLight.ink.opacity(lit ? 1 : 0.4)), lineWidth: 0.5)
+                    let isLit = failed || index < lit
+                    segment.fill(path, with: .color(tint.opacity(isLit ? 0.9 : 0.05)))
+                    segment.stroke(path, with: .color(tint.opacity(isLit ? 1 : 0.4)), lineWidth: 0.5)
                 }
             }
+            .shadow(color: failed ? QuestLight.penalty.opacity(0.8) : QuestLight.cyan.opacity(0.8), radius: 4)
+            .accessibilityElement()
+            .accessibilityLabel("Day timer")
+            .accessibilityValue(accessibilityValue(at: timeline.date, failed: failed))
         }
-        .shadow(color: QuestLight.cyan.opacity(0.8), radius: 4)
         .allowsHitTesting(false)
-        .accessibilityHidden(true)
-        .onAppear { visible = true }
-        .onDisappear { visible = false }
+    }
+
+    private func accessibilityValue(at now: Date, failed: Bool) -> String {
+        if failed { return "Midnight passed. Daily quest failed." }
+        let minutes = max(0, Int(dayClock.deadline.timeIntervalSince(now) / 60))
+        return "\(minutes / 60) hours \(minutes % 60) minutes until midnight"
     }
 }
 

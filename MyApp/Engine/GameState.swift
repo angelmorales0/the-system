@@ -71,11 +71,16 @@ struct GameSnapshot: Codable, Equatable {
 
     /// Incomplete required quests escalate the penalty. A Full Recovery day does not.
     mutating func recordMissedDayIfNeeded() {
+        guard missesRequiredSet else { return }
+        player.penaltyTier = min(3, player.penaltyTier + 1)
+    }
+
+    /// True when ending the day now would raise the penalty tier.
+    var missesRequiredSet: Bool {
         let required = bundle.quests.filter { $0.kind != .optional }
         let missed = !required.isEmpty && required.contains { $0.status != .completed }
         let waived = bundle.mode == .fullRecovery || signals.spendingFullRecovery || fullRecoveryDayKey == bundle.dayKey
-        guard missed, !waived else { return }
-        player.penaltyTier = min(3, player.penaltyTier + 1)
+        return missed && !waived
     }
 
     private mutating func assignQueuedRecovery(on key: String) {

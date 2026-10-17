@@ -13,6 +13,7 @@ final class GameStore: ObservableObject {
     @Published private(set) var snapshot: GameSnapshot
     @Published private(set) var verificationNote: String?
     @Published private(set) var clock = Date()
+    @Published private(set) var dayClock: DayClock
 
     private let catalog: FallbackCatalog
     private let generator: any QuestGenerating
@@ -25,12 +26,19 @@ final class GameStore: ObservableObject {
         #if DEBUG
         let problems = VerificationFixtures.check() + TargetRules.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
+        let ringProblems = DayClockRules.check()
+        precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
         #endif
 
         let catalog = FallbackCatalog.bundled()
         self.catalog = catalog
         self.generator = QuestGenerateClient.make(catalog: catalog)
         self.persistence = persistence
+        dayClock = DayClock.resolve(
+            current: persistence == .standard ? DayClock.load() : nil,
+            now: .now,
+            boot: DayClock.bootTime()
+        )
         switch persistence {
         case .memory:
             snapshot = GameSnapshot.fresh(catalog: catalog)
@@ -198,6 +206,7 @@ final class GameStore: ObservableObject {
         if snapshot.bundle.dayKey != previousDay {
             verificationNote = nil
         }
+        dayClock = DayClock.resolve(current: dayClock, now: now, boot: DayClock.bootTime())
         advanceTimers(now: now)
         evaluateConnectedVerifiers(now: now)
         requestGenerationIfNeeded(now: now)
@@ -444,6 +453,7 @@ final class GameStore: ObservableObject {
     private func persist() {
         guard persistence == .standard else { return }
         snapshot.saveToUserDefaults()
+        dayClock.save()
     }
 
     private static func clockString(_ seconds: TimeInterval) -> String {
