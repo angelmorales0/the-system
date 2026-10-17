@@ -53,6 +53,16 @@ Strava scope: `activity:read_all`. Redirect: `http://127.0.0.1:8787/v1/oauth/str
 
 HealthKit is on-device only. In Apple Health, allow workouts, protein, dietary energy, weight, and sleep. MacroFactor has no API: turn on More → Integrations → Apple Health so its protein and weight samples are preferred when they are present. The HealthKit entitlement is in `MyApp.entitlements` for iOS; turn on HealthKit for the App ID in the developer portal before running on a device.
 
+## Hevy
+
+Hevy gives sets, reps, and weight for each exercise. Its public API needs Hevy Pro. The API key stays on the backend; the app never sees it.
+
+1. In Hevy, open https://hevy.com/settings and copy the API key from the developer section.
+2. Export `HEVY_API_KEY` in the shell that runs `python app.py`. Or put `{"api_key": "..."}` in `backend/.secrets/hevy.json`.
+3. `GET /v1/integrations/hevy/snapshot?day=YYYY-MM-DD&tz=...` returns that local day's workouts: exercise title, template id, and each set's type, reps, kg, and RPE. Notes and descriptions are not returned. Without a key it returns `configured: false` and a TODO reason.
+
+The `hevy_sets` verifier counts working sets (not warm-ups) of one exercise. `exercise` matches the title without the equipment in brackets, so `Bench Press` counts `Bench Press (Barbell)` but not `Incline Bench Press (Dumbbell)`. Use `templateId` for an exact exercise. Optional `minReps` and `minWeightKg` apply to each set. The Bench Press quest uses it.
+
 ## Mercury
 
 The Read Only token stays in the environment. The app never sees it. Copy `backend/.env.example` and export the variables in the same shell that runs `python app.py`.

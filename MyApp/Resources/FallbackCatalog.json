@@ -41,9 +41,9 @@
           "kind": "daily",
           "stat": "STR",
           "verification": {
-            "method": "healthkit_workout",
+            "method": "hevy_sets",
             "params": {
-              "activityType": "traditionalStrengthTraining",
+              "exercise": "Bench Press",
               "sets": 4
             }
           },

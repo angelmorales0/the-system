@@ -196,7 +196,8 @@ final class GameStore: ObservableObject {
                 whoop: remote.whoop,
                 strava: remote.strava,
                 health: health,
-                mercury: remote.mercury
+                mercury: remote.mercury,
+                hevy: remote.hevy
             )
             if rebuilt {
                 self.runningTimersRemoveMissing()

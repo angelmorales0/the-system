@@ -51,6 +51,8 @@ enum VerifierRegistry {
             return WhoopRecoveryVerifier()
         case .stravaActivity:
             return StravaActivityVerifier()
+        case .hevySets:
+            return HevySetsVerifier()
         case .healthkitWorkout:
             return HealthKitWorkoutVerifier()
         case .healthkitNutrition:

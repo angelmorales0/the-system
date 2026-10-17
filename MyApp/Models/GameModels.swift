@@ -68,6 +68,7 @@ enum VerificationMethod: String, Codable, CaseIterable, Equatable {
     case whoopStrain = "whoop_strain"
     case whoopRecovery = "whoop_recovery"
     case stravaActivity = "strava_activity"
+    case hevySets = "hevy_sets"
     case healthkitWorkout = "healthkit_workout"
     case healthkitNutrition = "healthkit_nutrition"
     case macrofactorProtein = "macrofactor_protein"

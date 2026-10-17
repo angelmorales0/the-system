@@ -104,6 +104,57 @@ enum IntegrationRules {
             errors.append("a long enough run should complete, got \(cleared)")
         }
 
+        // Hevy: count today's working Bench Press sets. Warm-ups, other bench variants, and short sets do not count.
+        let benchQuest = quest(method: .hevySets, params: ["exercise": .string("Bench Press"), "sets": .number(4), "minReps": .number(5)])
+        if case .incomplete(let reason) = HevySetsVerifier().evaluate(quest: benchQuest, context: context(day, now: start)) {
+            if !reason.contains("TODO") { errors.append("disconnected Hevy should explain the TODO") }
+        } else {
+            errors.append("disconnected Hevy must not complete")
+        }
+        if VerificationMethod.hevySets.allowsLocalCheckbox {
+            errors.append("Hevy sets should not use the local checkbox")
+        }
+        func set(_ type: String, _ reps: Int?, _ kg: Double?) -> HevySet { HevySet(type: type, reps: reps, weightKg: kg, rpe: nil) }
+        let morning = HevyWorkout(id: "w1", title: "Push", start: start, end: start.addingTimeInterval(3600), exercises: [
+            HevyExercise(title: "Bench Press (Barbell)", templateId: "BP", sets: [
+                set("warmup", 10, 40), set("normal", 5, 80), set("normal", 5, 80), set("normal", 3, 85), set("normal", 5, 80),
+            ]),
+            HevyExercise(title: "Incline Bench Press (Dumbbell)", templateId: "IBP", sets: [set("normal", 8, 30), set("normal", 8, 30)]),
+        ])
+        var lifted = day
+        lifted.hevy = HevyDayReading(available: true, configured: true, reason: "", dayKey: "2026-10-01", workouts: [morning])
+        if case .progress(let current, _) = HevySetsVerifier().evaluate(quest: benchQuest, context: context(lifted, now: start)) {
+            if current != 3 { errors.append("Hevy should count 3 working bench sets of 5+ reps, got \(current)") }
+        } else {
+            errors.append("3 of 4 bench sets should be progress")
+        }
+        let evening = HevyWorkout(id: "w2", title: "Top-up", start: start.addingTimeInterval(7200), end: start.addingTimeInterval(7800), exercises: [
+            HevyExercise(title: "Bench Press (Smith Machine)", templateId: "BPS", sets: [set("normal", 6, 70)]),
+        ])
+        lifted.hevy.workouts.append(evening)
+        let benchDone = HevySetsVerifier().evaluate(quest: benchQuest, context: context(lifted, now: start))
+        if case .completed(let evidence) = benchDone {
+            if evidence.source != "hevy" || !evidence.externalId.contains("bench press") {
+                errors.append("Hevy completion should cite the exercise, got \(evidence.externalId)")
+            }
+            var claimed = context(lifted, now: start)
+            claimed.claimedKeys = [evidence.reuseKey]
+            if case .failed = HevySetsVerifier().evaluate(quest: benchQuest, context: claimed) {
+            } else {
+                errors.append("the same Hevy sets must not clear two quests")
+            }
+        } else {
+            errors.append("4 bench sets across two workouts should complete, got \(benchDone)")
+        }
+        let heavy = quest(method: .hevySets, params: ["templateId": .string("BP"), "sets": .number(1), "minWeightKg": .number(85)])
+        if case .completed = HevySetsVerifier().evaluate(quest: heavy, context: context(lifted, now: start)) {
+        } else {
+            errors.append("one set at 85 kg by template id should complete")
+        }
+        if HevySetsVerifier.baseName("Incline Bench Press (Dumbbell)") == "bench press" {
+            errors.append("an incline bench should not match a Bench Press quest")
+        }
+
         var health = HealthDaySummary.unavailable
         health.access = .requested
         health.proteinGrams = 160

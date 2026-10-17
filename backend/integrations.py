@@ -1,4 +1,4 @@
-"""WHOOP and Strava OAuth stubs.
+"""WHOOP and Strava OAuth stubs, and the Hevy API-key reader.
 
 Client secrets and refresh tokens stay in the process environment or in
 backend/.secrets (gitignored). Responses never include them.
@@ -28,6 +28,10 @@ STRAVA_TOKEN = "https://www.strava.com/oauth/token"
 STRAVA_API = "https://www.strava.com/api/v3"
 WHOOP_SCOPES = "offline read:recovery read:sleep read:cycles read:workout read:body_measurement"
 STRAVA_SCOPES = "activity:read_all"
+HEVY_API = "https://api.hevyapp.com"
+# Hevy pages are at most 10 workouts. Newest first, so a few pages reach any recent day.
+HEVY_PAGE_SIZE = 10
+HEVY_MAX_PAGES = 5
 
 
 def secrets_dir() -> str:
@@ -265,6 +269,126 @@ def strava_snapshot(day: str, tz: str | None = None) -> dict[str, Any]:
     return base
 
 
+def hevy_api_key() -> str:
+    """Hevy Pro API key from HEVY_API_KEY or backend/.secrets/hevy.json ({"api_key": "..."}). Never returned."""
+    if env("HEVY_API_KEY"):
+        return env("HEVY_API_KEY")
+    path = os.path.join(secrets_dir(), "hevy.json")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            stored = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return ""
+    key = stored.get("api_key") if isinstance(stored, dict) else None
+    return key.strip() if isinstance(key, str) else ""
+
+
+def hevy_snapshot(day: str, tz: str | None = None) -> dict[str, Any]:
+    base = empty_hevy(day)
+    key = hevy_api_key()
+    if not key:
+        base["reason"] = "TODO: Set HEVY_API_KEY on the backend (Hevy Pro, hevy.com/settings)."
+        return base
+    base["configured"] = True
+    start, end = day_bounds(day, tz)
+    workouts: list[dict[str, Any]] = []
+    for page in range(1, HEVY_MAX_PAGES + 1):
+        payload = hevy_get(f"{HEVY_API}/v1/workouts?page={page}&pageSize={HEVY_PAGE_SIZE}", key)
+        if not isinstance(payload, dict) or not isinstance(payload.get("workouts"), list):
+            if page == 1:
+                base["reason"] = "TODO: Hevy request failed. Check HEVY_API_KEY."
+                return base
+            break
+        items = [item for item in payload["workouts"] if isinstance(item, dict)]
+        parsed = [workout for workout in (hevy_workout(item) for item in items) if workout]
+        workouts.extend(workout for workout in parsed if in_day(workout["start"], start, end))
+        # Newest first: once a page reaches before the day, later pages are older still.
+        if not items or any(before(workout["start"], start) for workout in parsed):
+            break
+        if page >= int(payload.get("page_count") or page):
+            break
+    base.update({"available": True, "reason": "", "workouts": workouts})
+    return base
+
+
+def hevy_get(url: str, key: str) -> Any:
+    request = urllib.request.Request(url, headers={"api-key": key, "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            return json.loads(response.read().decode())
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+        return None
+
+
+def hevy_workout(item: dict[str, Any]) -> dict[str, Any] | None:
+    """One Hevy workout reduced to exercises and sets. No notes or description."""
+    start = item.get("start_time")
+    end = item.get("end_time")
+    if not isinstance(start, str) or not start:
+        return None
+    exercises = []
+    for exercise in item.get("exercises") or []:
+        if not isinstance(exercise, dict):
+            continue
+        sets = []
+        for entry in exercise.get("sets") or []:
+            if not isinstance(entry, dict):
+                continue
+            reps = entry.get("reps")
+            weight = entry.get("weight_kg")
+            rpe = entry.get("rpe")
+            sets.append(
+                {
+                    "type": str(entry.get("type") or "normal"),
+                    "reps": int(reps) if isinstance(reps, (int, float)) else None,
+                    "weightKg": float(weight) if isinstance(weight, (int, float)) else None,
+                    "rpe": float(rpe) if isinstance(rpe, (int, float)) else None,
+                }
+            )
+        exercises.append(
+            {
+                "title": str(exercise.get("title") or ""),
+                "templateId": str(exercise["exercise_template_id"]) if exercise.get("exercise_template_id") else None,
+                "sets": sets,
+            }
+        )
+    return {
+        "id": str(item.get("id") or start),
+        "title": str(item.get("title") or "Workout"),
+        "start": iso_utc(start),
+        "end": iso_utc(end if isinstance(end, str) and end else start),
+        "exercises": exercises,
+    }
+
+
+def iso_utc(value: str) -> str:
+    """Any ISO 8601 time as `YYYY-MM-DDTHH:MM:SSZ`, which the phone decodes."""
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return normalize_time(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo("UTC"))
+    return parsed.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def parse_utc(value: str) -> datetime | None:
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=ZoneInfo("UTC"))
+    except ValueError:
+        return None
+
+
+def in_day(value: str, start: datetime, end: datetime) -> bool:
+    moment = parse_utc(value)
+    return moment is not None and start <= moment < end
+
+
+def before(value: str, start: datetime) -> bool:
+    moment = parse_utc(value)
+    return moment is not None and moment < start
+
+
 def verify_whoop_signature(body: bytes, timestamp: str, signature: str, secret: str | None = None) -> bool:
     """HMAC-SHA256 of `{timestamp}{body}`, base64, using the webhook secret.
 
@@ -324,8 +448,12 @@ def empty_strava(day: str) -> dict[str, Any]:
     return {"available": False, "configured": False, "reason": "", "dayKey": day, "activities": []}
 
 
+def empty_hevy(day: str) -> dict[str, Any]:
+    return {"available": False, "configured": False, "reason": "", "dayKey": day, "workouts": []}
+
+
 def public_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    hidden = {"access_token", "refresh_token", "client_secret", "client_id"}
+    hidden = {"access_token", "refresh_token", "client_secret", "client_id", "api_key"}
     return {key: value for key, value in payload.items() if key not in hidden}
 
 
@@ -474,3 +602,55 @@ def self_check() -> None:
             raise SystemExit("snapshot included a secret field")
     if snapshot["configured"] is not False or snapshot["available"] is not False:
         raise SystemExit("empty whoop snapshot should be disconnected")
+    sample = {
+        "id": "w1",
+        "title": "Push",
+        "description": "private note",
+        "start_time": "2026-10-02T14:00:00+00:00",
+        "end_time": "2026-10-02T15:05:30Z",
+        "exercises": [
+            {
+                "title": "Bench Press (Barbell)",
+                "exercise_template_id": "79D0BB3A",
+                "notes": "private",
+                "sets": [
+                    {"type": "warmup", "weight_kg": 40, "reps": 10, "rpe": None},
+                    {"type": "normal", "weight_kg": 80.5, "reps": 5, "rpe": 8},
+                    {"type": "normal", "weight_kg": None, "reps": None},
+                ],
+            }
+        ],
+    }
+    parsed = hevy_workout(sample)
+    if not parsed or parsed["start"] != "2026-10-02T14:00:00Z" or parsed["end"] != "2026-10-02T15:05:30Z":
+        raise SystemExit(f"hevy times should normalize to UTC Z, got {parsed}")
+    bench = parsed["exercises"][0]
+    if bench["templateId"] != "79D0BB3A" or [entry["type"] for entry in bench["sets"]] != ["warmup", "normal", "normal"]:
+        raise SystemExit("hevy exercise should keep template id and set types")
+    if bench["sets"][1] != {"type": "normal", "reps": 5, "weightKg": 80.5, "rpe": 8.0} or bench["sets"][2]["reps"] is not None:
+        raise SystemExit(f"hevy sets should keep reps and kg, got {bench['sets']}")
+    if "private" in json.dumps(parsed):
+        raise SystemExit("hevy snapshot should drop notes and descriptions")
+    if hevy_workout({"title": "no start"}) is not None:
+        raise SystemExit("a hevy workout without a start time should be skipped")
+    la_start, la_end = day_bounds("2026-10-02")
+    if not in_day("2026-10-02T14:00:00Z", la_start, la_end) or in_day("2026-10-03T07:30:00Z", la_start, la_end):
+        raise SystemExit("hevy day filter should follow local midnight")
+    previous_key = os.environ.pop("HEVY_API_KEY", None)
+    previous_dir = os.environ.get("SECRETS_DIR")
+    os.environ["SECRETS_DIR"] = os.path.join(os.path.dirname(__file__), ".no-such-secrets")
+    try:
+        missing = hevy_snapshot("2026-10-02")
+        if missing["configured"] or missing["available"] or "HEVY_API_KEY" not in missing["reason"]:
+            raise SystemExit("hevy without a key should be disconnected with a TODO")
+        os.environ["HEVY_API_KEY"] = "test-hevy-key"
+        if hevy_api_key() != "test-hevy-key" or "test-hevy-key" in json.dumps(public_payload(empty_hevy("2026-10-02"))):
+            raise SystemExit("hevy key should be read from the environment and never returned")
+    finally:
+        os.environ.pop("HEVY_API_KEY", None)
+        if previous_key is not None:
+            os.environ["HEVY_API_KEY"] = previous_key
+        if previous_dir is None:
+            os.environ.pop("SECRETS_DIR", None)
+        else:
+            os.environ["SECRETS_DIR"] = previous_dir

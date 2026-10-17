@@ -123,6 +123,72 @@ struct StravaActivityVerifier: Verifier {
     }
 }
 
+/// Counts today's working sets of one exercise in Hevy. Params:
+/// `exercise` (title without the equipment in brackets, so "Bench Press" matches "Bench Press (Barbell)"
+/// but not "Incline Bench Press (Dumbbell)"), or `templateId`;
+/// `sets` (else the quest target); optional `minReps` and `minWeightKg` per set. Warm-up sets never count.
+struct HevySetsVerifier: Verifier {
+    var method: VerificationMethod { .hevySets }
+
+    func evaluate(quest: Quest, context: VerificationContext) -> VerificationResult {
+        guard quest.verification.method == method else { return .unchanged }
+        let reading = context.integrations.hevy
+        guard reading.configured, reading.available else {
+            return .incomplete(reason: reading.reason.isEmpty ? "TODO: Hevy is not connected." : reading.reason)
+        }
+        let params = quest.verification.params
+        let templateId = params["templateId"]?.stringValue
+        let exercise = Self.baseName(params["exercise"]?.stringValue ?? quest.title)
+        let minReps = params["minReps"]?.doubleValue ?? 1
+        let minWeight = params["minWeightKg"]?.doubleValue
+        let target = params["sets"]?.doubleValue ?? quest.progress.target
+
+        var count = 0
+        var workoutIds: [String] = []
+        var latest: Date?
+        for workout in reading.workouts {
+            let matching = workout.exercises.filter { entry in
+                if let templateId { return entry.templateId == templateId }
+                return Self.baseName(entry.title) == exercise
+            }
+            let sets = matching.flatMap(\.sets).filter { set in
+                guard set.isWorking, Double(set.reps ?? 0) + 0.001 >= minReps else { return false }
+                guard let minWeight else { return true }
+                return (set.weightKg ?? 0) + 0.001 >= minWeight
+            }
+            guard !sets.isEmpty else { continue }
+            count += sets.count
+            workoutIds.append(workout.id)
+            latest = max(latest ?? workout.end, workout.end)
+        }
+        guard count > 0 else { return .unchanged }
+
+        let key = templateId ?? exercise
+        let evidence = Evidence.make(
+            source: "hevy",
+            externalId: "hevy:sets:\(context.dayKey):\(key)",
+            payload: "hevy|\(key)|\(context.dayKey)|\(count)|\(workoutIds.sorted().joined(separator: ","))",
+            timestamp: latest ?? context.now
+        )
+        if context.claimedKeys.contains(evidence.reuseKey) {
+            return .failed(reason: "Those sets were already used for another quest today.")
+        }
+        guard Double(count) + 0.001 >= target else {
+            return .progress(current: min(Double(count), quest.progress.target), evidence: evidence)
+        }
+        return .completed(evidence: evidence)
+    }
+
+    /// "Bench Press (Barbell)" → "bench press". Hevy puts the equipment in brackets at the end.
+    static func baseName(_ title: String) -> String {
+        var name = title
+        if let open = name.lastIndex(of: "("), name.hasSuffix(")") {
+            name = String(name[..<open])
+        }
+        return name.trimmingCharacters(in: .whitespaces).lowercased()
+    }
+}
+
 private func proteinResult(quest: Quest, context: VerificationContext, minimum: Double) -> VerificationResult {
     let source = context.integrations.health.proteinPrefersMacroFactor ? "macrofactor" : "healthkit"
     return scalarResult(

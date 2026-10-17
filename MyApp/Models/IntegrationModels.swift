@@ -112,6 +112,44 @@ nonisolated struct StravaDayReading: Codable, Equatable {
     }
 }
 
+/// One set from Hevy. Weight is in kilograms; bodyweight and timed sets have no weight.
+nonisolated struct HevySet: Codable, Equatable {
+    var type: String
+    var reps: Int?
+    var weightKg: Double?
+    var rpe: Double?
+
+    /// Warm-up sets do not count toward a quest.
+    var isWorking: Bool { type.lowercased() != "warmup" }
+}
+
+nonisolated struct HevyExercise: Codable, Equatable {
+    var title: String
+    var templateId: String?
+    var sets: [HevySet]
+}
+
+nonisolated struct HevyWorkout: Codable, Equatable {
+    var id: String
+    var title: String
+    var start: Date
+    var end: Date
+    var exercises: [HevyExercise]
+}
+
+/// Backend Hevy summary for one local day: exercises, sets, reps, and kg. No API key and no notes.
+nonisolated struct HevyDayReading: Codable, Equatable {
+    var available: Bool
+    var configured: Bool
+    var reason: String
+    var dayKey: String
+    var workouts: [HevyWorkout]
+
+    static func disconnected(dayKey: String, reason: String) -> HevyDayReading {
+        HevyDayReading(available: false, configured: false, reason: reason, dayKey: dayKey, workouts: [])
+    }
+}
+
 /// Backend Mercury summary for one local day. No token and no raw transaction list.
 nonisolated struct MercuryDayReading: Codable, Equatable {
     var available: Bool
@@ -188,6 +226,7 @@ struct DayIntegrationSnapshot: Equatable {
     var strava: StravaDayReading
     var health: HealthDaySummary
     var mercury: MercuryDayReading = .disconnected(dayKey: "", reason: "TODO: Mercury is not connected.")
+    var hevy: HevyDayReading = .disconnected(dayKey: "", reason: "TODO: Hevy is not connected.")
     var workouts: [CanonicalWorkout]
 
     static func empty(dayKey: String) -> DayIntegrationSnapshot {
@@ -196,6 +235,7 @@ struct DayIntegrationSnapshot: Equatable {
             strava: .disconnected(dayKey: dayKey, reason: "TODO: Strava is not connected."),
             health: .unavailable,
             mercury: .disconnected(dayKey: dayKey, reason: "TODO: Mercury is not connected."),
+            hevy: .disconnected(dayKey: dayKey, reason: "TODO: Hevy is not connected."),
             workouts: []
         )
     }
@@ -204,7 +244,8 @@ struct DayIntegrationSnapshot: Equatable {
         whoop: WhoopDayReading,
         strava: StravaDayReading,
         health: HealthDaySummary,
-        mercury: MercuryDayReading = .disconnected(dayKey: "", reason: "TODO: Mercury is not connected.")
+        mercury: MercuryDayReading = .disconnected(dayKey: "", reason: "TODO: Mercury is not connected."),
+        hevy: HevyDayReading = .disconnected(dayKey: "", reason: "TODO: Hevy is not connected.")
     ) -> DayIntegrationSnapshot {
         let events = whoop.workouts + strava.activities + health.workouts
         return DayIntegrationSnapshot(
@@ -212,6 +253,7 @@ struct DayIntegrationSnapshot: Equatable {
             strava: strava,
             health: health,
             mercury: mercury,
+            hevy: hevy,
             workouts: WorkoutDedupe.canonical(events)
         )
     }

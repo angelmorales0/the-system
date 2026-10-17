@@ -37,6 +37,7 @@ METHODS = {
     "whoop_strain",
     "whoop_recovery",
     "strava_activity",
+    "hevy_sets",
     "healthkit_workout",
     "healthkit_nutrition",
     "macrofactor_protein",
@@ -95,6 +96,7 @@ def health() -> dict[str, Any]:
         "model": xai_model(),
         "whoop": "configured" if integrations.configured("whoop") else "missing",
         "strava": "configured" if integrations.configured("strava") else "missing",
+        "hevy": "configured" if integrations.hevy_api_key() else "missing",
         "mercury": "configured" if mercury.configured() else "missing",
     }
 
@@ -466,7 +468,7 @@ def mode_quests(mode: str, band: str, day: str) -> list[dict[str, Any]]:
         push = quest(day, "push", "Push Session", "daily", "STR", "healthkit_workout", {"activityType": "traditionalStrengthTraining", "minDurationSec": 1800}, 30, "normal", 30, "min", mode)
         return [zone, push, mobility, protein]
     run = quest(day, "run_intervals", "Run Intervals", "daily", "END", "strava_activity", {"types": ["Run"], "minMovingTimeSec": 1200}, 40, "normal", 6, "reps", mode)
-    bench = quest(day, "bench", "Bench Press", "daily", "STR", "healthkit_workout", {"activityType": "traditionalStrengthTraining", "minDurationSec": 1800}, 40, "normal", 4, "sets", mode)
+    bench = quest(day, "bench", "Bench Press", "daily", "STR", "hevy_sets", {"exercise": "Bench Press", "sets": 4}, 40, "normal", 4, "sets", mode)
     return [run, bench, mobility, protein]
 
 
@@ -568,6 +570,12 @@ def whoop_snapshot(day: str, tz: str | None = None) -> dict[str, Any]:
 def strava_snapshot(day: str, tz: str | None = None) -> dict[str, Any]:
     require_day(day)
     return integrations.public_payload(integrations.strava_snapshot(day, tz))
+
+
+@app.get("/v1/integrations/hevy/snapshot")
+def hevy_snapshot(day: str, tz: str | None = None) -> dict[str, Any]:
+    require_day(day)
+    return integrations.public_payload(integrations.hevy_snapshot(day, tz))
 
 
 @app.post("/v1/webhooks/whoop")

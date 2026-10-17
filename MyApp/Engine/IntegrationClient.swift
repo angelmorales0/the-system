@@ -4,9 +4,10 @@ struct RemoteDayReadings: Equatable {
     var whoop: WhoopDayReading
     var strava: StravaDayReading
     var mercury: MercuryDayReading
+    var hevy: HevyDayReading
 }
 
-/// Reads WHOOP, Strava, and Mercury summaries from the local backend. Tokens never come back to the phone.
+/// Reads WHOOP, Strava, Mercury, and Hevy summaries from the local backend. Tokens never come back to the phone.
 enum IntegrationClient {
     static func load(dayKey: String) async -> RemoteDayReadings {
         let base = QuestGenerateClient.resolvedBase(
@@ -17,7 +18,8 @@ enum IntegrationClient {
             return RemoteDayReadings(
                 whoop: .disconnected(dayKey: dayKey, reason: "TODO: WHOOP is not connected. Set QUEST_GENERATE_BASE_URL to the backend."),
                 strava: .disconnected(dayKey: dayKey, reason: "TODO: Strava is not connected. Set QUEST_GENERATE_BASE_URL to the backend."),
-                mercury: .disconnected(dayKey: dayKey, reason: "TODO: Mercury is not connected. Set QUEST_GENERATE_BASE_URL to the backend.")
+                mercury: .disconnected(dayKey: dayKey, reason: "TODO: Mercury is not connected. Set QUEST_GENERATE_BASE_URL to the backend."),
+                hevy: .disconnected(dayKey: dayKey, reason: "TODO: Hevy is not connected. Set QUEST_GENERATE_BASE_URL to the backend.")
             )
         }
         async let whoop = fetch(WhoopDayReading.self, base: base, path: "v1/integrations/whoop/snapshot", dayKey: dayKey)
@@ -26,8 +28,10 @@ enum IntegrationClient {
             ?? .disconnected(dayKey: dayKey, reason: "TODO: Strava snapshot failed. Check the backend tokens.")
         async let mercury = fetch(MercuryDayReading.self, base: base, path: "v1/integrations/mercury/snapshot", dayKey: dayKey)
             ?? .disconnected(dayKey: dayKey, reason: "TODO: Mercury snapshot failed. Check MERCURY_API_TOKEN on the backend.")
-        let readings = await (whoop, strava, mercury)
-        return RemoteDayReadings(whoop: readings.0, strava: readings.1, mercury: readings.2)
+        async let hevy = fetch(HevyDayReading.self, base: base, path: "v1/integrations/hevy/snapshot", dayKey: dayKey)
+            ?? .disconnected(dayKey: dayKey, reason: "TODO: Hevy snapshot failed. Check HEVY_API_KEY on the backend.")
+        let readings = await (whoop, strava, mercury, hevy)
+        return RemoteDayReadings(whoop: readings.0, strava: readings.1, mercury: readings.2, hevy: readings.3)
     }
 
     private static func fetch<T: Decodable>(_ type: T.Type, base: URL, path: String, dayKey: String) async -> T? {
