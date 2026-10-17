@@ -24,7 +24,6 @@ struct RecoveryDay: Codable, Equatable {
 
     // MacroFactor (through HealthKit)
     var caffeineMg: Double?
-    var alcoholDrinks: Double?
     var proteinG: Double?
     var fatG: Double?
     var carbsG: Double?
@@ -102,7 +101,6 @@ enum RecoveryLevel {
     static let sleepEfficiencyBand = Band(floor: 75, target: 92)     // %
     static let sleepDebtBand = Band(floor: 120, target: 15)          // minutes
     static let caffeineBand = Band(floor: 600, target: 0)            // mg/day average
-    static let alcoholBand = Band(floor: 14, target: 0)              // drinks/week average
     static let proteinBand = Band(floor: 0.8, target: 1.6)           // g/kg
     static let fatBand = Band(floor: 0.3, target: 0.8)               // g/kg
     static let carbBand = Band(floor: 0, target: 0.90)               // share of days matched to load
@@ -122,14 +120,13 @@ enum RecoveryLevel {
     enum Weight {
         static let sleepDuration = 15.0
         static let sleepConsistency = 8.0
-        static let sleepEfficiency = 7.0
+        static let sleepEfficiency = 10.0
         static let sleepDebt = 8.0
         static let caffeine = 5.0
-        static let alcohol = 10.0
         static let nutrition = 15.0
         static let training = 10.0
-        static let hrv = 10.0
-        static let restingHr = 6.0
+        static let hrv = 15.0
+        static let restingHr = 8.0
         static let circadian = 6.0
     }
 
@@ -155,7 +152,6 @@ enum RecoveryLevel {
             sleepEfficiency(window),
             sleepDebt(window),
             caffeine(window),
-            alcohol(window),
             nutrition(window),
             trainingRecovery(window),
             hrv(window: window, baseline: all),
@@ -194,19 +190,6 @@ enum RecoveryLevel {
             progress: caffeineBand.progress(average) * coverage(values.count),
             weight: Weight.caffeine,
             detail: logged(values.count, of: window.count) + "average \(format(average)) mg/day"
-        )
-    }
-
-    /// Strict rule: every logged day at 0 drinks. Progress: drinks/week from 14 down to 0.
-    private static func alcohol(_ window: [RecoveryDay]) -> RecoveryRequirement {
-        let values = window.compactMap(\.alcoholDrinks)
-        let perWeek = values.isEmpty ? alcoholBand.floor : values.reduce(0, +) / Double(values.count) * 7
-        return RecoveryRequirement(
-            category: "Alcohol",
-            passed: values.count >= minimumLoggedDays && values.allSatisfy { $0 <= 0 },
-            progress: alcoholBand.progress(perWeek) * coverage(values.count),
-            weight: Weight.alcohol,
-            detail: logged(values.count, of: window.count) + "\(format(perWeek)) drinks/week"
         )
     }
 
@@ -505,7 +488,6 @@ enum RecoveryLevel {
                 dayStrain: strain,
                 workoutCount: workouts,
                 caffeineMg: 0,
-                alcoholDrinks: 0,
                 proteinG: 140,
                 fatG: 70,
                 carbsG: carbs,
@@ -530,7 +512,6 @@ enum RecoveryLevel {
             copy.dayStrain = 20
             copy.workoutCount = 2
             copy.caffeineMg = 700
-            copy.alcoholDrinks = 3
             copy.proteinG = 40
             copy.fatG = 15
             copy.carbsG = 50
@@ -546,8 +527,8 @@ enum RecoveryLevel {
         if !report.isLevel146 {
             errors.append("perfect days should reach level 146, failing: " + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
         }
-        if report.requirements.count != 11 {
-            errors.append("level 146 should have 11 requirements, got \(report.requirements.count)")
+        if report.requirements.count != 10 {
+            errors.append("level 146 should have 10 requirements, got \(report.requirements.count)")
         }
         let totalWeight = report.requirements.reduce(0) { $0 + $1.weight }
         if abs(totalWeight - 100) > 0.001 {
@@ -597,7 +578,6 @@ enum RecoveryLevel {
         failsOnly("Sleep efficiency") { days in days[89].sleepEfficiencyPct = 30 }
         failsOnly("Sleep debt") { days in days[89].sleepDebtMinutes = 400 }
         failsOnly("Caffeine") { days in days[70].caffeineMg = 95 }
-        failsOnly("Alcohol") { days in days[70].alcoholDrinks = 1 }
         failsOnly("Nutrition") { days in for index in 60..<90 { days[index].proteinG = 100 } }
         failsOnly("Nutrition") { days in for index in 60..<90 { days[index].fatG = 40 } }
         failsOnly("Nutrition") { days in for index in 60..<90 { days[index].caloriesKcal = 3400 } }
@@ -685,7 +665,7 @@ enum RecoveryLevel {
 
         // Only the newest 30 days are scored; older days feed the HRV baseline.
         var oldBad = perfect
-        for index in 0..<60 { oldBad[index].alcoholDrinks = 5 }
+        for index in 0..<60 { oldBad[index].caffeineMg = 500 }
         if !evaluate(days: oldBad).isLevel146 {
             errors.append("days older than the 30-day window should not score")
         }
