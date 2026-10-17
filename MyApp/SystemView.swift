@@ -237,7 +237,9 @@ private struct QuestSignalRing: View {
                     segment.rotate(by: .degrees(Double(index) * 360 / Double(DayClock.segments)))
                     let rect = CGRect(x: -1.15, y: -size.height / 2 + 1, width: 2.3, height: 5.3)
                     let path = Path(roundedRect: rect, cornerRadius: 0.8)
-                    let isLit = failed || index < lit
+                    // Dash 0 is at 12 o'clock and the index runs clockwise. The dark part grows clockwise
+                    // from 12 o'clock, so the last lit dashes sit just left of the top.
+                    let isLit = failed || index >= DayClock.segments - lit
                     segment.fill(path, with: .color(tint.opacity(isLit ? 0.9 : 0.05)))
                     segment.stroke(path, with: .color(tint.opacity(isLit ? 1 : 0.4)), lineWidth: 0.5)
                 }
