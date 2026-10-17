@@ -98,6 +98,7 @@ def health() -> dict[str, Any]:
         "whoop": "configured" if integrations.configured("whoop") else "missing",
         "strava": "configured" if integrations.configured("strava") else "missing",
         "hevy": "configured" if integrations.hevy_api_key() else "missing",
+        "codeforces": "configured" if integrations.codeforces_handle() else "missing",
         "mercury": "configured" if mercury.configured() else "missing",
     }
 
@@ -580,6 +581,11 @@ def hevy_snapshot(day: str, tz: str | None = None) -> dict[str, Any]:
     return integrations.public_payload(integrations.hevy_snapshot(day, tz))
 
 
+@app.get("/v1/integrations/codeforces/snapshot")
+def codeforces_snapshot() -> dict[str, Any]:
+    return integrations.public_payload(integrations.codeforces_snapshot())
+
+
 @app.post("/v1/webhooks/whoop")
 async def whoop_webhook(request: Request) -> dict[str, bool]:
     body = await request.body()
@@ -632,6 +638,13 @@ def mercury_accounts() -> dict[str, Any]:
 @app.get("/v1/integrations/mercury/transactions")
 def mercury_transactions(limit: int = 100, start_after: str = "") -> dict[str, Any]:
     return mercury.list_cached_transactions(limit=limit, start_after=start_after)
+
+
+@app.get("/v1/integrations/mercury/month")
+def mercury_month(month: str) -> dict[str, Any]:
+    if not mercury.valid_month(month):
+        raise HTTPException(status_code=400, detail={"error": "month must be YYYY-MM"})
+    return mercury.month_snapshot(month)
 
 
 @app.post("/v1/webhooks/mercury")

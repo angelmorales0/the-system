@@ -32,6 +32,7 @@ HEVY_API = "https://api.hevyapp.com"
 # Hevy pages are at most 10 workouts. Newest first, so a few pages reach any recent day.
 HEVY_PAGE_SIZE = 10
 HEVY_MAX_PAGES = 5
+CODEFORCES_API = "https://codeforces.com/api"
 
 
 def secrets_dir() -> str:
@@ -320,6 +321,80 @@ def hevy_get(url: str, key: str) -> Any:
         return None
 
 
+def codeforces_handle() -> str:
+    """Codeforces handle from CODEFORCES_HANDLE or backend/.secrets/codeforces.json ({"handle": "..."}). Public, not a secret."""
+    if env("CODEFORCES_HANDLE"):
+        return env("CODEFORCES_HANDLE")
+    path = os.path.join(secrets_dir(), "codeforces.json")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            stored = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return ""
+    value = stored.get("handle") if isinstance(stored, dict) else None
+    return value.strip() if isinstance(value, str) else ""
+
+
+def codeforces_snapshot() -> dict[str, Any]:
+    """Current rating from the official Codeforces API (user.info and user.rating). No key needed."""
+    base = empty_codeforces()
+    handle = codeforces_handle()
+    if not handle:
+        base["reason"] = "TODO: Set CODEFORCES_HANDLE on the backend."
+        return base
+    base.update({"configured": True, "handle": handle})
+    quoted = urllib.parse.quote(handle, safe="")
+    info = codeforces_get(f"{CODEFORCES_API}/user.info?handles={quoted}")
+    if info is None:
+        base["reason"] = "TODO: Codeforces user.info failed. Check CODEFORCES_HANDLE."
+        return base
+    # user.rating lists one entry per rated contest. A failure leaves the count at 0, not the rating.
+    history = codeforces_get(f"{CODEFORCES_API}/user.rating?handle={quoted}")
+    return codeforces_reading(info, history, handle)
+
+
+def codeforces_get(url: str) -> Any:
+    """The `result` of an OK Codeforces response, or None."""
+    request = urllib.request.Request(url, headers={"User-Agent": "the-system-backend/1.0", "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            payload = json.loads(response.read().decode())
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(payload, dict) or payload.get("status") != "OK":
+        return None
+    return payload.get("result")
+
+
+def codeforces_reading(info: Any, history: Any, handle: str) -> dict[str, Any]:
+    """Pure parse of user.info `result` (a list or one user dict) and user.rating `result`."""
+    base = empty_codeforces()
+    if not handle:
+        base["reason"] = "TODO: Set CODEFORCES_HANDLE on the backend."
+        return base
+    base.update({"configured": True, "handle": handle})
+    user = info[0] if isinstance(info, list) and info else info
+    if not isinstance(user, dict) or not user.get("handle"):
+        base["reason"] = f"TODO: Codeforces has no user {handle}. Check CODEFORCES_HANDLE."
+        return base
+
+    def whole(value: Any) -> int | None:
+        return int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+    # Unrated users have no rating, maxRating, or rank fields.
+    base.update({
+        "available": True,
+        "reason": "",
+        "handle": user["handle"],
+        "rating": whole(user.get("rating")),
+        "maxRating": whole(user.get("maxRating")),
+        "rank": user.get("rank") if isinstance(user.get("rank"), str) else None,
+        "contests": len(history) if isinstance(history, list) else 0,
+        "checkedAt": datetime.now(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    })
+    return base
+
+
 def hevy_workout(item: dict[str, Any]) -> dict[str, Any] | None:
     """One Hevy workout reduced to exercises and sets. No notes or description."""
     start = item.get("start_time")
@@ -452,6 +527,10 @@ def empty_strava(day: str) -> dict[str, Any]:
 
 def empty_hevy(day: str) -> dict[str, Any]:
     return {"available": False, "configured": False, "reason": "", "dayKey": day, "workouts": []}
+
+
+def empty_codeforces() -> dict[str, Any]:
+    return {"available": False, "configured": False, "reason": "", "handle": None, "rating": None, "maxRating": None, "rank": None, "contests": 0, "checkedAt": None}
 
 
 def public_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -655,6 +734,44 @@ def self_check() -> None:
         os.environ.pop("HEVY_API_KEY", None)
         if previous_key is not None:
             os.environ["HEVY_API_KEY"] = previous_key
+        if previous_dir is None:
+            os.environ.pop("SECRETS_DIR", None)
+        else:
+            os.environ["SECRETS_DIR"] = previous_dir
+    rated = codeforces_reading(
+        [{"handle": "tourist", "rating": 2150, "maxRating": 2300, "rank": "master", "email": "hidden"}],
+        [{"contestId": 1}, {"contestId": 2}],
+        "tourist",
+    )
+    if not rated["available"] or rated["rating"] != 2150 or rated["maxRating"] != 2300 or rated["rank"] != "master" or rated["contests"] != 2:
+        raise SystemExit(f"codeforces should read the current rating and contest count, got {rated}")
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", rated["checkedAt"] or "") or "hidden" in json.dumps(rated):
+        raise SystemExit(f"codeforces checkedAt should be UTC Z and extra fields dropped, got {rated}")
+    if set(rated) != set(empty_codeforces()):
+        raise SystemExit("codeforces reading should keep the snapshot keys")
+    unrated = codeforces_reading([{"handle": "newbie"}], [], "newbie")
+    if not unrated["available"] or unrated["rating"] is not None or unrated["maxRating"] is not None or unrated["contests"] != 0:
+        raise SystemExit(f"an unrated codeforces user should have no rating, got {unrated}")
+    nohandle = codeforces_reading([], None, "")
+    if nohandle["configured"] or nohandle["available"] or "CODEFORCES_HANDLE" not in nohandle["reason"]:
+        raise SystemExit("codeforces without a handle should be disconnected with a TODO")
+    unknown = codeforces_reading([], None, "ghost")
+    if not unknown["configured"] or unknown["available"] or not unknown["reason"].startswith("TODO"):
+        raise SystemExit("an unknown codeforces handle should be configured but unavailable")
+    previous_handle = os.environ.pop("CODEFORCES_HANDLE", None)
+    previous_dir = os.environ.get("SECRETS_DIR")
+    os.environ["SECRETS_DIR"] = os.path.join(os.path.dirname(__file__), ".no-such-secrets")
+    try:
+        # No handle returns before any request, so this makes no network call.
+        if codeforces_snapshot()["reason"] != "TODO: Set CODEFORCES_HANDLE on the backend.":
+            raise SystemExit("codeforces snapshot without a handle should return the TODO")
+        os.environ["CODEFORCES_HANDLE"] = "tourist"
+        if codeforces_handle() != "tourist":
+            raise SystemExit("codeforces handle should be read from the environment")
+    finally:
+        os.environ.pop("CODEFORCES_HANDLE", None)
+        if previous_handle is not None:
+            os.environ["CODEFORCES_HANDLE"] = previous_handle
         if previous_dir is None:
             os.environ.pop("SECRETS_DIR", None)
         else:

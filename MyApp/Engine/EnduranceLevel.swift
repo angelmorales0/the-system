@@ -1,0 +1,299 @@
+import Foundation
+
+/// A race distance that the END stat scores.
+enum RunDistance: String, Codable, Equatable, CaseIterable {
+    case mile, fiveK, tenK
+}
+
+/// One timed effort at a race distance: a Strava `best_efforts` split, or a whole run of that distance.
+struct RunEffort: Codable, Equatable {
+    var distance: RunDistance
+    var seconds: Double
+    var date: Date
+    var source: String
+}
+
+/// One VO₂ max estimate in mL/kg/min, from Apple Health (HealthKit VO2Max) or WHOOP.
+struct VO2MaxReading: Codable, Equatable {
+    var value: Double
+    var date: Date
+    var source: String
+}
+
+/// The longest unbroken time in heart-rate zone 2 within one activity.
+/// Separate sessions never add up: two 45-minute sessions are two 45-minute rows.
+struct ZoneTwoSession: Codable, Equatable {
+    var minutes: Double
+    var date: Date
+    var source: String
+}
+
+/// Deterministic END (endurance) level 0...146.
+/// Pure: the same inputs and `now` always give the same report. No network and no clock.
+enum EnduranceLevel {
+    /// Run efforts and zone 2 sessions count from the last 180 days.
+    static let effortWindowDays = 180
+    /// VO₂ max is a current fitness estimate: the newest reading within 90 days, not the best.
+    static let vo2WindowDays = 90
+
+    // Floors are the level 0 limits; targets are the level 146 rules. Times put the floor above the target.
+    static let mileBand = StatLevel.Band(floor: 720, target: 330)      // seconds: 12:00 → 5:30
+    static let fiveKBand = StatLevel.Band(floor: 2700, target: 1200)   // seconds: 45:00 → 20:00
+    static let tenKBand = StatLevel.Band(floor: 5400, target: 3000)    // seconds: 90:00 → 50:00
+    static let vo2Band = StatLevel.Band(floor: 25, target: 55)         // mL/kg/min
+    static let zoneTwoBand = StatLevel.Band(floor: 0, target: 90)      // continuous minutes
+
+    enum Weight {
+        static let mile = 20.0
+        static let fiveK = 20.0
+        static let tenK = 20.0
+        static let vo2 = 20.0
+        static let zoneTwo = 20.0
+    }
+
+    static func evaluate(efforts: [RunEffort], vo2: [VO2MaxReading], zoneTwo: [ZoneTwoSession], now: Date) -> StatLevelReport {
+        let effortStart = now.addingTimeInterval(-Double(effortWindowDays) * 86_400)
+        let recentEfforts = efforts.filter { $0.date >= effortStart && $0.seconds > 0 }
+        let recentZoneTwo = zoneTwo.filter { $0.date >= effortStart && $0.minutes > 0 }
+        let vo2Start = now.addingTimeInterval(-Double(vo2WindowDays) * 86_400)
+        let recentVO2 = vo2.filter { $0.date >= vo2Start && $0.value > 0 }
+        return StatLevelReport(stat: .END, requirements: [
+            runRule("1-mile run", .mile, recentEfforts, band: mileBand, weight: Weight.mile),
+            runRule("5K run", .fiveK, recentEfforts, band: fiveKBand, weight: Weight.fiveK),
+            // "Easy" means a low heart rate, which a time alone cannot show. Any 10K effort counts.
+            runRule("10K easy run", .tenK, recentEfforts, band: tenKBand, weight: Weight.tenK),
+            vo2Max(recentVO2),
+            zoneTwoEndurance(recentZoneTwo),
+        ])
+    }
+
+    // MARK: - Runs
+
+    /// Strict rule: the fastest effort in 180 days is at or under the target time.
+    private static func runRule(
+        _ category: String,
+        _ distance: RunDistance,
+        _ efforts: [RunEffort],
+        band: StatLevel.Band,
+        weight: Double
+    ) -> StatRequirement {
+        guard let best = efforts.filter({ $0.distance == distance }).min(by: { $0.seconds < $1.seconds }) else {
+            return StatRequirement(category: category, passed: false, progress: 0, weight: weight, detail: "no \(label(distance)) in \(effortWindowDays) days")
+        }
+        return StatRequirement(
+            category: category,
+            passed: best.seconds <= band.target,
+            progress: band.progress(best.seconds),
+            weight: weight,
+            detail: "best \(clock(best.seconds)) (\(QuestDay.key(for: best.date)))"
+        )
+    }
+
+    // MARK: - Physiology
+
+    /// Strict rule: the newest reading in 90 days is 55 or higher. An older, higher reading does not count.
+    private static func vo2Max(_ readings: [VO2MaxReading]) -> StatRequirement {
+        guard let latest = readings.max(by: { $0.date < $1.date }) else {
+            return StatRequirement(category: "VO₂ max", passed: false, progress: 0, weight: Weight.vo2, detail: "no VO₂ max in \(vo2WindowDays) days")
+        }
+        return StatRequirement(
+            category: "VO₂ max",
+            passed: latest.value >= vo2Band.target,
+            progress: vo2Band.progress(latest.value),
+            weight: Weight.vo2,
+            detail: "latest \(format(latest.value)) mL/kg/min (\(QuestDay.key(for: latest.date)))"
+        )
+    }
+
+    /// Strict rule: one session with 90 continuous minutes in zone 2. Sessions never add up.
+    private static func zoneTwoEndurance(_ sessions: [ZoneTwoSession]) -> StatRequirement {
+        guard let longest = sessions.max(by: { $0.minutes < $1.minutes }) else {
+            return StatRequirement(category: "Zone 2 endurance", passed: false, progress: 0, weight: Weight.zoneTwo, detail: "no zone 2 session in \(effortWindowDays) days")
+        }
+        return StatRequirement(
+            category: "Zone 2 endurance",
+            passed: longest.minutes >= zoneTwoBand.target,
+            progress: zoneTwoBand.progress(longest.minutes),
+            weight: Weight.zoneTwo,
+            detail: "longest \(format(longest.minutes)) min continuous (\(QuestDay.key(for: longest.date)))"
+        )
+    }
+
+    // MARK: - Formatting
+
+    private static func label(_ distance: RunDistance) -> String {
+        switch distance {
+        case .mile: return "mile"
+        case .fiveK: return "5K"
+        case .tenK: return "10K"
+        }
+    }
+
+    /// m:ss with unbounded minutes: 372 → "6:12", 5400 → "90:00".
+    static func clock(_ seconds: Double) -> String {
+        let total = Int(seconds.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    private static func format(_ value: Double) -> String {
+        String(format: "%.1f", value)
+    }
+
+    // MARK: - Self-check (runs in DEBUG at launch)
+
+    /// Fixed clock for the fixtures.
+    static let checkNow = QuestDay.date(from: "2026-10-17") ?? Date(timeIntervalSince1970: 0)
+
+    static func daysAgo(_ days: Int, from now: Date = checkNow) -> Date {
+        now.addingTimeInterval(-Double(days) * 86_400)
+    }
+
+    struct Fixture {
+        var efforts: [RunEffort]
+        var vo2: [VO2MaxReading]
+        var zoneTwo: [ZoneTwoSession]
+
+        func evaluate(now: Date = checkNow) -> StatLevelReport {
+            EnduranceLevel.evaluate(efforts: efforts, vo2: vo2, zoneTwo: zoneTwo, now: now)
+        }
+    }
+
+    /// Inputs that meet every level 146 requirement. Tests edit a copy.
+    static func perfectFixture() -> Fixture {
+        Fixture(
+            efforts: [
+                RunEffort(distance: .mile, seconds: 325, date: daysAgo(10), source: "Strava"),
+                RunEffort(distance: .fiveK, seconds: 1190, date: daysAgo(20), source: "Strava"),
+                RunEffort(distance: .tenK, seconds: 2950, date: daysAgo(30), source: "Strava"),
+            ],
+            vo2: [VO2MaxReading(value: 57, date: daysAgo(5), source: "Apple Health")],
+            zoneTwo: [ZoneTwoSession(minutes: 95, date: daysAgo(15), source: "Strava")]
+        )
+    }
+
+    /// Inputs at or below every level 0 floor.
+    static func floorFixture() -> Fixture {
+        Fixture(
+            efforts: [
+                RunEffort(distance: .mile, seconds: 780, date: daysAgo(10), source: "Strava"),
+                RunEffort(distance: .fiveK, seconds: 2700, date: daysAgo(20), source: "Strava"),
+                RunEffort(distance: .tenK, seconds: 6000, date: daysAgo(30), source: "Strava"),
+            ],
+            vo2: [VO2MaxReading(value: 22, date: daysAgo(5), source: "Apple Health")],
+            zoneTwo: []
+        )
+    }
+
+    static func check() -> [String] {
+        var errors: [String] = []
+        let perfect = perfectFixture()
+        let report = perfect.evaluate()
+        if !report.isMaxLevel {
+            errors.append("perfect fixture should reach level 146, failing: " + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
+        }
+        if report.requirements.count != 5 {
+            errors.append("END should have 5 requirements, got \(report.requirements.count)")
+        }
+        let totalWeight = report.requirements.reduce(0) { $0 + $1.weight }
+        if abs(totalWeight - 100) > 0.001 {
+            errors.append("weights should add to 100, got \(totalWeight)")
+        }
+        if report.level != StatLevel.maxLevel || abs(report.score - 100) > 0.001 || report.stat != .END {
+            errors.append("perfect fixture should score 100 and level 146, got \(report.score) level \(report.level)")
+        }
+
+        let empty = Fixture(efforts: [], vo2: [], zoneTwo: []).evaluate()
+        if empty.isMaxLevel || empty.level != 0 || empty.score != 0 {
+            errors.append("no data must be level 0, got level \(empty.level) score \(empty.score)")
+        }
+
+        let floorReport = floorFixture().evaluate()
+        if floorReport.level != 0 || floorReport.score > 0.001 {
+            errors.append("floor fixture should be level 0, got level \(floorReport.level) score \(floorReport.score): " + floorReport.requirements.map { "\($0.category) \($0.points)" }.joined(separator: ", "))
+        }
+
+        func failsOnly(_ category: String, _ edit: (inout Fixture) -> Void, line: Int = #line) {
+            var fixture = perfect
+            edit(&fixture)
+            let edited = fixture.evaluate()
+            let failing = edited.failing.map(\.category)
+            if failing != [category] {
+                errors.append("line \(line): expected only \(category) to fail, got \(failing)")
+            }
+            if edited.level >= StatLevel.maxLevel {
+                errors.append("line \(line): a failing \(category) must stay under level 146, got \(edited.level)")
+            }
+            if edited.topGains(1).first?.category != category {
+                errors.append("line \(line): \(category) should be the top gain, got \(edited.topGains(1).map(\.category))")
+            }
+        }
+
+        failsOnly("1-mile run") { $0.efforts[0].seconds = 400 }
+        failsOnly("5K run") { $0.efforts[1].seconds = 1500 }
+        failsOnly("10K easy run") { $0.efforts[2].seconds = 3300 }
+        failsOnly("VO₂ max") { $0.vo2[0].value = 48 }
+        failsOnly("Zone 2 endurance") { $0.zoneTwo[0].minutes = 60 }
+
+        // A 5:31 mile misses 5:30 by one second. Strict rule fails; progress stays near 1, so the level caps at 145.
+        var slowMile = perfect
+        slowMile.efforts[0].seconds = 331
+        let slowReport = slowMile.evaluate()
+        if slowReport.failing.map(\.category) != ["1-mile run"] || slowReport.level != StatLevel.maxLevel - 1 {
+            errors.append("a 5:31 mile should fail and cap at level 145, got \(slowReport.failing.map(\.category)) level \(slowReport.level)")
+        }
+        // Exactly 5:30 passes.
+        var exactMile = perfect
+        exactMile.efforts[0].seconds = 330
+        if !exactMile.evaluate().isMaxLevel {
+            errors.append("a 5:30 mile should pass")
+        }
+
+        // Progress is linear: an 8:00 mile is (720 - 480) / (720 - 330) = 240/390 of the band.
+        var eightMile = perfect
+        eightMile.efforts[0].seconds = 480
+        let eightRow = eightMile.evaluate().requirements.first { $0.category == "1-mile run" }
+        if abs((eightRow?.progress ?? 0) - 240.0 / 390.0) > 0.0001 || eightRow?.detail.hasPrefix("best 8:00") != true {
+            errors.append("an 8:00 mile should give progress \(240.0 / 390.0), got \(String(describing: eightRow))")
+        }
+
+        // The fastest effort in the window counts, not the newest.
+        var twoMiles = perfect
+        twoMiles.efforts.append(RunEffort(distance: .mile, seconds: 500, date: daysAgo(1), source: "Strava"))
+        if !twoMiles.evaluate().isMaxLevel {
+            errors.append("a slower newer mile should not hide the faster one")
+        }
+
+        // Efforts and zone 2 sessions older than 180 days do not count.
+        failsOnly("1-mile run") { $0.efforts[0].date = daysAgo(181) }
+        failsOnly("Zone 2 endurance") { $0.zoneTwo[0].date = daysAgo(200) }
+        var oldRow = perfect
+        oldRow.efforts[1].date = daysAgo(181)
+        let oldDetail = oldRow.evaluate().requirements.first { $0.category == "5K run" }?.detail
+        if oldDetail != "no 5K in 180 days" {
+            errors.append("an old 5K should read \"no 5K in 180 days\", got \(String(describing: oldDetail))")
+        }
+
+        // VO₂ max uses the newest reading, not the best: a newer 50 after an older 56 fails.
+        failsOnly("VO₂ max") { fixture in
+            fixture.vo2 = [
+                VO2MaxReading(value: 56, date: daysAgo(40), source: "Apple Health"),
+                VO2MaxReading(value: 50, date: daysAgo(3), source: "WHOOP"),
+            ]
+        }
+        // A reading older than 90 days does not count.
+        failsOnly("VO₂ max") { $0.vo2[0].date = daysAgo(91) }
+
+        // Two 45-minute zone 2 sessions do not add up to 90.
+        failsOnly("Zone 2 endurance") { fixture in
+            fixture.zoneTwo = [
+                ZoneTwoSession(minutes: 45, date: daysAgo(4), source: "Strava"),
+                ZoneTwoSession(minutes: 45, date: daysAgo(2), source: "Strava"),
+            ]
+        }
+
+        if clock(372) != "6:12" || clock(5400) != "90:00" || clock(59.6) != "1:00" {
+            errors.append("clock format wrong: \(clock(372)) \(clock(5400)) \(clock(59.6))")
+        }
+        return errors
+    }
+}

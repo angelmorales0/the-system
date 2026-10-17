@@ -63,6 +63,15 @@ Hevy gives sets, reps, and weight for each exercise. Its public API needs Hevy P
 
 The `hevy_sets` verifier counts working sets (not warm-ups) of one exercise. `exercise` matches the title without the equipment in brackets, so `Bench Press` counts `Bench Press (Barbell)` but not `Incline Bench Press (Dumbbell)`. Use `templateId` for an exact exercise. Optional `minReps` and `minWeightKg` apply to each set. With `minDurationSec` it adds up the hold time of timed sets instead, for stretches such as `Splits [0/3min]`. Bench Press and the green-day Splits quest use it. Name the stretch in Hevy exactly as the quest does (make a custom exercise with the "duration" type if Hevy does not have it).
 
+## Codeforces
+
+The INT stat reads the official Codeforces API. `user.info` and `user.rating` are public, so no key is needed.
+
+1. Export `CODEFORCES_HANDLE` in the shell that runs `python app.py`. Or put `{"handle": "..."}` in `backend/.secrets/codeforces.json`.
+2. `GET /v1/integrations/codeforces/snapshot` returns `handle`, the current `rating`, `maxRating`, `rank`, the count of rated `contests`, and `checkedAt` (UTC, `Z`). An unrated user has a `null` rating. Without a handle it returns `configured: false` and a TODO reason. A failed request returns `available: false` and a TODO reason.
+
+INT scores the current rating, not the peak: 800 is level 0 and 2100 (Master) is level 146.
+
 ## Mercury
 
 The Read Only token stays in the environment. The app never sees it. Copy `backend/.env.example` and export the variables in the same shell that runs `python app.py`.
@@ -103,3 +112,15 @@ Pace states are undecided defaults, not a locked budget:
 The FIN radar adds at most 20 projection points on top of quest XP (pace 0–8, progress toward the $500K goal 0–12). It is not the account balance.
 
 Webhooks: create an endpoint in Mercury aimed at `POST /v1/webhooks/mercury` for `transaction.created`, `transaction.updated`, `checkingAccount.balance.updated`, `savingsAccount.balance.updated`, and `creditAccount.balance.updated`. Put that endpoint's secret in `MERCURY_WEBHOOK_SECRET`. The server checks `Mercury-Signature` as HMAC-SHA256 of `timestamp.raw_body` and rejects a skew over 5 minutes. A transaction event refetches `GET /transaction/{resourceId}` and updates the cache. Unused tokens are deleted after 45 days; a sync or any other GET inside 30 days keeps the token.
+
+### Monthly FIN summary
+
+`GET /v1/integrations/mercury/month?month=YYYY-MM` returns one month from the synced cache: `incomeUsd`, `postTaxIncomeUsd`, `spendingUsd` (necessary + discretionary), `necessaryUsd`, `discretionaryUsd`, `budgetUsd`, `complete`, plus `available`, `configured`, and `reason`. The phone scores the newest complete month for the FIN level (savings rate ≥ 30%, $0 over budget, ≥ $25,000 post-tax income).
+
+Limits:
+
+- Mercury sees deposits, not taxes. Post-tax income is classified income. If deposits are pre-tax revenue, set `MONTHLY_TAX_RESERVE_RATE` (0–0.6, default 0) to subtract that share. There is no real tax data.
+- Mercury sees Mercury accounts only. Spend on other cards or banks is invisible.
+- Mercury has no budget. Set `MONTHLY_BUDGET_USD`. Without it, `budgetUsd` is null and budget adherence is not configured.
+- Internal and treasury transfers count as neither income nor spend. A payment to an outside bank counts as spend unless the category map marks it `transfer`.
+- Sync fetches this calendar year and last month, so January can still score December.

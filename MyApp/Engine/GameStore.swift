@@ -25,6 +25,8 @@ final class GameStore: ObservableObject {
     init(persistence: GamePersistence = .standard) {
         #if DEBUG
         let problems = VerificationFixtures.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check() + RecoveryLevel.check()
+            + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
+            + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))

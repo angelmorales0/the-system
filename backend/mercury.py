@@ -499,10 +499,10 @@ def sync(now: datetime | None = None) -> dict[str, Any] | None:
     if not token:
         return None
     current = now or datetime.now(LA)
-    year_start = f"{current.astimezone(LA).year}-01-01"
+    start = sync_start(current)
     end = (current.astimezone(LA).date() + timedelta(days=1)).isoformat()
     accounts = list_remote("/accounts", token, {}, "accounts")
-    transactions = list_remote("/transactions", token, {"start": year_start, "end": end}, "transactions")
+    transactions = list_remote("/transactions", token, {"start": start, "end": end}, "transactions")
     if accounts is None or transactions is None:
         return None
     ledger = load_ledger()
@@ -511,6 +511,147 @@ def sync(now: datetime | None = None) -> dict[str, Any] | None:
     ledger["syncedAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     save_ledger(ledger)
     return {"synced": True, "accounts": len(accounts), "transactions": len(transactions)}
+
+
+def sync_start(current: datetime) -> str:
+    """January 1, or the first day of last month when that is earlier.
+
+    In January the newest complete month is last December, so the ledger
+    must reach back into the previous year for the monthly FIN summary.
+    """
+    today = current.astimezone(LA).date()
+    year_start = today.replace(month=1, day=1)
+    last_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+    return min(year_start, last_month).isoformat()
+
+
+# MARK: - Monthly FIN summary
+#
+# Data limits. Do not read more into these numbers than Mercury can give:
+# - Mercury sees deposits, not taxes. "Post-tax income" is money that
+#   classify() calls income. If those deposits are pre-tax business revenue,
+#   set MONTHLY_TAX_RESERVE_RATE (0 to 0.6, default 0) and the summary
+#   subtracts that share. There is no real tax data here.
+# - Mercury sees Mercury accounts only. Spend on other cards or banks is
+#   invisible, so spending can be too low and the savings rate too high.
+# - Mercury has no budget. MONTHLY_BUDGET_USD sets it. Without it the
+#   budget is None and the phone shows budget adherence as not configured.
+# - Spending is necessary + discretionary. Internal and treasury transfers
+#   are "transfer", so money moved to Mercury savings neither adds nor
+#   subtracts. A payment to an outside bank is not an internal transfer and
+#   counts as spending unless the category map marks it "transfer".
+# - The ledger holds what sync() fetched: this calendar year and last month.
+
+MAX_TAX_RESERVE_RATE = 0.6
+MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+def valid_month(month: str) -> bool:
+    return bool(MONTH_PATTERN.fullmatch(month or ""))
+
+
+def monthly_budget() -> float | None:
+    raw = env("MONTHLY_BUDGET_USD")
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
+def tax_reserve_rate() -> float:
+    raw = env("MONTHLY_TAX_RESERVE_RATE")
+    if not raw:
+        return 0.0
+    try:
+        value = float(raw)
+    except ValueError:
+        return 0.0
+    return min(max(value, 0.0), MAX_TAX_RESERVE_RATE)
+
+
+def next_month(month: str) -> str:
+    year, number = int(month[:4]), int(month[5:7])
+    return f"{year + 1}-01" if number == 12 else f"{year}-{number + 1:02d}"
+
+
+def month_complete(month: str, now: datetime | None = None) -> bool:
+    """True when the month has ended in America/Los_Angeles."""
+    current = now or datetime.now(LA)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=LA)
+    return current.astimezone(LA).date().isoformat() >= f"{next_month(month)}-01"
+
+
+def month_summary(
+    transactions: list[dict[str, Any]],
+    month: str,
+    budget: float | None,
+    tax_rate: float,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Pure monthly totals for the FIN level. Uses classify() and the local day of summarize()."""
+    overrides = category_map()
+    rate = min(max(float(tax_rate or 0), 0.0), MAX_TAX_RESERVE_RATE)
+    income = 0.0
+    necessary = 0.0
+    discretionary = 0.0
+    for txn in transactions:
+        if not isinstance(txn, dict):
+            continue
+        when = local_day(str(txn.get("postedAt") or txn.get("createdAt") or ""))
+        if when[:7] != month:
+            continue
+        try:
+            amount = float(txn.get("amount") or 0)
+        except (TypeError, ValueError):
+            continue
+        tag = classify(txn, overrides)
+        if tag == "income":
+            income += amount
+        elif tag == "necessary":
+            necessary += abs(amount)
+        elif tag == "discretionary":
+            discretionary += abs(amount)
+    return {
+        "month": month,
+        "incomeUsd": round(income, 2),
+        "postTaxIncomeUsd": round(income * (1 - rate), 2),
+        "spendingUsd": round(necessary + discretionary, 2),
+        "necessaryUsd": round(necessary, 2),
+        "discretionaryUsd": round(discretionary, 2),
+        "budgetUsd": budget,
+        "taxReserveRate": rate,
+        "complete": month_complete(month, now),
+    }
+
+
+def month_snapshot(month: str, now: datetime | None = None) -> dict[str, Any]:
+    """Monthly summary from the synced ledger, like snapshot(). No token and no raw transactions."""
+    budget = monthly_budget()
+    rate = tax_reserve_rate()
+    payload = month_summary([], month, budget, rate, now)
+    payload["budgetConfigured"] = budget is not None
+    if not configured():
+        payload.update(
+            available=False,
+            configured=False,
+            reason="TODO: MERCURY_API_TOKEN is not set. Create a Read Only token in Mercury Settings, then Tokens.",
+        )
+        return public_view(payload)
+    ledger = load_ledger()
+    if not ledger.get("syncedAt"):
+        payload.update(
+            available=False,
+            configured=True,
+            reason="TODO: Mercury token is set. POST /v1/integrations/mercury/sync has not run yet.",
+        )
+        return public_view(payload)
+    payload.update(month_summary(ledger.get("transactions") or [], month, budget, rate, now))
+    payload.update(available=True, configured=True, reason="")
+    return public_view(payload)
 
 
 def list_remote(path: str, token: str, query: dict[str, str], item_key: str) -> list[dict[str, Any]] | None:
@@ -806,6 +947,7 @@ def _self_check_body() -> None:
     if waiting["configured"] is not True or waiting["synced"] is not False:
         raise SystemExit("a token without a sync should not look available")
     os.environ.pop("MERCURY_API_TOKEN", None)
+    _month_check()
     here = os.path.dirname(__file__)
     for name in ("mercury.py", ".env.example", "README.md"):
         text = open(os.path.join(here, name), encoding="utf-8").read()
@@ -814,3 +956,73 @@ def _self_check_body() -> None:
     source = open(__file__, encoding="utf-8").read()
     if re.search(r"secret-token:mercury_[A-Za-z0-9]{8,}", source):
         raise SystemExit("a mercury token was written into the source")
+
+
+def _month_check() -> None:
+    def txn(id_: str, amount: float, kind: str, when: str, category: str = "", status: str = "sent", name: str = "") -> dict[str, Any]:
+        return {"id": id_, "amount": amount, "kind": kind, "status": status, "postedAt": when, "mercuryCategory": category, "counterpartyName": name}
+
+    rows = [
+        txn("pay", 10000, "incomingDomesticWire", "2026-09-15T17:00:00Z", name="Payroll"),
+        txn("save", -3000, "treasuryTransfer", "2026-09-16T17:00:00Z"),
+        txn("move", 2000, "internalTransfer", "2026-09-17T17:00:00Z"),
+        txn("rent", -2500, "outgoingPayment", "2026-09-01T17:00:00Z", "Other", name="Landlord LLC"),
+        txn("food", -300, "debitCardTransaction", "2026-09-10T17:00:00Z", "Grocery"),
+        txn("fun", -700, "debitCardTransaction", "2026-09-20T17:00:00Z", "Restaurants"),
+        txn("dead", -900, "debitCardTransaction", "2026-09-21T17:00:00Z", "Retail", status="cancelled"),
+        txn("oct", -400, "debitCardTransaction", "2026-10-02T17:00:00Z", "Retail"),
+        txn("aug", 5000, "incomingDomesticWire", "2026-08-31T17:00:00Z", name="Payroll"),
+        # 2026-10-01T05:00Z is 22:00 on 2026-09-30 in Los Angeles: a September spend.
+        txn("late", -100, "debitCardTransaction", "2026-10-01T05:00:00Z", "Restaurants"),
+        txn("int", 12, "interestPayment", "2026-09-30T17:00:00Z"),
+    ]
+    october = datetime(2026, 10, 17, 12, 0, tzinfo=LA)
+    saved_regex = os.environ.pop("MERCURY_INCOME_COUNTERPARTY_REGEX", None)
+    saved_map = os.environ.get("MERCURY_CATEGORY_MAP")
+    # A missing map file reads as no overrides, so a local mercury_categories.json cannot change the fixture.
+    os.environ["MERCURY_CATEGORY_MAP"] = os.path.join(tempfile.mkdtemp(), "none.json")
+    try:
+        sept = month_summary(rows, "2026-09", 6000.0, 0.3, october)
+        expect = {
+            "month": "2026-09",
+            "incomeUsd": 10000.0,
+            "postTaxIncomeUsd": 7000.0,
+            "spendingUsd": 3600.0,
+            "necessaryUsd": 2800.0,
+            "discretionaryUsd": 800.0,
+            "budgetUsd": 6000.0,
+            "complete": True,
+        }
+        for key, value in expect.items():
+            if sept.get(key) != value:
+                raise SystemExit(f"month summary {key}: expected {value}, got {sept.get(key)} in {sept}")
+        current = month_summary(rows, "2026-10", None, 0.0, october)
+        if current["complete"] or current["spendingUsd"] != 400 or current["budgetUsd"] is not None:
+            raise SystemExit(f"the month in progress should be incomplete with only October spend: {current}")
+        if month_summary(rows, "2026-09", None, 0.9, october)["postTaxIncomeUsd"] != 4000.0:
+            raise SystemExit("tax reserve rate should clamp to 0.6")
+        if not month_complete("2026-09", datetime(2026, 10, 1, 0, 1, tzinfo=LA)) or month_complete("2026-09", datetime(2026, 9, 30, 23, 59, tzinfo=LA)):
+            raise SystemExit("a month should complete at local midnight on the 1st")
+        if next_month("2026-12") != "2027-01" or not valid_month("2026-09") or valid_month("2026-13") or valid_month("2026-9"):
+            raise SystemExit("month helpers wrong")
+        if sync_start(datetime(2026, 1, 10, 12, tzinfo=LA)) != "2025-12-01" or sync_start(october) != "2026-01-01":
+            raise SystemExit("sync should reach back to last month in January")
+    finally:
+        if saved_regex is not None:
+            os.environ["MERCURY_INCOME_COUNTERPARTY_REGEX"] = saved_regex
+        if saved_map is None:
+            os.environ.pop("MERCURY_CATEGORY_MAP", None)
+        else:
+            os.environ["MERCURY_CATEGORY_MAP"] = saved_map
+    saved_budget = os.environ.pop("MONTHLY_BUDGET_USD", None)
+    try:
+        missing = month_snapshot("2026-09", october)
+        if missing["available"] or missing["configured"] or missing["budgetConfigured"] or "TODO" not in missing["reason"]:
+            raise SystemExit(f"month snapshot without a token should be a TODO: {missing}")
+        os.environ["MONTHLY_BUDGET_USD"] = "6000"
+        if month_snapshot("2026-09", october)["budgetUsd"] != 6000.0:
+            raise SystemExit("MONTHLY_BUDGET_USD should set the budget")
+    finally:
+        os.environ.pop("MONTHLY_BUDGET_USD", None)
+        if saved_budget is not None:
+            os.environ["MONTHLY_BUDGET_USD"] = saved_budget
