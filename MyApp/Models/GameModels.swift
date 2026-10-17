@@ -464,7 +464,8 @@ struct MorningSignals: Codable, Equatable {
 }
 
 enum QuestDay {
-    static let timeZone = TimeZone(identifier: "America/Los_Angeles")!
+    /// The phone's current time zone, so the quest day ends at local midnight while traveling.
+    static var timeZone: TimeZone { .autoupdatingCurrent }
 
     static var calendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)

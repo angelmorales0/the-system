@@ -56,7 +56,8 @@ struct GameSnapshot: Codable, Equatable {
     /// A missed required set raises `penaltyTier` (1...3) unless that day was Full Recovery.
     mutating func refreshIfNeeded(catalog: FallbackCatalog, now: Date = .now) {
         let key = QuestDay.key(for: now)
-        guard bundle.dayKey != key else { return }
+        // Flying west across midnight moves the local date back. Keep the later day, so it is not judged twice.
+        guard key > bundle.dayKey else { return }
         recordMissedDayIfNeeded()
         let previousTitles = bundle.quests.map(\.title)
         if !previousTitles.isEmpty {

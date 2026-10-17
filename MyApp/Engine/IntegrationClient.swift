@@ -36,6 +36,7 @@ enum IntegrationClient {
         components.path = "/" + (components.path.split(separator: "/").map(String.init) + extra).joined(separator: "/")
         var items = components.queryItems ?? []
         items.append(URLQueryItem(name: "day", value: dayKey))
+        items.append(URLQueryItem(name: "tz", value: QuestDay.timeZone.identifier))
         components.queryItems = items
         guard let url = components.url else { return nil }
         var request = URLRequest(url: url)

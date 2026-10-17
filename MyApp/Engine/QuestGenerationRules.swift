@@ -14,8 +14,8 @@ enum QuestGenerationRules {
         if training.modeDecision.selectedMode != .performanceTraining || training.modeDecision.lockedByRules != true {
             errors.append("green morning should lock performance training")
         }
-        if training.player.timezone != "America/Los_Angeles" || training.player.localDate != dayKey {
-            errors.append("context day should stay in America/Los_Angeles")
+        if training.player.timezone != QuestDay.timeZone.identifier || training.player.localDate != dayKey {
+            errors.append("context day should use the phone's time zone")
         }
         if training.whoop.available || training.mercury.available || training.focus.screenTimeAvailable {
             errors.append("live integrations should stay unavailable")
