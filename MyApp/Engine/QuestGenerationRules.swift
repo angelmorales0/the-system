@@ -51,7 +51,9 @@ enum QuestGenerationRules {
         if hybrid.activeTarget?.dailyRequirements.first?.title != "LeetCode Mediums" {
             errors.append("target requirement should be in the morning context")
         }
-        if let data = try? JSONEncoder().encode(hybrid), let text = String(data: data, encoding: .utf8) {
+        if let data = try? JSONEncoder().encode(hybrid), let encoded = String(data: data, encoding: .utf8) {
+            // The time zone "America/Los_Angeles" contains "Angel". It is not the display name.
+            let text = encoded.replacingOccurrences(of: "Los_Angeles", with: "")
             if text.contains("sk-") || text.contains("Angel") {
                 errors.append("morning context leaked a secret or the display name")
             }

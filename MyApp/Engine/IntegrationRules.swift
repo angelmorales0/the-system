@@ -40,7 +40,7 @@ enum IntegrationRules {
             runningTimers: []
         )
         snapshot.bundle.dayKey = "2026-10-01"
-        let reading = WhoopDayReading(
+        let whoopReading = WhoopDayReading(
             available: true,
             configured: true,
             reason: "",
@@ -54,7 +54,7 @@ enum IntegrationRules {
             workouts: []
         )
         let catalog = (try? FallbackCatalog(data: Data(#"{"schemaVersion":1,"entries":[]}"#.utf8))) ?? FallbackCatalog.bundled()
-        _ = snapshot.applyWhoopReadiness(reading, catalog: catalog, now: QuestDay.date(from: "2026-10-01") ?? start)
+        _ = snapshot.applyWhoopReadiness(whoopReading, catalog: catalog, now: QuestDay.date(from: "2026-10-01") ?? start)
         if snapshot.player.stats.REC != rec {
             errors.append("today's recovery score must not overwrite REC")
         }
