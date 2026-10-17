@@ -123,10 +123,12 @@ struct StravaActivityVerifier: Verifier {
     }
 }
 
-/// Counts today's working sets of one exercise in Hevy. Params:
+/// Counts today's working sets of one exercise in Hevy, or their total hold time. Params:
 /// `exercise` (title without the equipment in brackets, so "Bench Press" matches "Bench Press (Barbell)"
-/// but not "Incline Bench Press (Dumbbell)"), or `templateId`;
-/// `sets` (else the quest target); optional `minReps` and `minWeightKg` per set. Warm-up sets never count.
+/// but not "Incline Bench Press (Dumbbell)"), or `templateId`.
+/// Set mode: `sets` (else the quest target); optional `minReps` and `minWeightKg` per set.
+/// Time mode: `minDurationSec` sums the timed sets, for stretches such as "Splits [0/3min]".
+/// Warm-up sets never count.
 struct HevySetsVerifier: Verifier {
     var method: VerificationMethod { .hevySets }
 
@@ -141,9 +143,9 @@ struct HevySetsVerifier: Verifier {
         let exercise = Self.baseName(params["exercise"]?.stringValue ?? quest.title)
         let minReps = params["minReps"]?.doubleValue ?? 1
         let minWeight = params["minWeightKg"]?.doubleValue
-        let target = params["sets"]?.doubleValue ?? quest.progress.target
+        let minDuration = params["minDurationSec"]?.doubleValue
 
-        var count = 0
+        var total = 0.0
         var workoutIds: [String] = []
         var latest: Date?
         for workout in reading.workouts {
@@ -152,29 +154,35 @@ struct HevySetsVerifier: Verifier {
                 return Self.baseName(entry.title) == exercise
             }
             let sets = matching.flatMap(\.sets).filter { set in
-                guard set.isWorking, Double(set.reps ?? 0) + 0.001 >= minReps else { return false }
+                guard set.isWorking else { return false }
+                if minDuration != nil { return (set.durationSec ?? 0) > 0 }
+                guard Double(set.reps ?? 0) + 0.001 >= minReps else { return false }
                 guard let minWeight else { return true }
                 return (set.weightKg ?? 0) + 0.001 >= minWeight
             }
             guard !sets.isEmpty else { continue }
-            count += sets.count
+            total += minDuration != nil ? sets.reduce(0) { $0 + ($1.durationSec ?? 0) } : Double(sets.count)
             workoutIds.append(workout.id)
             latest = max(latest ?? workout.end, workout.end)
         }
-        guard count > 0 else { return .unchanged }
+        guard total > 0 else { return .unchanged }
 
         let key = templateId ?? exercise
+        let mode = minDuration != nil ? "time" : "sets"
         let evidence = Evidence.make(
             source: "hevy",
-            externalId: "hevy:sets:\(context.dayKey):\(key)",
-            payload: "hevy|\(key)|\(context.dayKey)|\(count)|\(workoutIds.sorted().joined(separator: ","))",
+            externalId: "hevy:\(mode):\(context.dayKey):\(key)",
+            payload: "hevy|\(mode)|\(key)|\(context.dayKey)|\(total)|\(workoutIds.sorted().joined(separator: ","))",
             timestamp: latest ?? context.now
         )
         if context.claimedKeys.contains(evidence.reuseKey) {
             return .failed(reason: "Those sets were already used for another quest today.")
         }
-        guard Double(count) + 0.001 >= target else {
-            return .progress(current: min(Double(count), quest.progress.target), evidence: evidence)
+        let target = minDuration ?? params["sets"]?.doubleValue ?? quest.progress.target
+        guard total + 0.001 >= target else {
+            // Time mode shows minutes or seconds, matching the quest's unit.
+            let shown = minDuration != nil && quest.progress.unit == "min" ? total / 60 : total
+            return .progress(current: min(shown, quest.progress.target), evidence: evidence)
         }
         return .completed(evidence: evidence)
     }

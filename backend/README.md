@@ -59,9 +59,9 @@ Hevy gives sets, reps, and weight for each exercise. Its public API needs Hevy P
 
 1. In Hevy, open https://hevy.com/settings and copy the API key from the developer section.
 2. Export `HEVY_API_KEY` in the shell that runs `python app.py`. Or put `{"api_key": "..."}` in `backend/.secrets/hevy.json`.
-3. `GET /v1/integrations/hevy/snapshot?day=YYYY-MM-DD&tz=...` returns that local day's workouts: exercise title, template id, and each set's type, reps, kg, and RPE. Notes and descriptions are not returned. Without a key it returns `configured: false` and a TODO reason.
+3. `GET /v1/integrations/hevy/snapshot?day=YYYY-MM-DD&tz=...` returns that local day's workouts: exercise title, template id, and each set's type, reps, kg, RPE, and hold time. Notes and descriptions are not returned. Without a key it returns `configured: false` and a TODO reason.
 
-The `hevy_sets` verifier counts working sets (not warm-ups) of one exercise. `exercise` matches the title without the equipment in brackets, so `Bench Press` counts `Bench Press (Barbell)` but not `Incline Bench Press (Dumbbell)`. Use `templateId` for an exact exercise. Optional `minReps` and `minWeightKg` apply to each set. The Bench Press quest uses it.
+The `hevy_sets` verifier counts working sets (not warm-ups) of one exercise. `exercise` matches the title without the equipment in brackets, so `Bench Press` counts `Bench Press (Barbell)` but not `Incline Bench Press (Dumbbell)`. Use `templateId` for an exact exercise. Optional `minReps` and `minWeightKg` apply to each set. With `minDurationSec` it adds up the hold time of timed sets instead, for stretches such as `Splits [0/3min]`. Bench Press and the green-day Splits quest use it. Name the stretch in Hevy exactly as the quest does (make a custom exercise with the "duration" type if Hevy does not have it).
 
 ## Mercury
 

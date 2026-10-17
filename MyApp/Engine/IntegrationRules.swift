@@ -155,6 +155,33 @@ enum IntegrationRules {
             errors.append("an incline bench should not match a Bench Press quest")
         }
 
+        // Hevy time mode: Splits [0/3min] sums timed sets. A rep set or a warm-up hold does not count.
+        var splitsQuest = quest(method: .hevySets, params: ["exercise": .string("Splits"), "minDurationSec": .number(180)])
+        splitsQuest.progress = QuestProgress(current: 0, target: 3, unit: "min")
+        func hold(_ type: String, _ seconds: Double?, reps: Int? = nil) -> HevySet {
+            HevySet(type: type, reps: reps, weightKg: nil, rpe: nil, durationSec: seconds)
+        }
+        var stretched = day
+        stretched.hevy = HevyDayReading(available: true, configured: true, reason: "", dayKey: "2026-10-01", workouts: [
+            HevyWorkout(id: "s1", title: "Stretch", start: start, end: start.addingTimeInterval(900), exercises: [
+                HevyExercise(title: "Splits", templateId: nil, sets: [hold("warmup", 60), hold("normal", 60), hold("normal", 60), hold("normal", nil, reps: 10)]),
+                HevyExercise(title: "Pigeon Pose", templateId: nil, sets: [hold("normal", 300)]),
+            ]),
+        ])
+        if case .progress(let current, _) = HevySetsVerifier().evaluate(quest: splitsQuest, context: context(stretched, now: start)) {
+            if current != 2 { errors.append("2 working 60 s splits holds should show 2 of 3 min, got \(current)") }
+        } else {
+            errors.append("2 of 3 split minutes should be progress")
+        }
+        stretched.hevy.workouts[0].exercises[0].sets.append(hold("normal", 60))
+        if case .completed(let evidence) = HevySetsVerifier().evaluate(quest: splitsQuest, context: context(stretched, now: start)) {
+            if !evidence.externalId.hasPrefix("hevy:time:") {
+                errors.append("a stretch completion should use time evidence, got \(evidence.externalId)")
+            }
+        } else {
+            errors.append("3 minutes of splits should complete")
+        }
+
         var health = HealthDaySummary.unavailable
         health.access = .requested
         health.proteinGrams = 160

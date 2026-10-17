@@ -147,7 +147,7 @@ struct FallbackCatalog {
             quests: [
                 template("run_intervals", "Run Intervals", .daily, .END, .stravaActivity, ["types": .array([.string("Run")]), "minMovingTimeSec": .number(1200)], 40, .normal, 6, "reps"),
                 template("bench_press", "Bench Press", .daily, .STR, .hevySets, ["exercise": .string("Bench Press"), "sets": .number(4)], 40, .normal, 4, "sets"),
-                template("mobility", "Mobility", .daily, .AGI, .timerSession, ["minSec": .number(600), "label": .string("Mobility")], 20, .easy, 10, "min"),
+                template("splits", "Splits", .daily, .AGI, .hevySets, ["exercise": .string("Splits"), "minDurationSec": .number(180)], 20, .easy, 3, "min"),
                 template("protein", "Protein", .daily, .END, .macrofactorProtein, ["minProteinG": .number(150)], 25, .easy, 150, "g")
             ]
         )

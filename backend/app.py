@@ -66,6 +66,7 @@ Rules:
 - Obey modeDecision.selectedMode. Do not change it. lockedByRules is authoritative.
 - Do not invent medical diagnoses or extreme deficits.
 - Use only the verification methods already defined for this app.
+- hevy_sets reads Hevy. Strength: params exercise (Hevy title without the equipment, e.g. "Bench Press") and sets, optional minReps and minWeightKg; unit "sets". Stretches: params exercise (e.g. "Splits") and minDurationSec; unit "min". Prefer a specific stretch over a generic mobility block.
 - Required quests (kind other than optional) <= constraints.maxRequiredQuests. Optional quests <= constraints.maxOptionalQuests. Total quests <= 8.
 - Titles are short and actionable. Narrative is at most 280 characters.
 - Scale physical load from whoop.readinessBand: green full, yellow moderate, red recovery only.
@@ -469,7 +470,8 @@ def mode_quests(mode: str, band: str, day: str) -> list[dict[str, Any]]:
         return [zone, push, mobility, protein]
     run = quest(day, "run_intervals", "Run Intervals", "daily", "END", "strava_activity", {"types": ["Run"], "minMovingTimeSec": 1200}, 40, "normal", 6, "reps", mode)
     bench = quest(day, "bench", "Bench Press", "daily", "STR", "hevy_sets", {"exercise": "Bench Press", "sets": 4}, 40, "normal", 4, "sets", mode)
-    return [run, bench, mobility, protein]
+    splits = quest(day, "splits", "Splits", "daily", "AGI", "hevy_sets", {"exercise": "Splits", "minDurationSec": 180}, 20, "easy", 3, "min", mode)
+    return [run, bench, splits, protein]
 
 
 def quest(day: str, slug: str, title: str, kind: str, stat: str, method: str, params: dict[str, Any], xp: int, difficulty: str, target: float, unit: str, mode: str) -> dict[str, Any]:

@@ -337,12 +337,14 @@ def hevy_workout(item: dict[str, Any]) -> dict[str, Any] | None:
             reps = entry.get("reps")
             weight = entry.get("weight_kg")
             rpe = entry.get("rpe")
+            duration = entry.get("duration_seconds")
             sets.append(
                 {
                     "type": str(entry.get("type") or "normal"),
                     "reps": int(reps) if isinstance(reps, (int, float)) else None,
                     "weightKg": float(weight) if isinstance(weight, (int, float)) else None,
                     "rpe": float(rpe) if isinstance(rpe, (int, float)) else None,
+                    "durationSec": float(duration) if isinstance(duration, (int, float)) else None,
                 }
             )
         exercises.append(
@@ -618,7 +620,8 @@ def self_check() -> None:
                     {"type": "normal", "weight_kg": 80.5, "reps": 5, "rpe": 8},
                     {"type": "normal", "weight_kg": None, "reps": None},
                 ],
-            }
+            },
+            {"title": "Splits", "exercise_template_id": None, "sets": [{"type": "normal", "duration_seconds": 90}]},
         ],
     }
     parsed = hevy_workout(sample)
@@ -627,8 +630,10 @@ def self_check() -> None:
     bench = parsed["exercises"][0]
     if bench["templateId"] != "79D0BB3A" or [entry["type"] for entry in bench["sets"]] != ["warmup", "normal", "normal"]:
         raise SystemExit("hevy exercise should keep template id and set types")
-    if bench["sets"][1] != {"type": "normal", "reps": 5, "weightKg": 80.5, "rpe": 8.0} or bench["sets"][2]["reps"] is not None:
+    if bench["sets"][1] != {"type": "normal", "reps": 5, "weightKg": 80.5, "rpe": 8.0, "durationSec": None} or bench["sets"][2]["reps"] is not None:
         raise SystemExit(f"hevy sets should keep reps and kg, got {bench['sets']}")
+    if parsed["exercises"][1]["sets"][0]["durationSec"] != 90.0 or parsed["exercises"][1]["templateId"] is not None:
+        raise SystemExit("hevy timed sets should keep their duration")
     if "private" in json.dumps(parsed):
         raise SystemExit("hevy snapshot should drop notes and descriptions")
     if hevy_workout({"title": "no start"}) is not None:

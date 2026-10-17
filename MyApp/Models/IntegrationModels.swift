@@ -112,12 +112,14 @@ nonisolated struct StravaDayReading: Codable, Equatable {
     }
 }
 
-/// One set from Hevy. Weight is in kilograms; bodyweight and timed sets have no weight.
+/// One set from Hevy. Weight is in kilograms; bodyweight and timed sets have no weight. Timed sets have a duration.
 nonisolated struct HevySet: Codable, Equatable {
     var type: String
     var reps: Int?
     var weightKg: Double?
     var rpe: Double?
+    /// Hold time for timed sets such as stretches.
+    var durationSec: Double?
 
     /// Warm-up sets do not count toward a quest.
     var isWorking: Bool { type.lowercased() != "warmup" }

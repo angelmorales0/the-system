@@ -57,22 +57,22 @@
           "reward": null
         },
         {
-          "id": "mobility",
-          "title": "Mobility",
+          "id": "splits",
+          "title": "Splits",
           "kind": "daily",
           "stat": "AGI",
           "verification": {
-            "method": "timer_session",
+            "method": "hevy_sets",
             "params": {
-              "minSec": 600,
-              "label": "Mobility"
+              "exercise": "Splits",
+              "minDurationSec": 180
             }
           },
           "xp": 20,
           "difficulty": "easy",
           "progress": {
             "current": 0,
-            "target": 10,
+            "target": 3,
             "unit": "min"
           },
           "reward": null
