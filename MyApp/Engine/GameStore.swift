@@ -24,7 +24,7 @@ final class GameStore: ObservableObject {
 
     init(persistence: GamePersistence = .standard) {
         #if DEBUG
-        let problems = VerificationFixtures.check() + TargetRules.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check() + RecoveryLevel.check()
+        let problems = VerificationFixtures.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check() + RecoveryLevel.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -75,52 +75,6 @@ final class GameStore: ObservableObject {
     var player: PlayerState { snapshot.player }
     var bundle: QuestBundle { snapshot.bundle }
     var goalQuests: [Quest] { bundle.goalQuests }
-    var targets: [Target] { snapshot.targets }
-
-    var targetBanner: String? {
-        let dayKey = bundle.dayKey.isEmpty ? QuestDay.key(for: clock) : bundle.dayKey
-        return snapshot.targetBanner(on: dayKey)
-    }
-
-    func saveTarget(_ target: Target, now: Date = .now) -> String? {
-        var next = snapshot
-        let message = next.upsertTarget(target, catalog: catalog, now: now)
-        snapshot = next
-        clock = now
-        runningTimersRemoveMissing()
-        publishTargetToast()
-        persist()
-        ensureTicker()
-        return message
-    }
-
-    func activateTarget(id: String, now: Date = .now) -> String? {
-        var next = snapshot
-        let message = next.activateTarget(id: id, catalog: catalog, now: now)
-        snapshot = next
-        clock = now
-        runningTimersRemoveMissing()
-        publishTargetToast()
-        persist()
-        ensureTicker()
-        return message
-    }
-
-    func abortTarget(id: String, now: Date = .now) {
-        var next = snapshot
-        next.abortTarget(id: id, catalog: catalog, now: now)
-        snapshot = next
-        clock = now
-        runningTimersRemoveMissing()
-        persist()
-        ensureTicker()
-    }
-
-    func startInterviewPrep(now: Date = .now) -> String? {
-        var target = Target.interviewPrep(starting: QuestDay.key(for: now))
-        target.status = .active
-        return saveTarget(target, now: now)
-    }
 
     func rowLabel(for quest: Quest) -> String {
         guard quest.status != .completed,
@@ -300,11 +254,7 @@ final class GameStore: ObservableObject {
         guard let prepared = QuestSafety.accepting(bundle, context: context, assignedAt: now) else { return }
         var next = snapshot
         next.generatedBundle = prepared
-        var installed = prepared
-        if let target = next.activeTarget(on: now) {
-            installed = installed.injecting(target, now: now)
-        }
-        next.bundle = installed
+        next.bundle = prepared
         snapshot = next
         runningTimersRemoveMissing()
         persist()
@@ -351,10 +301,7 @@ final class GameStore: ObservableObject {
             }
         }
         snapshot = next
-        if let toast = next.targetToast {
-            verificationNote = toast
-            snapshot.targetToast = nil
-        } else if completed, next.runningTimers.isEmpty {
+        if completed, next.runningTimers.isEmpty {
             verificationNote = nil
         } else if let runningNote {
             verificationNote = runningNote
@@ -410,21 +357,12 @@ final class GameStore: ObservableObject {
     private func note(for outcome: VerificationApply, title: String) {
         switch outcome {
         case .completed:
-            publishTargetToast()
+            verificationNote = nil
         case .rejected(let reason):
             verificationNote = "\(title): \(reason)"
         case .ignored, .updated:
             break
         }
-    }
-
-    private func publishTargetToast() {
-        guard let toast = snapshot.targetToast else {
-            verificationNote = nil
-            return
-        }
-        verificationNote = toast
-        snapshot.targetToast = nil
     }
 
     private func runningTimersRemoveMissing() {
@@ -440,7 +378,8 @@ final class GameStore: ObservableObject {
         }
         guard ticker == nil else { return }
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            // The timer is on the main run loop, so it always fires on the main actor.
+            MainActor.assumeIsolated {
                 self?.advanceTimers(now: .now)
                 self?.persist()
             }

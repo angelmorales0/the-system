@@ -8,7 +8,6 @@ struct QuestTemplate: Codable, Equatable {
     var verification: VerificationSpec
     var xp: Int
     var difficulty: Difficulty
-    var targetId: String?
     var progress: QuestProgress
     var reward: QuestReward?
 }
@@ -82,7 +81,6 @@ struct FallbackCatalog {
                 xp: template.xp,
                 difficulty: template.difficulty,
                 mode: mode,
-                targetId: template.targetId,
                 progress: template.progress,
                 reward: template.reward,
                 status: .pending,
@@ -132,7 +130,6 @@ struct FallbackCatalog {
                     verification: VerificationSpec(method: .manualConfirm, params: ["prompt": .string("Confirm complete")]),
                     xp: 20,
                     difficulty: mode == .penalty ? .penalty : .easy,
-                    targetId: nil,
                     progress: QuestProgress(current: 0, target: 1, unit: "session"),
                     reward: nil
                 )
@@ -176,7 +173,6 @@ struct FallbackCatalog {
             verification: VerificationSpec(method: method, params: params),
             xp: xp,
             difficulty: difficulty,
-            targetId: nil,
             progress: QuestProgress(current: 0, target: target, unit: unit),
             reward: nil
         )

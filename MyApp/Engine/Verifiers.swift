@@ -306,7 +306,6 @@ enum VerificationFixtures {
             xp: 20,
             difficulty: .easy,
             mode: .performanceTraining,
-            targetId: nil,
             progress: QuestProgress(current: 0, target: 10, unit: "min"),
             reward: nil,
             status: .pending,

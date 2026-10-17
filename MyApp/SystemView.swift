@@ -39,15 +39,6 @@ struct SystemView: View {
                 .shadow(color: QuestLight.blue.opacity(0.7), radius: 5)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if let banner = store.targetBanner {
-                Text(banner)
-                    .font(.caption2.weight(.semibold))
-                    .tracking(0.6)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(QuestLight.cyan)
-                    .padding(.top, 8)
-            }
-
             Spacer(minLength: 35)
             VStack(spacing: 3) {
                 Text("GOAL")
@@ -67,7 +58,7 @@ struct SystemView: View {
                         store.handleQuestTap(id: quest.id)
                     } label: {
                         HStack(spacing: 11) {
-                            Text(quest.kind == .targetInjection ? "⟪TARGET⟫ \(quest.title)" : quest.title)
+                            Text(quest.title)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             Text(store.rowLabel(for: quest))
                                 .monospacedDigit()

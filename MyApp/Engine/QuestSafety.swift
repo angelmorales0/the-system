@@ -70,16 +70,6 @@ enum QuestSafety {
             issues.append(contentsOf: bounds(for: quest, band: context.whoop.readinessBand))
         }
 
-        if let target = context.activeTarget {
-            for requirement in target.dailyRequirements {
-                let title = requirement.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                let present = bundle.quests.contains { $0.kind == .targetInjection && $0.title == title }
-                if !present {
-                    issues.append("missing target injection \(title)")
-                }
-            }
-        }
-
         let haystack = (
             [bundle.narrative, bundle.headerLine] + bundle.warnings + bundle.quests.map(\.title) + stringParams(in: bundle)
         ).joined(separator: "\n").lowercased()

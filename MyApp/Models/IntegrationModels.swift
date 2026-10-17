@@ -70,7 +70,7 @@ struct HealthDaySummary: Equatable {
     )
 }
 
-struct WhoopDayReading: Codable, Equatable {
+nonisolated struct WhoopDayReading: Codable, Equatable {
     var available: Bool
     var configured: Bool
     var reason: String
@@ -100,7 +100,7 @@ struct WhoopDayReading: Codable, Equatable {
     }
 }
 
-struct StravaDayReading: Codable, Equatable {
+nonisolated struct StravaDayReading: Codable, Equatable {
     var available: Bool
     var configured: Bool
     var reason: String
@@ -113,7 +113,7 @@ struct StravaDayReading: Codable, Equatable {
 }
 
 /// Backend Mercury summary for one local day. No token and no raw transaction list.
-struct MercuryDayReading: Codable, Equatable {
+nonisolated struct MercuryDayReading: Codable, Equatable {
     var available: Bool
     var configured: Bool
     var reason: String

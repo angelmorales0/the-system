@@ -225,6 +225,16 @@ enum IntegrationRules {
         if rich.player.stats.REC != recBefore {
             errors.append("finance projection must not touch REC")
         }
+        var full = GameSnapshot(version: 1, player: .starter, signals: .placeholder, bundle: .empty)
+        full.player.stats.FIN = StatValues.maximum - 6
+        full.applyFinance(reading(spent: 10, settled: true, pace: "NORMAL", ytd: 500_000))
+        if full.player.stats.FIN != StatValues.maximum {
+            errors.append("FIN projection must stop at the cap, got \(full.player.stats.FIN)")
+        }
+        full.applyFinance(reading(spent: 10, settled: true, pace: "CRITICAL", ytd: 0))
+        if full.player.stats.FIN != StatValues.maximum - 6 {
+            errors.append("a lower projection should remove only the capped points, got \(full.player.stats.FIN)")
+        }
         rich.bundle.dayKey = "2026-10-01"
         if let when = QuestDay.date(from: "2026-10-01") {
             let morning = ContextBuilder.make(snapshot: rich, now: when)
@@ -280,7 +290,6 @@ enum IntegrationRules {
             xp: 20,
             difficulty: .easy,
             mode: .performanceTraining,
-            targetId: nil,
             progress: QuestProgress(current: 0, target: 20, unit: "min"),
             reward: nil,
             status: .pending,

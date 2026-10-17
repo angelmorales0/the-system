@@ -58,9 +58,6 @@ struct MockQuestGenerateClient: QuestGenerating {
         let band = context.whoop.readinessBand
         var built = catalog.makeBundle(mode: mode, band: band, dayKey: context.player.localDate, now: now)
         built.generatedBy = "mock"
-        if let target = context.activeTarget {
-            built = built.injectingSummary(target, now: now)
-        }
         if let accepted = QuestSafety.accepting(built, context: context, assignedAt: now) {
             return accepted
         }
@@ -131,57 +128,7 @@ extension MockQuestGenerateClient {
             dayKey: context.player.localDate,
             now: now
         )
-        if let target = context.activeTarget {
-            built = built.injectingSummary(target, now: now)
-        }
         built.generatedBy = "fallback"
         return built
-    }
-}
-
-extension QuestBundle {
-    /// Fills target rows from the redacted summary so a generated bundle keeps the day's requirements.
-    func injectingSummary(_ target: MorningTarget, now: Date) -> QuestBundle {
-        var copy = self
-        let training = quests.filter { $0.kind != .targetInjection }
-        let injected = target.dailyRequirements.map { requirement in
-            quest(from: requirement, target: target, now: now)
-        }
-        copy.quests = injected + training
-        return copy
-    }
-
-    private func quest(from requirement: MorningRequirement, target: MorningTarget, now: Date) -> Quest {
-        let method = VerificationMethod(rawValue: requirement.verification) ?? .manualConfirm
-        let stat = Stat(rawValue: requirement.stat) ?? .INT
-        let quota = requirement.quota > 0 ? requirement.quota : 1
-        let slug = requirement.templateId.isEmpty ? "req" : requirement.templateId
-        var identifier = "q_\(dayKey)_tgt_\(target.id)_\(slug)"
-        if identifier.count > 64 {
-            identifier = String(identifier.prefix(64))
-        }
-        if identifier.count < 8 {
-            identifier += "_quest"
-        }
-        return Quest(
-            id: identifier,
-            title: requirement.title,
-            kind: .targetInjection,
-            stat: stat,
-            verification: VerificationSpec(method: method, params: ["prompt": .string("Confirm \(requirement.title)")]),
-            deadline: QuestDay.endOfDay(now),
-            xp: 40,
-            difficulty: .normal,
-            mode: mode,
-            targetId: target.id,
-            progress: QuestProgress(current: 0, target: quota, unit: "problems"),
-            reward: nil,
-            status: .pending,
-            grantedXP: 0,
-            grantedStatPoints: 0,
-            grantedRecoveryToken: false,
-            evidence: [],
-            assignedAt: now
-        )
     }
 }

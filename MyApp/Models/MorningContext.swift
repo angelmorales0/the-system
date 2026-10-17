@@ -57,31 +57,6 @@ struct MorningCalendar: Codable, Equatable {
     var wakeWindow: String?
 }
 
-struct MorningRequirement: Codable, Equatable {
-    var templateId: String
-    var title: String
-    var quota: Double
-    var stat: String
-    var verification: String
-}
-
-struct MorningTargetProgress: Codable, Equatable {
-    var daysCleared: Int
-    var unitsDone: Int
-    var unitsGoal: Int?
-}
-
-struct MorningTarget: Codable, Equatable {
-    var id: String
-    var title: String
-    var kind: String
-    var dayIndex: Int
-    var totalDays: Int
-    var endsAt: String
-    var dailyRequirements: [MorningRequirement]
-    var progress: MorningTargetProgress
-}
-
 struct MorningGoalBias: Codable, Equatable {
     var id: String
     var title: String
@@ -151,7 +126,6 @@ struct MorningContext: Codable, Equatable {
     var modeDecision: MorningModeDecision
     var whoop: MorningWhoop
     var calendar: MorningCalendar
-    var activeTarget: MorningTarget?
     var goalsBias: [MorningGoalBias]
     var nutrition: MorningNutrition
     var mercury: MorningMercury

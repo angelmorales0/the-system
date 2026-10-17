@@ -25,14 +25,12 @@ app = FastAPI(title="the-system quest stub")
 
 MODES = {
     "performance_training",
-    "interview_prep",
     "study_block",
     "recovery",
     "full_recovery",
     "nutrition_focus",
     "finance_discipline",
     "focus_deepwork",
-    "hybrid",
     "penalty",
 }
 METHODS = {
@@ -69,7 +67,6 @@ Rules:
 - Use only the verification methods already defined for this app.
 - Required quests (kind other than optional) <= constraints.maxRequiredQuests. Optional quests <= constraints.maxOptionalQuests. Total quests <= 8.
 - Titles are short and actionable. Narrative is at most 280 characters.
-- If activeTarget is present, include every dailyRequirements entry as a target_injection quest. Do not drop one.
 - Scale physical load from whoop.readinessBand: green full, yellow moderate, red recovery only.
 - Protein targets stay between 80 and 250 grams.
 - No run longer than 90 minutes when readiness is yellow.
@@ -319,15 +316,6 @@ def validate_bundle(bundle: dict[str, Any], context: dict[str, Any]) -> list[str
     for match in re.finditer(r"(\d{3,4})\s*(kcal|calories)", haystack):
         if int(match.group(1)) < 1500:
             problems.append("calorie suggestion below the floor")
-    target = context.get("activeTarget") or {}
-    for requirement in target.get("dailyRequirements") or []:
-        title = str((requirement or {}).get("title") or "").strip()
-        present = any(
-            isinstance(quest, dict) and quest.get("kind") == "target_injection" and quest.get("title") == title
-            for quest in quests
-        )
-        if title and not present:
-            problems.append(f"missing target injection {title}")
     return problems
 
 
@@ -342,7 +330,7 @@ def validate_quest(quest: dict[str, Any], band: str, seen: set[str]) -> list[str
     title = str(quest.get("title") or "").strip()
     if not 3 <= len(title) <= 48:
         problems.append("quest title length")
-    if quest.get("kind") not in {"daily", "optional", "target_injection", "penalty"}:
+    if quest.get("kind") not in {"daily", "optional", "penalty"}:
         problems.append("quest kind")
     if quest.get("stat") not in STATS:
         problems.append("quest stat")
@@ -432,56 +420,20 @@ def template_bundle(context: dict[str, Any]) -> dict[str, Any]:
     day = player["localDate"]
     mode = decision["selectedMode"]
     band = ((context.get("whoop") or {}).get("readinessBand")) or "green"
-    quests = injections(context.get("activeTarget"), day, mode)
-    room = 5 - len(quests)
-    extras = [quest for quest in mode_quests(mode, band, day) if quest["kind"] != "target_injection"]
-    required = [quest for quest in extras if quest["kind"] != "optional"][: max(room, 0)]
-    optional = [quest for quest in extras if quest["kind"] == "optional"][:1]
+    rows = mode_quests(mode, band, day)
+    required = [quest for quest in rows if quest["kind"] != "optional"][:5]
+    optional = [quest for quest in rows if quest["kind"] == "optional"][:1]
     bundle = {
         "schemaVersion": 1,
         "dayKey": day,
         "mode": mode,
         "headerLine": header_for(mode),
         "narrative": narrative_for(mode, band),
-        "quests": (quests + required + optional)[:8],
+        "quests": (required + optional)[:8],
         "warnings": ["Failure to complete\nthe daily quest will result\nin a penalty."],
         "generatedBy": "template",
     }
     return bundle
-
-
-def injections(target: Any, day: str, mode: str) -> list[dict[str, Any]]:
-    if not isinstance(target, dict):
-        return []
-    rows = []
-    for requirement in target.get("dailyRequirements") or []:
-        if not isinstance(requirement, dict):
-            continue
-        title = str(requirement.get("title") or "Target Work").strip()[:48]
-        quota = requirement.get("quota") or 1
-        if not isinstance(quota, (int, float)) or quota <= 0:
-            quota = 1
-        stat = requirement.get("stat") if requirement.get("stat") in STATS else "INT"
-        method = requirement.get("verification") if requirement.get("verification") in METHODS else "manual_confirm"
-        slug = re.sub(r"[^a-z0-9]+", "", str(requirement.get("templateId") or "req").lower())[:20] or "req"
-        rows.append(
-            quest(
-                day,
-                f"tgt_{slug}",
-                title,
-                "target_injection",
-                stat,
-                method,
-                {"prompt": f"Confirm {title}"},
-                40,
-                "normal",
-                quota,
-                "problems",
-                mode,
-                target.get("id"),
-            )
-        )
-    return rows
 
 
 def mode_quests(mode: str, band: str, day: str) -> list[dict[str, Any]]:
@@ -496,11 +448,6 @@ def mode_quests(mode: str, band: str, day: str) -> list[dict[str, Any]]:
     if mode == "penalty":
         run = quest(day, "penalty_run", "Penalty Run", "penalty", "END", "strava_activity", {"types": ["Run"], "minMovingTimeSec": 1800}, 30, "penalty", 30, "min", mode)
         return [run, mobility, protein]
-    if mode == "hybrid" or mode == "interview_prep":
-        cards = quest(day, "leetcode", "LeetCode Mediums", "target_injection", "INT", "manual_confirm", {"prompt": "Confirm 3 LeetCode mediums solved"}, 40, "normal", 3, "problems", mode)
-        easy = quest(day, "easy_run", "Easy Run", "daily", "END", "strava_activity", {"types": ["Run"], "minMovingTimeSec": 1200}, 25, "easy", 20, "min", mode)
-        rows = [cards, easy, protein] if mode == "interview_prep" else [easy, protein]
-        return rows
     if mode == "study_block":
         study = quest(day, "study", "Study Block", "daily", "INT", "timer_session", {"minSec": 1500, "label": "Study"}, 30, "normal", 25, "min", mode)
         return [study, protein]
@@ -523,7 +470,7 @@ def mode_quests(mode: str, band: str, day: str) -> list[dict[str, Any]]:
     return [run, bench, mobility, protein]
 
 
-def quest(day: str, slug: str, title: str, kind: str, stat: str, method: str, params: dict[str, Any], xp: int, difficulty: str, target: float, unit: str, mode: str, target_id: str | None = None) -> dict[str, Any]:
+def quest(day: str, slug: str, title: str, kind: str, stat: str, method: str, params: dict[str, Any], xp: int, difficulty: str, target: float, unit: str, mode: str) -> dict[str, Any]:
     identifier = f"q_{day}_{slug}"[:64]
     row = {
         "id": identifier,
@@ -537,22 +484,18 @@ def quest(day: str, slug: str, title: str, kind: str, stat: str, method: str, pa
         "mode": mode,
         "progress": {"current": 0, "target": target, "unit": unit},
     }
-    if target_id:
-        row["targetId"] = target_id
     return row
 
 
 def header_for(mode: str) -> str:
     names = {
         "performance_training": "Performance Training",
-        "interview_prep": "Interview Prep",
         "study_block": "Study Block",
         "recovery": "Recovery",
         "full_recovery": "Full Recovery Day",
         "nutrition_focus": "Nutrition Focus",
         "finance_discipline": "Finance Discipline",
         "focus_deepwork": "Deep Work",
-        "hybrid": "Hybrid Training",
         "penalty": "Penalty Quest",
     }
     return names.get(mode, "Daily Quest")
@@ -561,14 +504,12 @@ def header_for(mode: str) -> str:
 def narrative_for(mode: str, band: str) -> str:
     if mode == "recovery" or band == "red":
         return "Red day. Sleep and a short mobility block."
-    if mode == "hybrid":
-        return "Target window open. Keep the work inside the locked mode."
     if mode == "penalty":
         return "Clear the penalty rows."
     return "The daily quest is waiting."
 
 
-def sample_request(mode: str = "performance_training", band: str = "green", target: dict[str, Any] | None = None) -> dict[str, Any]:
+def sample_request(mode: str = "performance_training", band: str = "green") -> dict[str, Any]:
     body: dict[str, Any] = {
         "schemaVersion": 1,
         "player": {"timezone": "America/Los_Angeles", "localDate": "2026-10-01", "level": 42, "xp": 1, "penaltyTier": 0},
@@ -576,8 +517,6 @@ def sample_request(mode: str = "performance_training", band: str = "green", targ
         "whoop": {"available": False, "readinessBand": band},
         "constraints": {"maxRequiredQuests": 5, "maxOptionalQuests": 1},
     }
-    if target:
-        body["activeTarget"] = target
     return body
 
 
@@ -747,24 +686,6 @@ def self_check() -> None:
             blob = json.dumps(bundle)
             if "completed" in blob or "status" in blob:
                 raise SystemExit("template included a completion field")
-    hybrid = sample_request(
-        "hybrid",
-        "green",
-        {
-            "id": "tgt_interview",
-            "title": "Interview Prep",
-            "dailyRequirements": [
-                {"templateId": "leetcode", "title": "LeetCode Mediums", "quota": 3, "stat": "INT", "verification": "manual_confirm"}
-            ],
-        },
-    )
-    hybrid_bundle = template_bundle(hybrid)
-    if validate_bundle(hybrid_bundle, hybrid):
-        raise SystemExit(f"hybrid template failed: {validate_bundle(hybrid_bundle, hybrid)}")
-    titles = [quest["title"] for quest in hybrid_bundle["quests"] if quest["kind"] == "target_injection"]
-    if "LeetCode Mediums" not in titles:
-        raise SystemExit("hybrid template dropped the target")
-
     def expect_rejected(bundle: dict[str, Any], body: dict[str, Any], label: str) -> None:
         if not validate_bundle(bundle, body):
             raise SystemExit(f"expected rejection: {label}")

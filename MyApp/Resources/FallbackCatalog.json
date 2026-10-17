@@ -28,7 +28,6 @@
           },
           "xp": 40,
           "difficulty": "normal",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 6,
@@ -50,7 +49,6 @@
           },
           "xp": 40,
           "difficulty": "normal",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 4,
@@ -72,7 +70,6 @@
           },
           "xp": 20,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 10,
@@ -93,7 +90,6 @@
           },
           "xp": 25,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 150,
@@ -114,7 +110,6 @@
           },
           "xp": 15,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 40,
@@ -152,7 +147,6 @@
           },
           "xp": 30,
           "difficulty": "normal",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 20,
@@ -174,7 +168,6 @@
           },
           "xp": 30,
           "difficulty": "normal",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 30,
@@ -196,7 +189,6 @@
           },
           "xp": 20,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 10,
@@ -217,7 +209,6 @@
           },
           "xp": 25,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 150,
@@ -238,7 +229,6 @@
           },
           "xp": 15,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 40,
@@ -275,7 +265,6 @@
           },
           "xp": 15,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 15,
@@ -297,7 +286,6 @@
           },
           "xp": 20,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 10,
@@ -318,7 +306,6 @@
           },
           "xp": 25,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 150,
@@ -339,7 +326,6 @@
           },
           "xp": 15,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 40,
@@ -377,7 +363,6 @@
           },
           "xp": 20,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 20,
@@ -399,7 +384,6 @@
           },
           "xp": 20,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 10,
@@ -420,7 +404,6 @@
           },
           "xp": 25,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 150,
@@ -442,7 +425,6 @@
           },
           "xp": 15,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 15,
@@ -482,7 +464,6 @@
           },
           "xp": 15,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 15,
@@ -504,7 +485,6 @@
           },
           "xp": 20,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 10,
@@ -525,7 +505,6 @@
           },
           "xp": 25,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 150,
@@ -547,7 +526,6 @@
           },
           "xp": 15,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 15,
@@ -584,7 +562,6 @@
           },
           "xp": 20,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 1,
@@ -606,7 +583,6 @@
           },
           "xp": 20,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 10,
@@ -627,7 +603,6 @@
           },
           "xp": 25,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 150,
@@ -649,7 +624,6 @@
           },
           "xp": 15,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 15,
@@ -659,263 +633,6 @@
             "type": "full_recovery_token",
             "amount": 1
           }
-        }
-      ]
-    },
-    {
-      "mode": "hybrid",
-      "readinessBands": [
-        "green"
-      ],
-      "headerLine": "Hybrid Training",
-      "narrative": "Target window open. Training stays on the card with the injection.",
-      "warnings": [
-        "Failure to complete\nthe daily quest will result\nin a penalty."
-      ],
-      "quests": [
-        {
-          "id": "leetcode",
-          "title": "LeetCode Mediums",
-          "kind": "target_injection",
-          "stat": "INT",
-          "verification": {
-            "method": "manual_confirm",
-            "params": {
-              "prompt": "Confirm 3 LeetCode mediums solved"
-            }
-          },
-          "xp": 40,
-          "difficulty": "normal",
-          "targetId": "tgt_stub_interview",
-          "progress": {
-            "current": 0,
-            "target": 3,
-            "unit": "problems"
-          },
-          "reward": null
-        },
-        {
-          "id": "run_intervals",
-          "title": "Run Intervals",
-          "kind": "daily",
-          "stat": "END",
-          "verification": {
-            "method": "strava_activity",
-            "params": {
-              "types": [
-                "Run"
-              ],
-              "minMovingTimeSec": 1200
-            }
-          },
-          "xp": 35,
-          "difficulty": "normal",
-          "targetId": null,
-          "progress": {
-            "current": 0,
-            "target": 6,
-            "unit": "reps"
-          },
-          "reward": null
-        },
-        {
-          "id": "bench_press",
-          "title": "Bench Press",
-          "kind": "daily",
-          "stat": "STR",
-          "verification": {
-            "method": "healthkit_workout",
-            "params": {
-              "activityType": "traditionalStrengthTraining",
-              "sets": 4
-            }
-          },
-          "xp": 35,
-          "difficulty": "normal",
-          "targetId": null,
-          "progress": {
-            "current": 0,
-            "target": 4,
-            "unit": "sets"
-          },
-          "reward": null
-        },
-        {
-          "id": "protein",
-          "title": "Protein",
-          "kind": "daily",
-          "stat": "END",
-          "verification": {
-            "method": "macrofactor_protein",
-            "params": {
-              "minProteinG": 150
-            }
-          },
-          "xp": 25,
-          "difficulty": "easy",
-          "targetId": null,
-          "progress": {
-            "current": 0,
-            "target": 150,
-            "unit": "g"
-          },
-          "reward": null
-        }
-      ]
-    },
-    {
-      "mode": "hybrid",
-      "readinessBands": [
-        "yellow"
-      ],
-      "headerLine": "Hybrid Training",
-      "narrative": "Target window open. Keep strain moderate; clear the LeetCode quota.",
-      "warnings": [
-        "Failure to complete\nthe daily quest will result\nin a penalty."
-      ],
-      "quests": [
-        {
-          "id": "leetcode",
-          "title": "LeetCode Mediums",
-          "kind": "target_injection",
-          "stat": "INT",
-          "verification": {
-            "method": "manual_confirm",
-            "params": {
-              "prompt": "Confirm 3 LeetCode mediums solved"
-            }
-          },
-          "xp": 40,
-          "difficulty": "normal",
-          "targetId": "tgt_stub_interview",
-          "progress": {
-            "current": 0,
-            "target": 3,
-            "unit": "problems"
-          },
-          "reward": null
-        },
-        {
-          "id": "easy_run",
-          "title": "Easy Run",
-          "kind": "daily",
-          "stat": "END",
-          "verification": {
-            "method": "strava_activity",
-            "params": {
-              "types": [
-                "Run"
-              ],
-              "minMovingTimeSec": 1200
-            }
-          },
-          "xp": 35,
-          "difficulty": "normal",
-          "targetId": null,
-          "progress": {
-            "current": 0,
-            "target": 20,
-            "unit": "min"
-          },
-          "reward": null
-        },
-        {
-          "id": "protein",
-          "title": "Protein",
-          "kind": "daily",
-          "stat": "END",
-          "verification": {
-            "method": "macrofactor_protein",
-            "params": {
-              "minProteinG": 150
-            }
-          },
-          "xp": 25,
-          "difficulty": "easy",
-          "targetId": null,
-          "progress": {
-            "current": 0,
-            "target": 150,
-            "unit": "g"
-          },
-          "reward": null
-        }
-      ]
-    },
-    {
-      "mode": "hybrid",
-      "readinessBands": [
-        "red"
-      ],
-      "headerLine": "Hybrid Training",
-      "narrative": "Readiness is red. Physical work stays soft; the target row remains.",
-      "warnings": [
-        "Failure to complete\nthe daily quest will result\nin a penalty."
-      ],
-      "quests": [
-        {
-          "id": "leetcode",
-          "title": "LeetCode Mediums",
-          "kind": "target_injection",
-          "stat": "INT",
-          "verification": {
-            "method": "manual_confirm",
-            "params": {
-              "prompt": "Confirm 3 LeetCode mediums solved"
-            }
-          },
-          "xp": 40,
-          "difficulty": "normal",
-          "targetId": "tgt_stub_interview",
-          "progress": {
-            "current": 0,
-            "target": 3,
-            "unit": "problems"
-          },
-          "reward": null
-        },
-        {
-          "id": "mobility",
-          "title": "Mobility",
-          "kind": "daily",
-          "stat": "AGI",
-          "verification": {
-            "method": "timer_session",
-            "params": {
-              "minSec": 600,
-              "label": "Mobility"
-            }
-          },
-          "xp": 20,
-          "difficulty": "easy",
-          "targetId": null,
-          "progress": {
-            "current": 0,
-            "target": 10,
-            "unit": "min"
-          },
-          "reward": null
-        },
-        {
-          "id": "protein",
-          "title": "Protein",
-          "kind": "daily",
-          "stat": "END",
-          "verification": {
-            "method": "macrofactor_protein",
-            "params": {
-              "minProteinG": 150
-            }
-          },
-          "xp": 25,
-          "difficulty": "easy",
-          "targetId": null,
-          "progress": {
-            "current": 0,
-            "target": 150,
-            "unit": "g"
-          },
-          "reward": null
         }
       ]
     },
@@ -945,7 +662,6 @@
           },
           "xp": 15,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 1,
@@ -982,7 +698,6 @@
           },
           "xp": 30,
           "difficulty": "penalty",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 30,
@@ -1004,7 +719,6 @@
           },
           "xp": 30,
           "difficulty": "penalty",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 30,
@@ -1026,7 +740,6 @@
           },
           "xp": 15,
           "difficulty": "penalty",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 15,
@@ -1047,7 +760,6 @@
           },
           "xp": 20,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 160,
@@ -1081,7 +793,6 @@
           },
           "xp": 30,
           "difficulty": "penalty",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 25,
@@ -1103,7 +814,6 @@
           },
           "xp": 30,
           "difficulty": "penalty",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 25,
@@ -1125,7 +835,6 @@
           },
           "xp": 15,
           "difficulty": "penalty",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 15,
@@ -1146,7 +855,6 @@
           },
           "xp": 20,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 160,
@@ -1183,7 +891,6 @@
           },
           "xp": 25,
           "difficulty": "penalty",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 25,
@@ -1205,7 +912,6 @@
           },
           "xp": 15,
           "difficulty": "penalty",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 15,
@@ -1226,7 +932,6 @@
           },
           "xp": 20,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 160,
@@ -1247,90 +952,10 @@
           },
           "xp": 20,
           "difficulty": "penalty",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 20,
             "unit": "min"
-          },
-          "reward": null
-        }
-      ]
-    },
-    {
-      "mode": "interview_prep",
-      "readinessBands": [
-        "green",
-        "yellow",
-        "red"
-      ],
-      "headerLine": "Interview Prep",
-      "narrative": "Deep work on the hiring loop.",
-      "warnings": [
-        "Failure to complete\nthe daily quest will result\nin a penalty."
-      ],
-      "quests": [
-        {
-          "id": "leetcode",
-          "title": "LeetCode Mediums",
-          "kind": "target_injection",
-          "stat": "INT",
-          "verification": {
-            "method": "manual_confirm",
-            "params": {
-              "prompt": "Confirm 3 LeetCode mediums solved"
-            }
-          },
-          "xp": 40,
-          "difficulty": "normal",
-          "targetId": "tgt_stub_interview",
-          "progress": {
-            "current": 0,
-            "target": 3,
-            "unit": "problems"
-          },
-          "reward": null
-        },
-        {
-          "id": "system_design",
-          "title": "System Design Notes",
-          "kind": "daily",
-          "stat": "FOC",
-          "verification": {
-            "method": "timer_session",
-            "params": {
-              "minSec": 1200,
-              "label": "System Design"
-            }
-          },
-          "xp": 30,
-          "difficulty": "normal",
-          "targetId": null,
-          "progress": {
-            "current": 0,
-            "target": 20,
-            "unit": "min"
-          },
-          "reward": null
-        },
-        {
-          "id": "protein",
-          "title": "Protein",
-          "kind": "daily",
-          "stat": "END",
-          "verification": {
-            "method": "macrofactor_protein",
-            "params": {
-              "minProteinG": 150
-            }
-          },
-          "xp": 25,
-          "difficulty": "easy",
-          "targetId": null,
-          "progress": {
-            "current": 0,
-            "target": 150,
-            "unit": "g"
           },
           "reward": null
         }
@@ -1363,7 +988,6 @@
           },
           "xp": 35,
           "difficulty": "normal",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 45,
@@ -1385,7 +1009,6 @@
           },
           "xp": 20,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 15,
@@ -1406,7 +1029,6 @@
           },
           "xp": 25,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 150,
@@ -1442,7 +1064,6 @@
           },
           "xp": 30,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 150,
@@ -1464,7 +1085,6 @@
           },
           "xp": 20,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 1800,
@@ -1486,7 +1106,6 @@
           },
           "xp": 15,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 20,
@@ -1522,7 +1141,6 @@
           },
           "xp": 30,
           "difficulty": "normal",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 40,
@@ -1543,7 +1161,6 @@
           },
           "xp": 15,
           "difficulty": "easy",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 1,
@@ -1580,7 +1197,6 @@
           },
           "xp": 40,
           "difficulty": "normal",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 90,
@@ -1602,7 +1218,6 @@
           },
           "xp": 25,
           "difficulty": "normal",
-          "targetId": null,
           "progress": {
             "current": 0,
             "target": 60,

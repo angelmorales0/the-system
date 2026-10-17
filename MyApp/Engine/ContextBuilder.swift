@@ -40,7 +40,6 @@ enum ContextBuilder {
                 eventsHint: [],
                 wakeWindow: nil
             ),
-            activeTarget: snapshot.activeTarget(on: now).map { summary(of: $0, on: dayKey) },
             goalsBias: goalMocks,
             nutrition: MorningNutrition(
                 source: "placeholder",
@@ -72,7 +71,7 @@ enum ContextBuilder {
                 mercury: financeToday == nil ? "unavailable" : "ok",
                 screenTime: "unavailable"
             ),
-            recentQuestTitles: snapshot.recentQuestTitles.prefix(8).map(redact),
+            recentQuestTitles: snapshot.recentQuestTitles.prefix(8).map { redact($0) },
             constraints: .standard
         )
     }
@@ -84,35 +83,6 @@ enum ContextBuilder {
             return "redacted"
         }
         return value
-    }
-
-    private static func summary(of target: Target, on dayKey: String) -> MorningTarget {
-        let end = QuestDay.endOfDay(QuestDay.date(from: target.endsOn) ?? .now)
-        let formatter = ISO8601DateFormatter()
-        formatter.timeZone = QuestDay.timeZone
-        formatter.formatOptions = [.withInternetDateTime]
-        return MorningTarget(
-            id: target.id,
-            title: redact(target.title),
-            kind: target.kind.rawValue,
-            dayIndex: target.dayNumber(on: dayKey),
-            totalDays: target.spanDays,
-            endsAt: formatter.string(from: end),
-            dailyRequirements: target.dailyRequirements.map { requirement in
-                MorningRequirement(
-                    templateId: requirement.id,
-                    title: redact(requirement.title),
-                    quota: requirement.quota,
-                    stat: requirement.stat.rawValue,
-                    verification: requirement.verification.rawValue
-                )
-            },
-            progress: MorningTargetProgress(
-                daysCleared: target.daysCleared,
-                unitsDone: target.unitsDone,
-                unitsGoal: target.unitsGoal
-            )
-        )
     }
 
     private static func weekday(_ date: Date) -> String {

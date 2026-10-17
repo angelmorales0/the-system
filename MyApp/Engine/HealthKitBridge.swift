@@ -176,7 +176,7 @@ private struct MacroFactorOptional {
 }
 
 /// MacroFactor writes Apple Health under a source whose name or bundle id contains "macrofactor".
-enum MacroFactorSamples {
+nonisolated enum MacroFactorSamples {
     static func isMacroFactor(_ sample: HKQuantitySample) -> Bool {
         let source = sample.sourceRevision.source
         let name = source.name.lowercased()
