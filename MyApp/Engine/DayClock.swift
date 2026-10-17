@@ -1,7 +1,8 @@
 import Foundation
 
-/// The quest day's countdown ring. It starts empty when the phone powers on in the morning
-/// and is full at midnight, when an unfinished required set becomes a penalty.
+/// The quest day's countdown ring. It starts full when the phone powers on in the morning
+/// and drains to empty at midnight, when an unfinished required set becomes a penalty.
+/// Under `urgentFraction` of the day left, the ring turns penalty red.
 struct DayClock: Codable, Equatable {
     enum Source: String, Codable {
         /// The phone powered on during this quest day.
@@ -11,6 +12,8 @@ struct DayClock: Codable, Equatable {
     }
 
     static let segments = 28
+    /// The ring turns red when less than this share of the day is left.
+    static let urgentFraction = 0.15
     static let storageKey = "com.angelmorales.thesystem.dayclock.v1"
 
     var dayKey: String
@@ -38,6 +41,20 @@ struct DayClock: Codable, Equatable {
 
     func litSegments(at now: Date) -> Int {
         Int((progress(at: now) * Double(Self.segments)).rounded(.down))
+    }
+
+    /// Share of the day still left: 1 at the start, 0 at midnight.
+    func remaining(at now: Date) -> Double {
+        1 - progress(at: now)
+    }
+
+    /// Dashes still lit as the ring drains: all at the start, none at midnight.
+    func remainingSegments(at now: Date) -> Int {
+        Self.segments - litSegments(at: now)
+    }
+
+    func isUrgent(at now: Date) -> Bool {
+        remaining(at: now) < Self.urgentFraction
     }
 
     /// Keeps today's start, or starts a new day at today's power-on (else at this open).
@@ -103,6 +120,16 @@ enum DayClockRules {
         }
         if morning.litSegments(at: at(2, 15, 30)) != 14 {
             errors.append("halfway from 7:00 to midnight should light 14 of 28 segments, got \(morning.litSegments(at: at(2, 15, 30)))")
+        }
+        // The drawn ring drains: all 28 dashes at power-on, 14 halfway, none at midnight.
+        if morning.remainingSegments(at: at(2, 7)) != DayClock.segments
+            || morning.remainingSegments(at: at(2, 15, 30)) != 14
+            || morning.remainingSegments(at: at(3, 0)) != 0 {
+            errors.append("the ring should drain from 28 dashes at power-on to 0 at midnight")
+        }
+        // 17 hours from 7:00 to midnight: 15% left is 2h33m, so 21:26 is still cyan and 21:28 is red.
+        if morning.isUrgent(at: at(2, 21, 26)) || !morning.isUrgent(at: at(2, 21, 28)) || !morning.isUrgent(at: at(3, 0)) {
+            errors.append("the ring should turn red under 15% of the day left")
         }
 
         // Phone stayed on since yesterday: the first open stands in.

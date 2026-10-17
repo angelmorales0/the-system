@@ -216,17 +216,19 @@ private struct QuestCheckbox: View {
     }
 }
 
-/// Counts down the quest day: empty at power-on, one more dash lit each 1/28 of the time left, full at midnight.
-/// It turns penalty red once midnight passes with the required set still open.
+/// Counts down the quest day: full at power-on, one dash goes dark each 1/28 of the day, empty at midnight.
+/// The dashes turn penalty red under 15% of the day left, and the whole ring lights red
+/// once midnight passes with the required set still open.
 private struct QuestSignalRing: View {
     let dayClock: DayClock
     let missesRequiredSet: Bool
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { timeline in
-            let lit = dayClock.litSegments(at: timeline.date)
+            let lit = dayClock.remainingSegments(at: timeline.date)
             let failed = missesRequiredSet && timeline.date >= dayClock.deadline
-            let tint = failed ? QuestLight.penalty : QuestLight.ink
+            let urgent = failed || dayClock.isUrgent(at: timeline.date)
+            let tint = urgent ? QuestLight.penalty : QuestLight.ink
             Canvas { context, size in
                 for index in 0..<DayClock.segments {
                     var segment = context
@@ -239,7 +241,7 @@ private struct QuestSignalRing: View {
                     segment.stroke(path, with: .color(tint.opacity(isLit ? 1 : 0.4)), lineWidth: 0.5)
                 }
             }
-            .shadow(color: failed ? QuestLight.penalty.opacity(0.8) : QuestLight.cyan.opacity(0.8), radius: 4)
+            .shadow(color: urgent ? QuestLight.penalty.opacity(0.8) : QuestLight.cyan.opacity(0.8), radius: 4)
             .accessibilityElement()
             .accessibilityLabel("Day timer")
             .accessibilityValue(accessibilityValue(at: timeline.date, failed: failed))
