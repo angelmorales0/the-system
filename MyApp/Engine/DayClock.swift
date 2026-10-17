@@ -57,6 +57,19 @@ struct DayClock: Codable, Equatable {
         remaining(at: now) < Self.urgentFraction
     }
 
+    /// The time the ring draws. In DEBUG, launch with `-ringPreviewRemaining 0.1`
+    /// to draw the ring as if that share of the day were left. Release builds always use `now`.
+    func displayDate(for now: Date) -> Date {
+        #if DEBUG
+        // Launch arguments arrive as strings, so parse the text.
+        if let text = UserDefaults.standard.string(forKey: "ringPreviewRemaining"), let left = Double(text) {
+            let span = deadline.timeIntervalSince(startedAt)
+            return startedAt.addingTimeInterval(span * (1 - min(max(left, 0), 1)))
+        }
+        #endif
+        return now
+    }
+
     /// Keeps today's start, or starts a new day at today's power-on (else at this open).
     /// A power-on after an `.open` start moves the start once: a late-night open, then sleep, then the phone turns on.
     static func resolve(current: DayClock?, now: Date, boot: Date?) -> DayClock {

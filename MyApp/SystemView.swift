@@ -225,9 +225,10 @@ private struct QuestSignalRing: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { timeline in
-            let lit = dayClock.remainingSegments(at: timeline.date)
-            let failed = missesRequiredSet && timeline.date >= dayClock.deadline
-            let urgent = failed || dayClock.isUrgent(at: timeline.date)
+            let now = dayClock.displayDate(for: timeline.date)
+            let lit = dayClock.remainingSegments(at: now)
+            let failed = missesRequiredSet && now >= dayClock.deadline
+            let urgent = failed || dayClock.isUrgent(at: now)
             let tint = urgent ? QuestLight.penalty : QuestLight.ink
             Canvas { context, size in
                 for index in 0..<DayClock.segments {
@@ -244,7 +245,7 @@ private struct QuestSignalRing: View {
             .shadow(color: urgent ? QuestLight.penalty.opacity(0.8) : QuestLight.cyan.opacity(0.8), radius: 4)
             .accessibilityElement()
             .accessibilityLabel("Day timer")
-            .accessibilityValue(accessibilityValue(at: timeline.date, failed: failed))
+            .accessibilityValue(accessibilityValue(at: now, failed: failed))
         }
         .allowsHitTesting(false)
     }
