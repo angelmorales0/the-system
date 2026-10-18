@@ -6,7 +6,7 @@
       "readinessBands": [
         "green"
       ],
-      "headerLine": "Performance Training",
+      "headerLine": "Training",
       "narrative": "Train. The daily quest is waiting.",
       "warnings": [
         "Failure to complete\nthe daily quest will result\nin a penalty."
@@ -55,67 +55,6 @@
             "unit": "sets"
           },
           "reward": null
-        },
-        {
-          "id": "splits",
-          "title": "Splits",
-          "kind": "daily",
-          "stat": "AGI",
-          "verification": {
-            "method": "hevy_sets",
-            "params": {
-              "exercise": "Splits",
-              "minDurationSec": 180
-            }
-          },
-          "xp": 20,
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 3,
-            "unit": "min"
-          },
-          "reward": null
-        },
-        {
-          "id": "protein",
-          "title": "Protein",
-          "kind": "daily",
-          "stat": "END",
-          "verification": {
-            "method": "macrofactor_protein",
-            "params": {
-              "minProteinG": 150
-            }
-          },
-          "xp": 25,
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 150,
-            "unit": "g"
-          },
-          "reward": null
-        },
-        {
-          "id": "light_spend",
-          "title": "Light Spend Cap",
-          "kind": "optional",
-          "stat": "FIN",
-          "verification": {
-            "method": "mercury_spend_under",
-            "params": {
-              "maxDiscretionaryUsd": 40
-            }
-          },
-          "xp": 15,
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 40,
-            "unit": "usd"
-          },
-          "reward": null
         }
       ]
     },
@@ -124,7 +63,7 @@
       "readinessBands": [
         "yellow"
       ],
-      "headerLine": "Performance Training",
+      "headerLine": "Training",
       "narrative": "Moderate day. Keep the work inside the yellow band.",
       "warnings": [
         "Failure to complete\nthe daily quest will result\nin a penalty."
@@ -174,67 +113,6 @@
             "unit": "min"
           },
           "reward": null
-        },
-        {
-          "id": "mobility",
-          "title": "Mobility",
-          "kind": "daily",
-          "stat": "AGI",
-          "verification": {
-            "method": "timer_session",
-            "params": {
-              "minSec": 600,
-              "label": "Mobility"
-            }
-          },
-          "xp": 20,
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 10,
-            "unit": "min"
-          },
-          "reward": null
-        },
-        {
-          "id": "protein",
-          "title": "Protein",
-          "kind": "daily",
-          "stat": "END",
-          "verification": {
-            "method": "macrofactor_protein",
-            "params": {
-              "minProteinG": 150
-            }
-          },
-          "xp": 25,
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 150,
-            "unit": "g"
-          },
-          "reward": null
-        },
-        {
-          "id": "light_spend",
-          "title": "Light Spend Cap",
-          "kind": "optional",
-          "stat": "FIN",
-          "verification": {
-            "method": "mercury_spend_under",
-            "params": {
-              "maxDiscretionaryUsd": 40
-            }
-          },
-          "xp": 15,
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 40,
-            "unit": "usd"
-          },
-          "reward": null
         }
       ]
     },
@@ -243,7 +121,7 @@
       "readinessBands": [
         "red"
       ],
-      "headerLine": "Performance Training",
+      "headerLine": "Training",
       "narrative": "Red readiness. This stub stays light; the picker should already have chosen recovery.",
       "warnings": [
         "Failure to complete\nthe daily quest will result\nin a penalty."
@@ -269,67 +147,6 @@
             "current": 0,
             "target": 15,
             "unit": "min"
-          },
-          "reward": null
-        },
-        {
-          "id": "mobility",
-          "title": "Mobility",
-          "kind": "daily",
-          "stat": "AGI",
-          "verification": {
-            "method": "timer_session",
-            "params": {
-              "minSec": 600,
-              "label": "Mobility"
-            }
-          },
-          "xp": 20,
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 10,
-            "unit": "min"
-          },
-          "reward": null
-        },
-        {
-          "id": "protein",
-          "title": "Protein",
-          "kind": "daily",
-          "stat": "END",
-          "verification": {
-            "method": "macrofactor_protein",
-            "params": {
-              "minProteinG": 150
-            }
-          },
-          "xp": 25,
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 150,
-            "unit": "g"
-          },
-          "reward": null
-        },
-        {
-          "id": "light_spend",
-          "title": "Light Spend Cap",
-          "kind": "optional",
-          "stat": "FIN",
-          "verification": {
-            "method": "mercury_spend_under",
-            "params": {
-              "maxDiscretionaryUsd": 40
-            }
-          },
-          "xp": 15,
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 40,
-            "unit": "usd"
           },
           "reward": null
         }

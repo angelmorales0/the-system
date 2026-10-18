@@ -18,7 +18,7 @@ enum QuestMode: String, Codable, CaseIterable, Equatable {
     /// Text inside `[Daily Quest: {headerLine} has arrived.]`
     var headerLine: String {
         switch self {
-        case .performanceTraining: "Performance Training"
+        case .performanceTraining: "Training"
         case .studyBlock: "Study Block"
         case .recovery: "Recovery"
         case .fullRecovery: "Full Recovery Day"

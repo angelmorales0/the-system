@@ -66,7 +66,8 @@ Rules:
 - Obey modeDecision.selectedMode. Do not change it. lockedByRules is authoritative.
 - Do not invent medical diagnoses or extreme deficits.
 - Use only the verification methods already defined for this app.
-- hevy_sets reads Hevy. Strength: params exercise (Hevy title without the equipment, e.g. "Bench Press") and sets, optional minReps and minWeightKg; unit "sets". Stretches: params exercise (e.g. "Splits") and minDurationSec; unit "min". Prefer a specific stretch over a generic mobility block.
+- hevy_sets reads Hevy. Strength: params exercise (Hevy title without the equipment, e.g. "Bench Press") and sets, optional minReps and minWeightKg; unit "sets".
+- performance_training is exercise only: runs, walks, and lifts (strava_activity, hevy_sets strength, healthkit_workout). No protein, nutrition, spending, or stretch quests. The app adds its own Stretching quest.
 - Required quests (kind other than optional) <= constraints.maxRequiredQuests. Optional quests <= constraints.maxOptionalQuests. Total quests <= 8.
 - Titles are short and actionable. Narrative is at most 280 characters.
 - Scale physical load from whoop.readinessBand: green full, yellow moderate, red recovery only.
@@ -443,7 +444,10 @@ def template_bundle(context: dict[str, Any]) -> dict[str, Any]:
 def mode_quests(mode: str, band: str, day: str) -> list[dict[str, Any]]:
     protein = quest(day, "protein", "Protein", "daily", "END", "macrofactor_protein", {"minProteinG": 150}, 25, "easy", 150, "g", mode)
     mobility = quest(day, "mobility", "Mobility", "daily", "AGI", "timer_session", {"minSec": 600, "label": "Mobility"}, 20, "easy", 10, "min", mode)
-    if mode == "recovery" or (mode == "performance_training" and band == "red"):
+    if mode == "performance_training" and band == "red":
+        # Training is exercise only; the app adds Stretching.
+        return [quest(day, "easy_walk", "Easy Walk", "daily", "REC", "strava_activity", {"types": ["Walk", "Run"], "minMovingTimeSec": 900}, 15, "easy", 15, "min", mode)]
+    if mode == "recovery":
         walk = quest(day, "easy_walk", "Easy Walk", "daily", "REC", "timer_session", {"minSec": 900, "label": "Easy Walk"}, 15, "easy", 15, "min", mode)
         sleep = quest(day, "sleep", "Sleep Hygiene", "daily", "REC", "whoop_recovery", {"minRecoveryScore": 40}, 20, "easy", 1, "session", mode)
         return [sleep, mobility, protein, walk]
@@ -468,11 +472,10 @@ def mode_quests(mode: str, band: str, day: str) -> list[dict[str, Any]]:
     if band == "yellow":
         zone = quest(day, "zone2", "Zone 2 Walk/Run", "daily", "END", "strava_activity", {"types": ["Run", "Walk"], "minMovingTimeSec": 1200}, 30, "normal", 20, "min", mode)
         push = quest(day, "push", "Push Session", "daily", "STR", "healthkit_workout", {"activityType": "traditionalStrengthTraining", "minDurationSec": 1800}, 30, "normal", 30, "min", mode)
-        return [zone, push, mobility, protein]
+        return [zone, push]
     run = quest(day, "run_intervals", "Run Intervals", "daily", "END", "strava_activity", {"types": ["Run"], "minMovingTimeSec": 1200}, 40, "normal", 6, "reps", mode)
     bench = quest(day, "bench", "Bench Press", "daily", "STR", "hevy_sets", {"exercise": "Bench Press", "sets": 4}, 40, "normal", 4, "sets", mode)
-    splits = quest(day, "splits", "Splits", "daily", "AGI", "hevy_sets", {"exercise": "Splits", "minDurationSec": 180}, 20, "easy", 3, "min", mode)
-    return [run, bench, splits, protein]
+    return [run, bench]
 
 
 def quest(day: str, slug: str, title: str, kind: str, stat: str, method: str, params: dict[str, Any], xp: int, difficulty: str, target: float, unit: str, mode: str) -> dict[str, Any]:
@@ -494,7 +497,7 @@ def quest(day: str, slug: str, title: str, kind: str, stat: str, method: str, pa
 
 def header_for(mode: str) -> str:
     names = {
-        "performance_training": "Performance Training",
+        "performance_training": "Training",
         "study_block": "Study Block",
         "recovery": "Recovery",
         "full_recovery": "Full Recovery Day",

@@ -38,7 +38,7 @@ final class GameStore: ObservableObject {
             + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check()
             + HiddenQuestRules.check()
-            + EmergencyRules.check() + DailyStretch.check()
+            + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -59,8 +59,8 @@ final class GameStore: ObservableObject {
         case .standard:
             snapshot = GameSnapshot.loadFromUserDefaults() ?? GameSnapshot.fresh(catalog: catalog)
             snapshot.refreshIfNeeded(catalog: catalog)
-            // A day saved before the Stretching row existed gets it now.
-            snapshot.bundle = DailyStretch.ensure(in: snapshot.bundle, now: .now)
+            // A day saved before the Stretching row or the exercise-only Training rule gets them now.
+            snapshot.bundle = DailyStretch.ensure(in: TrainingDay.exerciseOnly(snapshot.bundle) ?? snapshot.bundle, now: .now)
         }
         if persistence == .standard {
             statHistory = StatLevelHistory.load()
@@ -467,7 +467,8 @@ final class GameStore: ObservableObject {
         guard snapshot.runningTimers.isEmpty else { return }
         let decision = ModePicker.decide(snapshot.modeInput(now: now))
         guard decision.selectedMode == context.modeDecision.selectedMode else { return }
-        guard let prepared = QuestSafety.accepting(bundle, context: context, assignedAt: now) else { return }
+        guard let accepted = QuestSafety.accepting(bundle, context: context, assignedAt: now),
+              let prepared = TrainingDay.exerciseOnly(accepted) else { return }
         var next = snapshot
         next.generatedBundle = prepared
         next.bundle = DailyStretch.ensure(in: prepared, now: now)

@@ -341,8 +341,9 @@ struct GameSnapshot: Codable, Equatable {
         let dayKey = QuestDay.key(for: now)
         if let cached = generatedBundle,
            cached.dayKey == dayKey,
-           cached.mode == decision.selectedMode {
-            bundle = DailyStretch.ensure(in: cached.strippingModelCompletion(assignedAt: now), now: now)
+           cached.mode == decision.selectedMode,
+           let allowed = TrainingDay.exerciseOnly(cached) {
+            bundle = DailyStretch.ensure(in: allowed.strippingModelCompletion(assignedAt: now), now: now)
             return
         }
         bundle = DailyStretch.ensure(in: catalog.makeBundle(
