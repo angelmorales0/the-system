@@ -11,13 +11,16 @@ struct ContentView: View {
         // so their backgrounds bleed to the edges while the content stays clear of the notch.
         TabView(selection: $selectedPage) {
             SystemView()
+                .environment(\.isPageVisible, selectedPage == 0)
                 .tag(0)
             StatusView()
+                .environment(\.isPageVisible, selectedPage == 1)
                 .tag(1)
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .ignoresSafeArea()
-        .background { SystemBackground() }
+        // Every page draws its own backdrop on top, so this one never needs to move.
+        .background { SystemBackground(animated: false) }
         // An active emergency quest covers every page until it ends.
         .overlay {
             if let emergency = store.emergency, emergency.status == .active {
@@ -46,6 +49,8 @@ enum SystemTheme {
 }
 
 struct SystemBackground: View {
+    var animated = true
+
     var body: some View {
         ZStack {
             SystemTheme.background.ignoresSafeArea()
@@ -53,7 +58,7 @@ struct SystemBackground: View {
             // Layered light fields give the glass windows a deep, electric-blue scene to reveal.
             RadialGradient(colors: [SystemTheme.cyan.opacity(0.26), .clear], center: .topTrailing, startRadius: 0, endRadius: 330).ignoresSafeArea()
             RadialGradient(colors: [Color.indigo.opacity(0.34), .clear], center: .bottomLeading, startRadius: 20, endRadius: 380).ignoresSafeArea()
-            NebulaThreads().opacity(0.58).ignoresSafeArea()
+            DriftingThreads(animated: animated).opacity(0.58).ignoresSafeArea()
         }
     }
 }
@@ -152,22 +157,82 @@ private struct Diamond: Shape {
     }
 }
 
-private struct NebulaThreads: View {
+/// Slow, glowing wisps behind every window. Each curve sways on its own long cycle (about 40 to 80 seconds),
+/// so the scene never visibly loops. It pauses off screen, in the background, and with Reduce Motion.
+struct DriftingThreads: View {
+    /// False for a backdrop that is always covered, so it does not draw frames nobody sees.
+    var animated = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.isPageVisible) private var isPageVisible
+
+    private struct Wisp {
+        var start: CGPoint, control1: CGPoint, control2: CGPoint, end: CGPoint
+        var width: CGFloat, opacity: Double, speed: Double, phase: Double
+    }
+
+    /// Unit-space curves. The first three are the original threads; the last two are fainter depth layers.
+    private static let wisps: [Wisp] = [
+        Wisp(start: CGPoint(x: -0.10, y: 0.20), control1: CGPoint(x: 0.22, y: 0.05), control2: CGPoint(x: 0.62, y: 0.73), end: CGPoint(x: 1.12, y: 0.48), width: 2.5, opacity: 1, speed: 0.11, phase: 0),
+        Wisp(start: CGPoint(x: -0.06, y: 0.70), control1: CGPoint(x: 0.35, y: 0.48), control2: CGPoint(x: 0.64, y: 0.60), end: CGPoint(x: 1.06, y: 0.25), width: 2.5, opacity: 1, speed: 0.08, phase: 2.1),
+        Wisp(start: CGPoint(x: 0.08, y: 1.03), control1: CGPoint(x: 0.22, y: 0.60), control2: CGPoint(x: 0.74, y: 0.47), end: CGPoint(x: 0.92, y: -0.03), width: 2.5, opacity: 1, speed: 0.14, phase: 4.0),
+        Wisp(start: CGPoint(x: -0.08, y: 0.42), control1: CGPoint(x: 0.30, y: 0.30), control2: CGPoint(x: 0.70, y: 0.90), end: CGPoint(x: 1.10, y: 0.82), width: 1.6, opacity: 0.55, speed: 0.09, phase: 1.3),
+        Wisp(start: CGPoint(x: 0.30, y: -0.04), control1: CGPoint(x: 0.10, y: 0.40), control2: CGPoint(x: 0.95, y: 0.35), end: CGPoint(x: 0.70, y: 1.04), width: 1.4, opacity: 0.45, speed: 0.12, phase: 5.2),
+    ]
+
     var body: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let height = proxy.size.height
-            Path { path in
-                path.move(to: CGPoint(x: -40, y: height * 0.20))
-                path.addCurve(to: CGPoint(x: width + 50, y: height * 0.48), control1: CGPoint(x: width * 0.22, y: height * 0.05), control2: CGPoint(x: width * 0.62, y: height * 0.73))
-                path.move(to: CGPoint(x: -25, y: height * 0.70))
-                path.addCurve(to: CGPoint(x: width + 25, y: height * 0.25), control1: CGPoint(x: width * 0.35, y: height * 0.48), control2: CGPoint(x: width * 0.64, y: height * 0.60))
-                path.move(to: CGPoint(x: width * 0.08, y: height + 20))
-                path.addCurve(to: CGPoint(x: width * 0.92, y: -20), control1: CGPoint(x: width * 0.22, y: height * 0.60), control2: CGPoint(x: width * 0.74, y: height * 0.47))
+        let paused = !animated || reduceMotion || scenePhase != .active || !isPageVisible
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: paused)) { timeline in
+            let time = (animated && !reduceMotion) ? timeline.date.timeIntervalSinceReferenceDate : 0
+            Canvas { context, size in
+                let gradient = Gradient(colors: [.clear, SystemTheme.cyan.opacity(0.40), Color.indigo.opacity(0.54), .clear])
+                let shading = GraphicsContext.Shading.linearGradient(gradient, startPoint: .zero, endPoint: CGPoint(x: size.width, y: 0))
+                for wisp in Self.wisps {
+                    let path = Self.path(wisp, size: size, time: time)
+                    // Brightness breathes slowly, out of step with the sway.
+                    let breath = 0.8 + 0.2 * sin(time * wisp.speed * 1.7 + wisp.phase * 2)
+                    context.drawLayer { haze in
+                        haze.addFilter(.blur(radius: 10))
+                        haze.opacity = 0.35 * wisp.opacity * breath
+                        haze.stroke(path, with: shading, style: StrokeStyle(lineWidth: wisp.width * 4, lineCap: .round))
+                    }
+                    context.drawLayer { thread in
+                        thread.addFilter(.blur(radius: 3))
+                        thread.opacity = wisp.opacity * breath
+                        thread.stroke(path, with: shading, style: StrokeStyle(lineWidth: wisp.width, lineCap: .round))
+                    }
+                }
             }
-            .stroke(LinearGradient(colors: [.clear, SystemTheme.cyan.opacity(0.40), Color.indigo.opacity(0.54), .clear], startPoint: .leading, endPoint: .trailing), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-            .blur(radius: 3)
         }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    /// The end points sway a little; the control points sway more, so the curve bends and unbends.
+    private static func path(_ wisp: Wisp, size: CGSize, time: Double) -> Path {
+        func point(_ unit: CGPoint, amount: Double, offset: Double) -> CGPoint {
+            let angle = time * wisp.speed + wisp.phase + offset
+            return CGPoint(x: (unit.x + amount * 0.6 * cos(angle * 0.7)) * size.width,
+                           y: (unit.y + amount * sin(angle)) * size.height)
+        }
+        var path = Path()
+        path.move(to: point(wisp.start, amount: 0.02, offset: 0))
+        path.addCurve(to: point(wisp.end, amount: 0.02, offset: 1.9),
+                      control1: point(wisp.control1, amount: 0.08, offset: 0.7),
+                      control2: point(wisp.control2, amount: 0.09, offset: 3.1))
+        return path
+    }
+}
+
+private struct PageVisibleKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    /// False for a paged screen that is off to the side. Animations pause there.
+    var isPageVisible: Bool {
+        get { self[PageVisibleKey.self] }
+        set { self[PageVisibleKey.self] = newValue }
     }
 }
 

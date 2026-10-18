@@ -150,33 +150,13 @@ struct QuestBackdrop: View {
                            center: .topTrailing, startRadius: 0, endRadius: 330)
             RadialGradient(colors: [Color.indigo.opacity(0.34), .clear],
                            center: .bottomLeading, startRadius: 20, endRadius: 380)
-            QuestBackdropThreads().opacity(0.58)
+            DriftingThreads().opacity(0.8)
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 }
-
-private struct QuestBackdropThreads: View {
-    var body: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let height = proxy.size.height
-            Path { path in
-                path.move(to: CGPoint(x: -40, y: height * 0.20))
-                path.addCurve(to: CGPoint(x: width + 50, y: height * 0.48), control1: CGPoint(x: width * 0.22, y: height * 0.05), control2: CGPoint(x: width * 0.62, y: height * 0.73))
-                path.move(to: CGPoint(x: -25, y: height * 0.70))
-                path.addCurve(to: CGPoint(x: width + 25, y: height * 0.25), control1: CGPoint(x: width * 0.35, y: height * 0.48), control2: CGPoint(x: width * 0.64, y: height * 0.60))
-                path.move(to: CGPoint(x: width * 0.08, y: height + 20))
-                path.addCurve(to: CGPoint(x: width * 0.92, y: -20), control1: CGPoint(x: width * 0.22, y: height * 0.60), control2: CGPoint(x: width * 0.74, y: height * 0.47))
-            }
-            .stroke(LinearGradient(colors: [.clear, SystemTheme.cyan.opacity(0.40), Color.indigo.opacity(0.54), .clear], startPoint: .leading, endPoint: .trailing), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-            .blur(radius: 3)
-        }
-    }
-}
-
 
 struct QuestInfoHeader: View {
     var title = "QUEST INFO"
@@ -364,6 +344,10 @@ struct QuestHologram<Content: View>: View {
                                startPoint: .topLeading, endPoint: .bottomTrailing)
                     .clipShape(QuestGlassOutline())
                 QuestCircuitry()
+                    .clipShape(QuestGlassOutline())
+                // The same drifting wisps, seen through the glass, so the window feels alive.
+                DriftingThreads()
+                    .opacity(0.45)
                     .clipShape(QuestGlassOutline())
             }
             .overlay { QuestFrame().allowsHitTesting(false).accessibilityHidden(true) }
