@@ -1,11 +1,42 @@
 import Foundation
 
-/// The seven stat levels (0...146) that the status radar draws.
-/// Each comes from its algorithm. A stat with no data yet scores 0; nothing falls back to XP points.
+/// The seven stat levels (0...350) that the status radar draws, and the overall level (0...146) they add up to.
+/// Each stat comes from its algorithm. A stat with no data yet scores 0; nothing falls back to XP points.
 struct StatLevelSet: Equatable {
+    /// Overall level 146 means all seven stats are at their max (350).
+    static let overallMaxLevel = 146
+
     var levels: [Stat: Int]
 
     subscript(stat: Stat) -> Int { levels[stat] ?? 0 }
+
+    var isAllMax: Bool { Stat.allCases.allSatisfy { self[$0] >= StatLevel.maxLevel } }
+
+    /// 0...1: the seven stats together as a share of their combined max. Every stat counts the same.
+    var overallFraction: Double {
+        let total = Stat.allCases.reduce(0) { $0 + min(self[$1], StatLevel.maxLevel) }
+        return Double(total) / Double(Stat.allCases.count * StatLevel.maxLevel)
+    }
+
+    /// 0...146. Only all seven stats at 350 reach 146; anything less stops at 145.
+    var overallLevel: Int {
+        let scored = Int((Double(Self.overallMaxLevel) * overallFraction + 1e-9).rounded(.down))
+        return isAllMax ? Self.overallMaxLevel : min(scored, Self.overallMaxLevel - 1)
+    }
+
+    /// 0...1: how far the stats are from this overall level to the next one, for the progress bar.
+    var overallProgress: Double {
+        if isAllMax { return 1 }
+        return min(max(Double(Self.overallMaxLevel) * overallFraction - Double(overallLevel), 0), 1)
+    }
+
+    /// Stat levels still needed for the next overall level, spread across any stats.
+    var statLevelsToNextOverall: Int {
+        guard !isAllMax else { return 0 }
+        let perLevel = Double(Stat.allCases.count * StatLevel.maxLevel) / Double(Self.overallMaxLevel)
+        let needed = Double(overallLevel + 1) * perLevel - overallFraction * Double(Stat.allCases.count * StatLevel.maxLevel)
+        return max(1, Int(needed.rounded(.up)))
+    }
 
     /// Radar order follows `Stat.allCases`, the same order the XP stats used.
     var radar: [(label: String, value: Double)] {
@@ -87,6 +118,25 @@ struct StatLevelSet: Equatable {
             errors.append("history should keep only the newest \(StatLevelHistory.keepDays) days, got \(history.days.count)")
         }
 
+        // Overall level: 146 only with all seven stats at 350. One stat at 349 stops at 145. Half of every stat is 73.
+        func uniform(_ value: Int) -> StatLevelSet {
+            StatLevelSet(levels: Dictionary(uniqueKeysWithValues: Stat.allCases.map { ($0, value) }))
+        }
+        if uniform(StatLevel.maxLevel).overallLevel != Self.overallMaxLevel || uniform(0).overallLevel != 0 || uniform(175).overallLevel != 73 {
+            errors.append("overall should be 146 at all max, 0 at none, 73 at half, got \(uniform(StatLevel.maxLevel).overallLevel) \(uniform(0).overallLevel) \(uniform(175).overallLevel)")
+        }
+        var almost = uniform(StatLevel.maxLevel)
+        almost.levels[.FIN] = StatLevel.maxLevel - 1
+        if almost.overallLevel != Self.overallMaxLevel - 1 || almost.statLevelsToNextOverall != 1 {
+            errors.append("one stat at 349 should stop at overall 145 and need 1 stat level, got \(almost.overallLevel) \(almost.statLevelsToNextOverall)")
+        }
+        // One stat at max and the rest at 0 is 1/7 of the way: overall 20.
+        var single = uniform(0)
+        single.levels[.STR] = StatLevel.maxLevel
+        if single.overallLevel != 20 || single.overallProgress <= 0 || single.overallProgress >= 1 {
+            errors.append("one maxed stat should be overall 20 with partial progress, got \(single.overallLevel) \(single.overallProgress)")
+        }
+
         let keys = IntegrationClient.financeMonthKeys(dayKey: "2026-01-05")
         if keys.this != "2026-01" || keys.last != "2025-12" {
             errors.append("January should ask for this month and last December, got \(keys)")
@@ -98,7 +148,8 @@ struct StatLevelSet: Equatable {
 /// One saved reading of every stat level per local day, for the history charts. Newest reading of a day wins.
 struct StatLevelHistory: Codable, Equatable {
     static let keepDays = 120
-    static let storageKey = "com.angelmorales.thesystem.statlevels.v1"
+    /// v2: stat levels on the 0...350 scale. v1 readings were on 0...146 and are not mixed in.
+    static let storageKey = "com.angelmorales.thesystem.statlevels.v2"
 
     /// dayKey → stat raw value → level.
     var days: [String: [String: Int]] = [:]

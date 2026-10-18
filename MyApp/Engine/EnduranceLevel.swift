@@ -36,7 +36,7 @@ struct ZoneTwoSession: Codable, Equatable {
     var source: String
 }
 
-/// Deterministic END (endurance) level 0...146.
+/// Deterministic END (endurance) level 0...350.
 /// Pure: the same inputs and `now` always give the same report. No network and no clock.
 enum EnduranceLevel {
     /// Run and swim efforts and zone 2 sessions count from the last 180 days.
@@ -44,7 +44,7 @@ enum EnduranceLevel {
     /// VO₂ max is a current fitness estimate: the newest reading within 90 days, not the best.
     static let vo2WindowDays = 90
 
-    // Floors are the level 0 limits; targets are the level 146 rules. Times put the floor above the target.
+    // Floors are the level 0 limits; targets are the max level rules. Times put the floor above the target.
     static let mileBand = StatLevel.Band(floor: 720, target: 330)      // seconds: 12:00 → 5:30
     static let fiveKBand = StatLevel.Band(floor: 2700, target: 1200)   // seconds: 45:00 → 20:00
     static let tenKBand = StatLevel.Band(floor: 5400, target: 3000)    // seconds: 90:00 → 50:00
@@ -188,7 +188,7 @@ enum EnduranceLevel {
         }
     }
 
-    /// Inputs that meet every level 146 requirement. Tests edit a copy.
+    /// Inputs that meet every the max level requirement. Tests edit a copy.
     static func perfectFixture() -> Fixture {
         Fixture(
             efforts: [
@@ -221,7 +221,7 @@ enum EnduranceLevel {
         let perfect = perfectFixture()
         let report = perfect.evaluate()
         if !report.isMaxLevel {
-            errors.append("perfect fixture should reach level 146, failing: " + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
+            errors.append("perfect fixture should reach the max level, failing: " + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
         }
         if report.requirements.count != 6 {
             errors.append("END should have 6 requirements, got \(report.requirements.count)")
@@ -231,7 +231,7 @@ enum EnduranceLevel {
             errors.append("weights should add to 100, got \(totalWeight)")
         }
         if report.level != StatLevel.maxLevel || abs(report.score - 100) > 0.001 || report.stat != .END {
-            errors.append("perfect fixture should score 100 and level 146, got \(report.score) level \(report.level)")
+            errors.append("perfect fixture should score 100 and the max level, got \(report.score) level \(report.level)")
         }
 
         let empty = Fixture(efforts: [], swims: [], vo2: [], zoneTwo: []).evaluate()
@@ -253,7 +253,7 @@ enum EnduranceLevel {
                 errors.append("line \(line): expected only \(category) to fail, got \(failing)")
             }
             if edited.level >= StatLevel.maxLevel {
-                errors.append("line \(line): a failing \(category) must stay under level 146, got \(edited.level)")
+                errors.append("line \(line): a failing \(category) must stay under the max level, got \(edited.level)")
             }
             if edited.topGains(1).first?.category != category {
                 errors.append("line \(line): \(category) should be the top gain, got \(edited.topGains(1).map(\.category))")
@@ -287,12 +287,12 @@ enum EnduranceLevel {
             errors.append("a 42:30 swim should give progress 0.5, got \(String(describing: swimRow))")
         }
 
-        // A 5:31 mile misses 5:30 by one second. Strict rule fails; progress stays near 1, so the level caps at 145.
+        // A 5:31 mile misses 5:30 by one second. Strict rule fails; progress stays near 1, so the level caps one under the max.
         var slowMile = perfect
         slowMile.efforts[0].seconds = 331
         let slowReport = slowMile.evaluate()
         if slowReport.failing.map(\.category) != ["1-mile run"] || slowReport.level != StatLevel.maxLevel - 1 {
-            errors.append("a 5:31 mile should fail and cap at level 145, got \(slowReport.failing.map(\.category)) level \(slowReport.level)")
+            errors.append("a 5:31 mile should fail and cap at one under the max level, got \(slowReport.failing.map(\.category)) level \(slowReport.level)")
         }
         // Exactly 5:30 passes.
         var exactMile = perfect

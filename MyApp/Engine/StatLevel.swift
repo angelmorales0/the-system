@@ -1,10 +1,10 @@
 import Foundation
 
-/// Shared math for the stat levels (STR, END, INT). Each stat scores its requirements from a
-/// level 0 floor to its max target, weights them to a 0–100 score, and maps the score to 0–146.
-/// Level 146 needs every strict requirement, not only a full score.
+/// Shared math for the stat levels (STR, END, INT, AGI, FOC, FIN). Each stat scores its requirements from a
+/// level 0 floor to its max target, weights them to a 0–100 score, and maps the score to 0–350.
+/// The max level needs every strict requirement, not only a full score.
 enum StatLevel {
-    static let maxLevel = 146
+    static let maxLevel = 350
 
     /// Level 0 floor and max-level target for one metric. Lower-is-better metrics (run times) put the floor above the target.
     struct Band: Equatable {
@@ -55,7 +55,7 @@ struct StatLevelReport: Equatable {
     /// 0...100. Weighted sum of requirement progress.
     var score: Double { requirements.reduce(0) { $0 + $1.points } }
 
-    /// 0...146. Without every strict rule the level stops at 145.
+    /// 0...350. Without every strict rule the level stops at 349.
     var level: Int {
         let scored = Int((Double(StatLevel.maxLevel) * score / 100 + 1e-9).rounded(.down))
         return isMaxLevel ? StatLevel.maxLevel : min(scored, StatLevel.maxLevel - 1)

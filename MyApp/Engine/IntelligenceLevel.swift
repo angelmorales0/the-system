@@ -21,7 +21,7 @@ nonisolated struct CodeforcesReading: Codable, Equatable {
     }
 }
 
-/// Deterministic INT level 0...146 from one Codeforces reading.
+/// Deterministic INT level 0...350 from one Codeforces reading.
 /// Pure: the same reading always gives the same report. No network and no clock.
 enum IntelligenceLevel {
     /// 800 is the lowest problem rating; 2100 is Master. 1200 ≈ 30%, 1900 ≈ 85%.
@@ -69,7 +69,7 @@ enum IntelligenceLevel {
 
         let top = evaluate(reading(rating: 2100))
         if !top.isMaxLevel || top.level != StatLevel.maxLevel || abs(top.score - 100) > 0.001 {
-            errors.append("rating 2100 should be level 146 and score 100, got level \(top.level) score \(top.score)")
+            errors.append("rating 2100 should be the max level and score 100, got level \(top.level) score \(top.score)")
         }
         if top.stat != .INT || top.requirements.count != 1 || top.requirements.reduce(0, { $0 + $1.weight }) != 100 {
             errors.append("INT should have one requirement with weight 100")
@@ -77,7 +77,7 @@ enum IntelligenceLevel {
 
         let almost = evaluate(reading(rating: 2099))
         if almost.isMaxLevel || almost.level > StatLevel.maxLevel - 1 {
-            errors.append("rating 2099 should stay at level 145 or lower, got \(almost.level)")
+            errors.append("rating 2099 should stay at one under the max level or lower, got \(almost.level)")
         }
 
         for floor in [800, 600] {
@@ -87,10 +87,10 @@ enum IntelligenceLevel {
             }
         }
 
-        // 1450 is halfway between 800 and 2100: progress 0.5, score 50, level 73.
+        // 1450 is halfway between 800 and 2100: progress 0.5, score 50, level 175.
         let half = evaluate(reading(rating: 1450))
-        if abs((half.requirements.first?.progress ?? 0) - 0.5) > 0.0001 || half.level != 73 {
-            errors.append("rating 1450 should be band 0.5 and level 73, got \(half.requirements.first?.progress ?? -1) level \(half.level)")
+        if abs((half.requirements.first?.progress ?? 0) - 0.5) > 0.0001 || half.level != 175 {
+            errors.append("rating 1450 should be band 0.5 and level 175, got \(half.requirements.first?.progress ?? -1) level \(half.level)")
         }
 
         // The current rating scores, not the peak.
@@ -121,7 +121,7 @@ enum IntelligenceLevel {
         decoder.dateDecodingStrategy = .iso8601
         if let decoded = try? decoder.decode(CodeforcesReading.self, from: Data(json.utf8)) {
             if decoded.rating != 2150 || decoded.checkedAt == nil || !evaluate(decoded).isMaxLevel {
-                errors.append("decoded backend reading should be rating 2150 and level 146, got \(decoded)")
+                errors.append("decoded backend reading should be rating 2150 and the max level, got \(decoded)")
             }
         } else {
             errors.append("backend Codeforces JSON should decode")

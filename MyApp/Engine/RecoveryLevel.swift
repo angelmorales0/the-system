@@ -34,8 +34,8 @@ struct RecoveryDay: Codable, Equatable {
     var bodyMassKg: Double?
 }
 
-/// One scored category. `passed` is the strict level 146 rule.
-/// `progress` is 0 at the level 0 floor and 1 at the level 146 target.
+/// One scored category. `passed` is the strict the max level rule.
+/// `progress` is 0 at the level 0 floor and 1 at the max level target.
 struct RecoveryRequirement: Equatable, Identifiable {
     var category: String
     var passed: Bool
@@ -53,17 +53,17 @@ struct RecoveryRequirement: Equatable, Identifiable {
 struct RecoveryLevelReport: Equatable {
     var requirements: [RecoveryRequirement]
 
-    /// Level 146 needs every requirement at once.
-    var isLevel146: Bool { requirements.allSatisfy(\.passed) }
+    /// The max level needs every requirement at once.
+    var isMaxLevel: Bool { requirements.allSatisfy(\.passed) }
     var failing: [RecoveryRequirement] { requirements.filter { !$0.passed } }
 
     /// 0...100. Weighted sum of category progress.
     var score: Double { requirements.reduce(0) { $0 + $1.points } }
 
-    /// 0...146. The max level needs every strict rule, not just a full score.
+    /// 0...350. The max level needs every strict rule, not just a full score.
     var level: Int {
         let scored = Int((Double(RecoveryLevel.maxLevel) * score / 100 + 1e-9).rounded(.down))
-        return isLevel146 ? RecoveryLevel.maxLevel : min(scored, RecoveryLevel.maxLevel - 1)
+        return isMaxLevel ? RecoveryLevel.maxLevel : min(scored, RecoveryLevel.maxLevel - 1)
     }
 
     var levelsToMax: Int { RecoveryLevel.maxLevel - level }
@@ -74,17 +74,17 @@ struct RecoveryLevelReport: Equatable {
     }
 }
 
-/// Deterministic recovery level 0...146.
+/// Deterministic recovery level 0...350.
 /// Pure: the same days always give the same report. No network and no clock.
 enum RecoveryLevel {
-    static let maxLevel = 146
+    static let maxLevel = 350
     static let windowDays = 30
     static let baselineDays = 90
     /// A daily metric needs 90% of the window logged (27 of 30 days), or it fails for missing data.
     static let minimumLoggedDays = 27
     static let minimumBaselineSamples = 60
 
-    /// Level 0 floor and level 146 target for one metric. Lower-is-better metrics put the floor above the target.
+    /// Level 0 floor and the max level target for one metric. Lower-is-better metrics put the floor above the target.
     struct Band: Equatable {
         var floor: Double
         var target: Double
@@ -95,7 +95,7 @@ enum RecoveryLevel {
         }
     }
 
-    // Floors are common "unhealthy" limits; targets are the level 146 rules.
+    // Floors are common "unhealthy" limits; targets are the max level rules.
     static let sleepNeedBand = Band(floor: 0, target: 0.90)          // share of nights at 100% sleep need
     static let sleepConsistencyBand = Band(floor: 50, target: 90)    // %
     static let sleepEfficiencyBand = Band(floor: 75, target: 92)     // %
@@ -466,7 +466,7 @@ enum RecoveryLevel {
 
     // MARK: - Self-check (runs in DEBUG at launch)
 
-    /// Ninety days that meet every level 146 requirement. Tests edit a copy.
+    /// Ninety days that meet every the max level requirement. Tests edit a copy.
     static func perfectDays(count: Int = 90, start: String = "2026-07-01") -> [RecoveryDay] {
         guard let first = QuestDay.date(from: start) else { return [] }
         return (0..<count).map { offset in
@@ -524,22 +524,22 @@ enum RecoveryLevel {
         var errors: [String] = []
         let perfect = perfectDays()
         let report = evaluate(days: perfect)
-        if !report.isLevel146 {
-            errors.append("perfect days should reach level 146, failing: " + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
+        if !report.isMaxLevel {
+            errors.append("perfect days should reach the max level, failing: " + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
         }
         if report.requirements.count != 10 {
-            errors.append("level 146 should have 10 requirements, got \(report.requirements.count)")
+            errors.append("the max level should have 10 requirements, got \(report.requirements.count)")
         }
         let totalWeight = report.requirements.reduce(0) { $0 + $1.weight }
         if abs(totalWeight - 100) > 0.001 {
             errors.append("weights should add to 100, got \(totalWeight)")
         }
         if report.level != maxLevel || abs(report.score - 100) > 0.001 || report.levelsToMax != 0 {
-            errors.append("perfect days should score 100 and level 146, got \(report.score) level \(report.level)")
+            errors.append("perfect days should score 100 and the max level, got \(report.score) level \(report.level)")
         }
 
         let empty = evaluate(days: [])
-        if empty.isLevel146 || empty.level != 0 || empty.score != 0 {
+        if empty.isMaxLevel || empty.level != 0 || empty.score != 0 {
             errors.append("no data must be level 0, got level \(empty.level) score \(empty.score)")
         }
 
@@ -560,7 +560,7 @@ enum RecoveryLevel {
                 errors.append("line \(line): expected only \(category) to fail, got \(failing)")
             }
             if edited.level >= maxLevel {
-                errors.append("line \(line): a failing \(category) must stay under level 146, got \(edited.level)")
+                errors.append("line \(line): a failing \(category) must stay under the max level, got \(edited.level)")
             }
             if edited.topGains(1).first?.category != category {
                 errors.append("line \(line): \(category) should be the top gain, got \(edited.topGains(1).map(\.category))")
@@ -570,7 +570,7 @@ enum RecoveryLevel {
         // One bad night in 30 is fine (29/30 = 97%); four bad nights drop under 90%.
         var threeBad = perfect
         for index in 85..<88 { threeBad[index].sleepNeedPct = 80 }
-        if !evaluate(days: threeBad).isLevel146 {
+        if !evaluate(days: threeBad).isMaxLevel {
             errors.append("three short nights in 30 (90%) should still pass sleep duration")
         }
         failsOnly("Sleep duration") { days in for index in 84..<88 { days[index].sleepNeedPct = 80 } }
@@ -596,7 +596,7 @@ enum RecoveryLevel {
             fourVeryHigh[index].dayStrain = 19
             fourVeryHigh[index].carbsG = carbTargetGrams(strain: 19, bodyMassKg: 80) + 10
         }
-        if !evaluate(days: fourVeryHigh).isLevel146 {
+        if !evaluate(days: fourVeryHigh).isMaxLevel {
             errors.append("four very-high days in a week should still pass")
         }
         failsOnly("HRV") { days in for index in 60..<90 { days[index].hrv = 70 } }
@@ -607,12 +607,12 @@ enum RecoveryLevel {
         failsOnly("Caffeine") { days in for index in 60..<64 { days[index].caffeineMg = nil } }
         failsOnly("HRV") { days in for index in 0..<40 { days[index].hrv = nil } }
 
-        // A resting heart rate under 45 fails the strict rule but keeps full progress, so the level caps at 145.
+        // A resting heart rate under 45 fails the strict rule but keeps full progress, so the level caps one under the max.
         var lowHr = perfect
         for index in 60..<90 { lowHr[index].restingHr = 42 }
         let lowHrReport = evaluate(days: lowHr)
-        if lowHrReport.isLevel146 || lowHrReport.level != maxLevel - 1 {
-            errors.append("a 42 bpm average should cap at level 145, got \(lowHrReport.level)")
+        if lowHrReport.isMaxLevel || lowHrReport.level != maxLevel - 1 {
+            errors.append("a 42 bpm average should cap at one under the max level, got \(lowHrReport.level)")
         }
 
         // Progress is linear between floor and target. Caffeine at 300 mg is half of the 600 → 0 band.
@@ -625,8 +625,8 @@ enum RecoveryLevel {
         if abs(caffeineRow.progress - 0.5) > 0.001 || abs(halfReport.score - 97.5) > 0.001 {
             errors.append("300 mg caffeine should be 0.5 progress and score 97.5, got \(caffeineRow.progress) \(halfReport.score)")
         }
-        if halfReport.level != 142 || abs(caffeineRow.levelsAvailable - 3.65) > 0.001 {
-            errors.append("score 97.5 should be level 142 with 3.65 levels available in caffeine, got \(halfReport.level) \(caffeineRow.levelsAvailable)")
+        if halfReport.level != 341 || abs(caffeineRow.levelsAvailable - 8.75) > 0.001 {
+            errors.append("score 97.5 should be level 341 with 8.75 levels available in caffeine, got \(halfReport.level) \(caffeineRow.levelsAvailable)")
         }
 
         // Skipped logs scale progress down: caffeine logged on 9 of 30 days keeps a third of its points.
@@ -645,13 +645,13 @@ enum RecoveryLevel {
         if rolledPasses[28] != false || rolledPasses[29] != true {
             errors.append("day 88 should miss its 2-day carb target and day 89 should cover it, got \(rolledPasses.suffix(2))")
         }
-        if !evaluate(days: rolled).isLevel146 {
+        if !evaluate(days: rolled).isMaxLevel {
             errors.append("a single carb shortfall in 30 days should still pass")
         }
         failsOnly("Nutrition") { days in for index in 60..<90 { days[index].carbsG = 100 } }
         var noWeight = perfect
         for index in 61..<90 { noWeight[index].bodyMassKg = nil }
-        if !evaluate(days: noWeight).isLevel146 {
+        if !evaluate(days: noWeight).isMaxLevel {
             errors.append("trend weight should carry forward across days without a weigh-in")
         }
 
@@ -666,7 +666,7 @@ enum RecoveryLevel {
         // Only the newest 30 days are scored; older days feed the HRV baseline.
         var oldBad = perfect
         for index in 0..<60 { oldBad[index].caffeineMg = 500 }
-        if !evaluate(days: oldBad).isLevel146 {
+        if !evaluate(days: oldBad).isMaxLevel {
             errors.append("days older than the 30-day window should not score")
         }
         return errors

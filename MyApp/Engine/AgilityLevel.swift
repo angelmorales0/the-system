@@ -31,7 +31,7 @@ struct AgilityMeasurement: Codable, Equatable {
     var source: String
 }
 
-/// Deterministic AGI (agility) level 0...146.
+/// Deterministic AGI (agility) level 0...350.
 /// Pure: the same inputs and `now` always give the same report. No network and no clock.
 ///
 /// Every input is self-reported. No sensor can verify a splits depth, a finger gap or a knee touch,
@@ -40,7 +40,7 @@ enum AgilityLevel {
     /// Flexibility goes away without practice: only the newest result of each test within 90 days counts.
     static let windowDays = 90
 
-    // Floors are the level 0 limits; targets are the level 146 rules. Lower-is-better metrics put the floor above the target.
+    // Floors are the level 0 limits; targets are the max level rules. Lower-is-better metrics put the floor above the target.
     static let verticalJumpBand = StatLevel.Band(floor: 8, target: 30)   // inches
     static let splitsBand = StatLevel.Band(floor: 60, target: 0)         // cm from the hips to the floor
     static let apleyBand = StatLevel.Band(floor: 25, target: 0)          // cm finger gap; negative = clasp
@@ -181,7 +181,7 @@ enum AgilityLevel {
         })
     }
 
-    /// Inputs that meet every level 146 requirement. Tests edit a copy.
+    /// Inputs that meet every the max level requirement. Tests edit a copy.
     static func perfectFixture() -> Fixture {
         fixture([
             (.verticalJump, 31),
@@ -216,7 +216,7 @@ enum AgilityLevel {
         let perfect = perfectFixture()
         let report = perfect.evaluate()
         if !report.isMaxLevel {
-            errors.append("perfect fixture should reach level 146, failing: " + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
+            errors.append("perfect fixture should reach the max level, failing: " + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
         }
         if report.requirements.count != 6 {
             errors.append("AGI should have 6 requirements, got \(report.requirements.count)")
@@ -226,7 +226,7 @@ enum AgilityLevel {
             errors.append("weights should add to 100, got \(totalWeight)")
         }
         if report.level != StatLevel.maxLevel || abs(report.score - 100) > 0.001 || report.stat != .AGI {
-            errors.append("perfect fixture should score 100 and level 146, got \(report.score) level \(report.level)")
+            errors.append("perfect fixture should score 100 and the max level, got \(report.score) level \(report.level)")
         }
 
         let empty = Fixture(measurements: []).evaluate()
@@ -251,7 +251,7 @@ enum AgilityLevel {
                 errors.append("line \(line): expected only \(category) to fail, got \(failing)")
             }
             if edited.level >= StatLevel.maxLevel {
-                errors.append("line \(line): a failing \(category) must stay under level 146, got \(edited.level)")
+                errors.append("line \(line): a failing \(category) must stay under the max level, got \(edited.level)")
             }
             if edited.topGains(1).first?.category != category {
                 errors.append("line \(line): \(category) should be the top gain, got \(edited.topGains(1).map(\.category))")

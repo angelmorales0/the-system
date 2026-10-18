@@ -1,6 +1,6 @@
 import Foundation
 
-/// Deterministic STR level 0...146 from Hevy workouts.
+/// Deterministic STR level 0...350 from Hevy workouts.
 /// Pure: the same workouts and `now` always give the same report. No network.
 /// Only working sets from the last 180 days count, because strength fades.
 /// Hevy cannot show "strict" form (no kipping, full range), so a logged set counts as strict.
@@ -37,7 +37,7 @@ enum StrengthLevel {
         var band: StatLevel.Band { StatLevel.Band(floor: 0, target: Double(targetReps)) }
     }
 
-    // Floors are a common untrained start (an empty bar or a light dumbbell); targets are the level 146 rules.
+    // Floors are a common untrained start (an empty bar or a light dumbbell); targets are the max level rules.
     static let squat = Lift(category: "Squat", aliases: ["squat"], floorLb: 95, targetLb: 315, targetReps: 1)
     static let deadlift = Lift(category: "Deadlift", aliases: ["deadlift"], floorLb: 135, targetLb: 405, targetReps: 1)
     static let bench = Lift(category: "Bench press", aliases: ["bench press"], floorLb: 95, targetLb: 225, targetReps: 3)
@@ -228,7 +228,7 @@ enum StrengthLevel {
         return HevyWorkout(id: id, title: "Workout", start: start, end: start.addingTimeInterval(3_600), exercises: exercises)
     }
 
-    /// One workout that meets every level 146 requirement. Tests edit a copy.
+    /// One workout that meets every the max level requirement. Tests edit a copy.
     static func perfectWorkouts(now: Date) -> [HevyWorkout] {
         [workout([
             HevyExercise(title: "Squat (Barbell)", sets: [workingSet(lb: 315, reps: 1)]),
@@ -268,7 +268,7 @@ enum StrengthLevel {
         let perfect = perfectWorkouts(now: now)
         let report = evaluate(workouts: perfect, now: now)
         if !report.isMaxLevel || report.level != StatLevel.maxLevel || abs(report.score - 100) > 0.001 {
-            errors.append("perfect workouts should reach level 146 and score 100, got level \(report.level) score \(report.score), failing: "
+            errors.append("perfect workouts should reach the max level and score 100, got level \(report.level) score \(report.score), failing: "
                 + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
         }
         if report.requirements.count != 13 {
@@ -314,7 +314,7 @@ enum StrengthLevel {
                 errors.append("line \(line): expected only \(category) to fail, got \(failing)")
             }
             if result.level >= StatLevel.maxLevel {
-                errors.append("line \(line): a failing \(category) must stay under level 146, got \(result.level)")
+                errors.append("line \(line): a failing \(category) must stay under the max level, got \(result.level)")
             }
             if result.topGains(1).first?.category != category {
                 errors.append("line \(line): \(category) should be the top gain, got \(result.topGains(1).map(\.category))")

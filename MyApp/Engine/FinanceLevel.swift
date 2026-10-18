@@ -20,10 +20,10 @@ nonisolated struct FinanceMonth: Codable, Equatable {
     var complete: Bool
 }
 
-/// Deterministic FIN (finance) level 0...146.
+/// Deterministic FIN (finance) level 0...350.
 /// Pure: the same months always give the same report. No network and no clock.
 enum FinanceLevel {
-    // Floors are the level 0 limits; targets are the level 146 rules.
+    // Floors are the level 0 limits; targets are the max level rules.
     static let savingsBand = StatLevel.Band(floor: 0, target: 0.30)       // share of post-tax income
     static let incomeBand = StatLevel.Band(floor: 0, target: 25_000)      // USD per month, post-tax
     /// Dollars over budget at level 0, as a share of the budget. The target is $0 over.
@@ -136,7 +136,7 @@ enum FinanceLevel {
 
     // MARK: - Self-check (runs in DEBUG at launch)
 
-    /// A complete month that meets every level 146 requirement: 34% saved, $500 under budget, $25,000 income.
+    /// A complete month that meets every the max level requirement: 34% saved, $500 under budget, $25,000 income.
     static func perfectMonth() -> FinanceMonth {
         FinanceMonth(month: "2026-09", postTaxIncomeUsd: 25_000, spendingUsd: 16_500, budgetUsd: 17_000, complete: true)
     }
@@ -151,7 +151,7 @@ enum FinanceLevel {
         let perfect = perfectMonth()
         let report = evaluate(months: [perfect])
         if !report.isMaxLevel {
-            errors.append("perfect month should reach level 146, failing: " + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
+            errors.append("perfect month should reach the max level, failing: " + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
         }
         if report.requirements.count != 3 {
             errors.append("FIN should have 3 requirements, got \(report.requirements.count)")
@@ -161,7 +161,7 @@ enum FinanceLevel {
             errors.append("weights should be 60/30/10, got \(weights)")
         }
         if report.level != StatLevel.maxLevel || abs(report.score - 100) > 0.001 || report.stat != .FIN {
-            errors.append("perfect month should score 100 and level 146, got \(report.score) level \(report.level)")
+            errors.append("perfect month should score 100 and the max level, got \(report.score) level \(report.level)")
         }
         let savedDetail = report.requirements.first?.detail
         if savedDetail != "saved 34% ($8,500 of $25,000) in 2026-09" {
@@ -188,7 +188,7 @@ enum FinanceLevel {
                 errors.append("line \(line): expected only \(category) to fail, got \(failing)")
             }
             if edited.level >= StatLevel.maxLevel {
-                errors.append("line \(line): a failing \(category) must stay under level 146, got \(edited.level)")
+                errors.append("line \(line): a failing \(category) must stay under the max level, got \(edited.level)")
             }
             if edited.topGains(1).first?.category != category {
                 errors.append("line \(line): \(category) should be the top gain, got \(edited.topGains(1).map(\.category))")
@@ -204,10 +204,10 @@ enum FinanceLevel {
             errors.append("savings failing alone should cost the most levels, then budget, then income: \(noSavings.level) \(overBudget.level) \(lowIncome.level)")
         }
 
-        // 29.9% saved misses 30%: strict rule fails and the level caps at 145.
+        // 29.9% saved misses 30%: strict rule fails and the level caps one under the max.
         let nearly = failsOnly("Savings rate") { $0.spendingUsd = 17_525; $0.budgetUsd = 18_000 }
         if nearly.level != StatLevel.maxLevel - 1 || nearly.requirements[0].detail.hasPrefix("saved 29.9%") != true {
-            errors.append("29.9% saved should cap at level 145 and read 29.9%, got level \(nearly.level) \(nearly.requirements[0].detail)")
+            errors.append("29.9% saved should cap at one under the max level and read 29.9%, got level \(nearly.level) \(nearly.requirements[0].detail)")
         }
         // Exactly 30% passes.
         var exact = perfect

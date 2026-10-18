@@ -5,6 +5,13 @@ struct StatusView: View {
     @State private var confirmRecovery = false
     @State private var showShields = false
 
+    /// Overall level 146 = all seven stats at 350.
+    private var overallLabel: String {
+        let levels = store.statLevels
+        if levels.isAllMax { return "MAX LEVEL \(StatLevelSet.overallMaxLevel)" }
+        return "NEXT LEVEL  \(levels.statLevelsToNextOverall) stat levels to go"
+    }
+
     private var stats: [RadarStat] {
         store.statLevels.radar.map { RadarStat(label: $0.label, value: $0.value) }
     }
@@ -22,14 +29,14 @@ struct StatusView: View {
                                     .font(.title2.weight(.semibold))
                                     .tracking(1.2)
                                     .foregroundStyle(.white)
-                                Text("LEVEL \(store.player.level)")
+                                Text("LEVEL \(store.statLevels.overallLevel)")
                                     .font(.subheadline.weight(.medium))
                                     .foregroundStyle(SystemTheme.muted)
                             }
                             Spacer()
                         }
 
-                        SystemProgressBar(progress: store.player.xpProgress, label: store.player.xpLabel)
+                        SystemProgressBar(progress: store.statLevels.overallProgress, label: overallLabel)
                         SystemDivider()
 
                         RadarChart(stats: stats)
@@ -95,7 +102,7 @@ private struct RadarStat: Identifiable {
 
 private struct RadarChart: View {
     let stats: [RadarStat]
-    private let maximum = Double(StatValues.maximum)
+    private let maximum = Double(StatLevel.maxLevel)
 
     var body: some View {
         GeometryReader { proxy in

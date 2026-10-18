@@ -15,7 +15,7 @@ struct FocusDay: Codable, Equatable {
     var complete: Bool
 }
 
-/// Deterministic FOC (focus) level 0...146.
+/// Deterministic FOC (focus) level 0...350.
 /// Pure: the same days always give the same report. No network and no clock.
 enum FocusLevel {
     static let windowDays = 30
@@ -31,7 +31,7 @@ enum FocusLevel {
     /// Strict rule: 90% of logged days under 2 h.
     static let screenPassShare = 0.90
 
-    // Floors are the level 0 limits; targets are the level 146 rules. Lower is better, so the floor is above the target.
+    // Floors are the level 0 limits; targets are the max level rules. Lower is better, so the floor is above the target.
     // The reached value is a lower bound: a day at 119 minutes reports 90, the last bucket under 2 h. So 90 is the target.
     static let screenBand = StatLevel.Band(floor: 480, target: 90)    // minutes reached per day
     static let socialBand = StatLevel.Band(floor: 180, target: 0)     // minutes reached per day
@@ -104,7 +104,7 @@ enum FocusLevel {
 
     // MARK: - Self-check (runs in DEBUG at launch)
 
-    /// Thirty complete days that meet every level 146 requirement. Tests edit a copy.
+    /// Thirty complete days that meet every the max level requirement. Tests edit a copy.
     static func perfectDays(count: Int = 30, start: String = "2026-09-17") -> [FocusDay] {
         (0..<count).map { index in
             FocusDay(dayKey: QuestDay.key(byAddingDays: index, to: start), screenMinutesReached: 60, socialMinutesReached: 0, complete: true)
@@ -126,7 +126,7 @@ enum FocusLevel {
         let perfect = perfectDays()
         let report = evaluate(days: perfect)
         if !report.isMaxLevel || report.level != StatLevel.maxLevel || abs(report.score - 100) > 0.001 || report.stat != .FOC {
-            errors.append("perfect days should score 100 and level 146, got \(report.score) level \(report.level): " + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
+            errors.append("perfect days should score 100 and the max level, got \(report.score) level \(report.level): " + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
         }
         if report.requirements.count != 2 {
             errors.append("FOC should have 2 requirements, got \(report.requirements.count)")
@@ -155,7 +155,7 @@ enum FocusLevel {
                 errors.append("line \(line): expected only \(category) to fail, got \(failing)")
             }
             if edited.level >= StatLevel.maxLevel {
-                errors.append("line \(line): a failing \(category) must stay under level 146, got \(edited.level)")
+                errors.append("line \(line): a failing \(category) must stay under the max level, got \(edited.level)")
             }
             if edited.topGains(1).first?.category != category {
                 errors.append("line \(line): \(category) should be the top gain, got \(edited.topGains(1).map(\.category))")
@@ -186,8 +186,8 @@ enum FocusLevel {
         for index in 0..<30 { badSocial[index].socialMinutesReached = 180 }
         let screenLevel = evaluate(days: badScreen).level
         let socialLevel = evaluate(days: badSocial).level
-        if screenLevel != 36 || socialLevel != 109 || screenLevel >= socialLevel {
-            errors.append("screen time at floor should be level 36 and social at floor 109, got \(screenLevel) and \(socialLevel)")
+        if screenLevel != 87 || socialLevel != 262 || screenLevel >= socialLevel {
+            errors.append("screen time at floor should be level 87 and social at floor 262, got \(screenLevel) and \(socialLevel)")
         }
 
         // Today in progress is ignored: a bad incomplete day does not enter the window or push out an old day.
