@@ -6,7 +6,7 @@ struct StatusView: View {
     @State private var showShields = false
 
     private var stats: [RadarStat] {
-        store.player.stats.radar.map { RadarStat(label: $0.label, value: $0.value) }
+        store.statLevels.radar.map { RadarStat(label: $0.label, value: $0.value) }
     }
 
     var body: some View {

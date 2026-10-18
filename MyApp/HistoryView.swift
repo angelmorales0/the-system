@@ -11,10 +11,6 @@ struct HistoryView: View {
         ])
     ]
 
-    private let enduranceSamples = [
-        ChartSample(label: "Aug 12", actual: 28, forecast: nil), ChartSample(label: "Aug 19", actual: 38, forecast: nil), ChartSample(label: "Aug 26", actual: 49, forecast: nil), ChartSample(label: "Sep 5", actual: 59, forecast: 59), ChartSample(label: "Sep 12", actual: nil, forecast: 69), ChartSample(label: "Sep 19", actual: nil, forecast: 79), ChartSample(label: "Sep 29", actual: nil, forecast: 87)
-    ]
-
     var body: some View {
         ScreenContainer {
             ScrollView(showsIndicators: false) {
@@ -23,7 +19,7 @@ struct HistoryView: View {
                     HistorySectionTitle("GOALS")
                     HorizontalHistoryCards { ForEach(goalCards) { GoalHistoryCard(goal: $0) } }
                     HistorySectionTitle("STATS")
-                    HorizontalHistoryCards { StatHistoryCard(samples: enduranceSamples) }
+                    HorizontalHistoryCards { ForEach(Stat.allCases, id: \.self) { StatHistoryCard(stat: $0) } }
                 }
                 .padding(.bottom, 32)
             }
@@ -71,20 +67,42 @@ private struct GoalHistoryCard: View {
     }
 }
 
+/// One stat's algorithm level (0...146) and its saved daily history. No prediction line: there is no forecast model yet.
 private struct StatHistoryCard: View {
     @EnvironmentObject private var store: GameStore
-    let samples: [ChartSample]
+    let stat: Stat
+
+    private var level: Int { store.statLevels[stat] }
+
+    /// The last 8 saved days, scaled to the 0...100 chart. Today's live level stands in when nothing is saved yet.
+    private var samples: [ChartSample] {
+        var series = store.statHistory.series(for: stat).suffix(8).map { (label: Self.label($0.dayKey), level: $0.level) }
+        if series.isEmpty { series = [(label: "Today", level: level)] }
+        return series.map { ChartSample(label: $0.label, actual: Double($0.level) / Double(StatLevel.maxLevel) * 100, forecast: nil) }
+    }
+
     var body: some View {
         SystemPanel {
             VStack(alignment: .leading, spacing: 15) {
-                VStack(alignment: .leading, spacing: 3) { Text("END").font(.title3.weight(.semibold)).foregroundStyle(.white); Text("Endurance").font(.caption).foregroundStyle(SystemTheme.muted) }
+                VStack(alignment: .leading, spacing: 3) { Text(stat.rawValue).font(.title3.weight(.semibold)).foregroundStyle(.white); Text(stat.fullName).font(.caption).foregroundStyle(SystemTheme.muted) }
                 SystemDivider()
-                HStack { CompactMetric(label: "CURRENT", value: "\(store.player.stats.END)"); Spacer() }
+                HStack(spacing: 12) {
+                    CompactMetric(label: "CURRENT", value: "\(level)")
+                    CompactMetric(label: "MAX", value: "\(StatLevel.maxLevel)")
+                    CompactMetric(label: "TO GO", value: "\(StatLevel.maxLevel - level)")
+                }
                 SystemHistoryChart(samples: samples)
-                ChartLegend()
             }
         }
         .frame(width: 330)
+    }
+
+    /// "2026-10-17" → "Oct 17".
+    private static func label(_ dayKey: String) -> String {
+        let parts = dayKey.split(separator: "-").compactMap { Int($0) }
+        let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        guard parts.count == 3, (1...12).contains(parts[1]) else { return dayKey }
+        return "\(months[parts[1] - 1]) \(parts[2])"
     }
 }
 
@@ -98,6 +116,15 @@ private struct CompactMetric: View {
 
 private struct SystemHistoryChart: View {
     let samples: [ChartSample]
+
+    /// First, middle, and last labels, so any number of samples gets three ticks at most.
+    private var axisLabels: [String] {
+        let labels = samples.map(\.label)
+        guard let first = labels.first, let last = labels.last else { return [] }
+        var picked = [first, labels[labels.count / 2], last]
+        picked = picked.reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
+        return picked
+    }
     var body: some View {
         Chart {
             ForEach(samples.compactMap { sample in sample.actual.map { ChartPoint(id: sample.id, label: sample.label, value: $0) } }) { point in
@@ -110,7 +137,7 @@ private struct SystemHistoryChart: View {
         }
         .chartYScale(domain: 0...100)
         .chartXAxis {
-            AxisMarks(values: ["Aug 12", "Sep 5", "Sep 29"]) { _ in
+            AxisMarks(values: axisLabels) { _ in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(SystemTheme.cyan.opacity(0.12))
                 AxisValueLabel().foregroundStyle(SystemTheme.muted).font(.system(size: 9))
             }

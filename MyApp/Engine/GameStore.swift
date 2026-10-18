@@ -14,6 +14,10 @@ final class GameStore: ObservableObject {
     @Published private(set) var verificationNote: String?
     @Published private(set) var clock = Date()
     @Published private(set) var dayClock: DayClock
+    /// Algorithm levels for the status radar. 0 until a stat's data arrives.
+    @Published private(set) var statLevels: StatLevelSet = .empty
+    /// One saved reading per day for the stat history charts.
+    @Published private(set) var statHistory = StatLevelHistory()
 
     private let catalog: FallbackCatalog
     private let generator: any QuestGenerating
@@ -26,7 +30,7 @@ final class GameStore: ObservableObject {
         #if DEBUG
         let problems = VerificationFixtures.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check() + RecoveryLevel.check()
             + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
-            + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check()
+            + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -47,6 +51,10 @@ final class GameStore: ObservableObject {
         case .standard:
             snapshot = GameSnapshot.loadFromUserDefaults() ?? GameSnapshot.fresh(catalog: catalog)
             snapshot.refreshIfNeeded(catalog: catalog)
+        }
+        if persistence == .standard {
+            statHistory = StatLevelHistory.load()
+            statLevels = statHistory.latest ?? .empty
         }
         advanceTimers(now: .now)
         evaluateConnectedVerifiers(now: .now)
@@ -201,6 +209,8 @@ final class GameStore: ObservableObject {
                 mercury: remote.mercury,
                 hevy: remote.hevy
             )
+            self.statLevels = StatLevelSet.compute(codeforces: remote.codeforces, financeMonths: remote.financeMonths, now: now)
+            self.statHistory.record(self.statLevels, on: dayKey)
             if rebuilt {
                 self.runningTimersRemoveMissing()
             }
@@ -396,6 +406,7 @@ final class GameStore: ObservableObject {
         guard persistence == .standard else { return }
         snapshot.saveToUserDefaults()
         dayClock.save()
+        statHistory.save()
     }
 
     private static func clockString(_ seconds: TimeInterval) -> String {
