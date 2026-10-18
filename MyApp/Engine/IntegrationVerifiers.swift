@@ -142,6 +142,9 @@ struct HevySetsVerifier: Verifier {
 
     func evaluate(quest: Quest, context: VerificationContext) -> VerificationResult {
         guard quest.verification.method == method else { return .unchanged }
+        if let minutes = quest.verification.params["stretchMinutes"]?.doubleValue {
+            return StretchTime.evaluate(quest: quest, context: context, minutes: minutes)
+        }
         let reading = context.integrations.hevy
         guard reading.configured, reading.available else {
             return .incomplete(reason: reading.reason.isEmpty ? "TODO: Hevy is not connected." : reading.reason)
@@ -202,6 +205,72 @@ struct HevySetsVerifier: Verifier {
             name = String(name[..<open])
         }
         return name.trimmingCharacters(in: .whitespaces).lowercased()
+    }
+}
+
+/// Stretch mode (`stretchMinutes`): the day's stretching time from every auto-tracked source.
+/// Hevy: timed working sets of stretch exercises, or any timed set in a stretch or mobility workout.
+/// Apple Health: flexibility, yoga, cooldown, and mind-and-body workouts.
+/// Hevy can also write its workouts to Apple Health, so the larger source counts, not the sum.
+enum StretchTime {
+    /// Matched as whole words in the exercise name, so "Bulgarian Split Squat" is not a stretch.
+    static let exerciseWords: Set<String> = ["stretch", "stretches", "stretching", "splits", "pose", "yoga", "mobility",
+                                             "pigeon", "cobra", "butterfly", "pancake", "frog", "flexibility"]
+    static let splitNames: Set<String> = ["front split", "side split", "middle split", "split"]
+    static let workoutWords: Set<String> = ["stretch", "stretching", "mobility", "yoga", "flexibility", "cooldown"]
+    static let healthSports: Set<String> = ["flexibility"]
+
+    static func isStretchExercise(_ title: String) -> Bool {
+        let name = HevySetsVerifier.baseName(title).replacingOccurrences(of: "-", with: " ")
+        if splitNames.contains(name) { return true }
+        return !exerciseWords.isDisjoint(with: words(name))
+    }
+
+    static func isStretchWorkout(_ title: String) -> Bool {
+        !workoutWords.isDisjoint(with: words(title.lowercased()))
+    }
+
+    static func hevySeconds(_ workouts: [HevyWorkout]) -> Double {
+        workouts.reduce(0) { total, workout in
+            let wholeWorkout = isStretchWorkout(workout.title)
+            return total + workout.exercises
+                .filter { wholeWorkout || isStretchExercise($0.title) }
+                .flatMap(\.sets)
+                .filter(\.isWorking)
+                .reduce(0) { $0 + max(0, $1.durationSec ?? 0) }
+        }
+    }
+
+    static func healthSeconds(_ workouts: [WorkoutEvent]) -> Double {
+        workouts.filter { healthSports.contains($0.sport) }.reduce(0) { $0 + max(0, $1.movingTimeSec) }
+    }
+
+    static func evaluate(quest: Quest, context: VerificationContext, minutes: Double) -> VerificationResult {
+        let hevy = context.integrations.hevy
+        let hevyOn = hevy.configured && hevy.available
+        let hevyTotal = hevyOn ? hevySeconds(hevy.workouts) : 0
+        let healthTotal = healthSeconds(context.integrations.health.workouts)
+        let total = max(hevyTotal, healthTotal)
+        guard total > 0 else {
+            return hevyOn || context.integrations.health.access == .requested
+                ? .unchanged
+                : .incomplete(reason: "Log stretches as timed sets in Hevy, or a Flexibility workout in Apple Health.")
+        }
+        let source = hevyTotal >= healthTotal ? "hevy" : "healthkit"
+        let evidence = Evidence.make(
+            source: source,
+            externalId: "\(source):stretch:\(context.dayKey)",
+            payload: "\(source)|stretch|\(context.dayKey)|\(total)",
+            timestamp: context.now
+        )
+        guard total + 0.001 >= minutes * 60 else {
+            return .progress(current: min((total / 60).rounded(.down), quest.progress.target), evidence: evidence)
+        }
+        return .completed(evidence: evidence)
+    }
+
+    private static func words(_ text: String) -> Set<String> {
+        Set(text.split(whereSeparator: { !$0.isLetter }).map(String.init))
     }
 }
 

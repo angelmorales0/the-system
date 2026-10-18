@@ -342,15 +342,15 @@ struct GameSnapshot: Codable, Equatable {
         if let cached = generatedBundle,
            cached.dayKey == dayKey,
            cached.mode == decision.selectedMode {
-            bundle = cached.strippingModelCompletion(assignedAt: now)
+            bundle = DailyStretch.ensure(in: cached.strippingModelCompletion(assignedAt: now), now: now)
             return
         }
-        bundle = catalog.makeBundle(
+        bundle = DailyStretch.ensure(in: catalog.makeBundle(
             mode: decision.selectedMode,
             band: signals.readinessBand,
             dayKey: dayKey,
             now: now
-        )
+        ), now: now)
     }
 
     private mutating func complete(at index: Int) {

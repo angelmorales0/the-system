@@ -13,6 +13,7 @@ enum EmergencyGroup {
     static let settingsKey = "emergencySettings"
     static let questKey = "emergencyQuest"
     static let lowStepsDayKey = "emergencyLowStepsDayKey"
+    static let stretchDayKey = "emergencyStretchDayKey"
     /// Written by the monitor when bedtime use reaches the threshold.
     static let bedtimeTriggeredAtKey = "emergencyBedtimeTriggeredAt"
     /// Written by the app once it has turned that trigger into a quest.
@@ -61,6 +62,11 @@ enum EmergencyStore {
         set { EmergencyGroup.defaults.set(newValue, forKey: EmergencyGroup.lowStepsDayKey) }
     }
 
+    static var stretchDayKey: String? {
+        get { EmergencyGroup.defaults.string(forKey: EmergencyGroup.stretchDayKey) }
+        set { EmergencyGroup.defaults.set(newValue, forKey: EmergencyGroup.stretchDayKey) }
+    }
+
     /// A bedtime trigger the app has not handled yet. Reading it marks it handled.
     static func takeBedtimeTrigger() -> Date? {
         let defaults = EmergencyGroup.defaults
@@ -101,8 +107,8 @@ enum EmergencyEnforcement {
         #endif
     }
 
-    /// Bedtime locks every app category and website. A walk locks only the distractor selection,
-    /// so the phone stays usable for music or maps on the walk. iOS keeps calls and emergency SOS open.
+    /// Bedtime locks every app category and website. A walk or a stretch locks only the distractor selection,
+    /// so the phone stays usable for music, maps, or a stretching video. iOS keeps calls and emergency SOS open.
     static func applyLockdown(for quest: EmergencyQuest) {
         let defaults = EmergencyGroup.defaults
         defaults.set(quest.kind.rawValue, forKey: EmergencyGroup.lockdownKindKey)
@@ -114,7 +120,7 @@ enum EmergencyEnforcement {
             store.shield.applicationCategories = .all()
             store.shield.webDomainCategories = .all()
             scheduleRelease(startedAt: quest.startedAt, minutes: Int(quest.deadline.timeIntervalSince(quest.startedAt) / 60))
-        case .lowSteps:
+        case .lowSteps, .skippedStretch:
             let selection = PenaltySelectionStore.load()
             store.shield.applications = selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
             store.shield.webDomains = selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens
@@ -164,6 +170,9 @@ enum EmergencyEnforcement {
         case .lowSteps:
             let minutes = Int(quest.deadline.timeIntervalSince(quest.startedAt) / 60)
             content.body = "Walk \(quest.targetSteps.formatted()) steps in \(minutes) minutes. Failure will result in a penalty."
+        case .skippedStretch:
+            let minutes = Int(quest.deadline.timeIntervalSince(quest.startedAt) / 60)
+            content.body = "You skipped stretching. Log \(Int(DailyStretch.minutes)) minutes of stretches in Hevy within \(minutes) minutes. Failure will result in a penalty."
         }
         content.sound = .default
         content.interruptionLevel = .active

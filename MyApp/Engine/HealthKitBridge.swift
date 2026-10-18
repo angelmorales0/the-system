@@ -210,6 +210,7 @@ final class HealthKitStore {
         case .hiking: "hiking"
         case .traditionalStrengthTraining, .functionalStrengthTraining: "traditionalStrengthTraining"
         case .swimming: "swimming"
+        case .flexibility, .yoga, .cooldown, .mindAndBody: "flexibility"
         default: "other"
         }
     }

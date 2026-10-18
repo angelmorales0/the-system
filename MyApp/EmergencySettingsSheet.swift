@@ -35,11 +35,20 @@ struct EmergencySettingsSheet: View {
                     note("After \(Self.timeString(EmergencyRules.stepCheckMinute(settings))), fewer than \(settings.minimumSteps.formatted()) steps starts a walk. Your distractor apps lock until you walk \(settings.walkSteps.formatted()) steps. A miss opens a penalty tomorrow. iOS checks Health about once an hour in the background.")
                 }
 
+                QuestSectionTitle(text: "Restore Flexibility")
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("Stretch check", isOn: $settings.stretchEnabled)
+                    timePicker("Check time", minutes: $settings.stretchCheckTime)
+                    Stepper("Time limit: \(settings.stretchLimitMinutes) min", value: $settings.stretchLimitMinutes, in: 15...180, step: 15)
+                    note("At \(Self.timeString(EmergencyRules.stretchCheckMinute(settings))), an open Stretching quest starts this emergency. Your distractor apps lock until \(Int(DailyStretch.minutes)) minutes of stretches are logged: timed stretch sets in Hevy, or a Flexibility, Yoga, or Cooldown workout in Apple Health. A miss after \(settings.stretchLimitMinutes) minutes opens a penalty tomorrow.")
+                }
+
                 QuestSectionTitle(text: "Test")
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 12) {
+                    VStack(spacing: 10) {
                         testButton("Test Lights Out") { store.startEmergencyTest(.bedtimeLockdown) }
                         testButton("Test Movement") { store.startEmergencyTest(.lowSteps) }
+                        testButton("Test Restore Flexibility") { store.startEmergencyTest(.skippedStretch) }
                     }
                     .disabled(store.emergency != nil)
                     note("A test uses these targets. You can end it early, and it never opens a penalty.")

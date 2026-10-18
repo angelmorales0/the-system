@@ -30,6 +30,7 @@ final class GameStore: ObservableObject {
     private var refreshingIntegrations = false
     private var emergencyTicker: Timer?
     private var evaluatingEmergency = false
+    private var lastStretchRefresh = Date.distantPast
 
     init(persistence: GamePersistence = .standard) {
         #if DEBUG
@@ -37,7 +38,7 @@ final class GameStore: ObservableObject {
             + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check()
             + HiddenQuestRules.check()
-            + EmergencyRules.check()
+            + EmergencyRules.check() + DailyStretch.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -58,6 +59,8 @@ final class GameStore: ObservableObject {
         case .standard:
             snapshot = GameSnapshot.loadFromUserDefaults() ?? GameSnapshot.fresh(catalog: catalog)
             snapshot.refreshIfNeeded(catalog: catalog)
+            // A day saved before the Stretching row existed gets it now.
+            snapshot.bundle = DailyStretch.ensure(in: snapshot.bundle, now: .now)
         }
         if persistence == .standard {
             statHistory = StatLevelHistory.load()
@@ -105,6 +108,7 @@ final class GameStore: ObservableObject {
     func updateEmergencySettings(_ settings: EmergencySettings) {
         let turnedOn = (settings.bedtimeEnabled && !emergencySettings.bedtimeEnabled)
             || (settings.stepsEnabled && !emergencySettings.stepsEnabled)
+            || (settings.stretchEnabled && !emergencySettings.stretchEnabled)
         emergencySettings = settings
         guard persistence == .standard else { return }
         EmergencyStore.save(settings)
@@ -118,9 +122,12 @@ final class GameStore: ObservableObject {
     /// Runs one emergency now, with the saved targets. A test can be ended early and never opens a penalty.
     func startEmergencyTest(_ kind: EmergencyKind, now: Date = .now) {
         guard emergency == nil else { return }
-        let quest = kind == .bedtimeLockdown
-            ? EmergencyRules.bedtimeQuest(triggeredAt: now, settings: emergencySettings, isTest: true)
-            : EmergencyRules.lowStepsQuest(now: now, settings: emergencySettings, isTest: true)
+        let quest: EmergencyQuest
+        switch kind {
+        case .bedtimeLockdown: quest = EmergencyRules.bedtimeQuest(triggeredAt: now, settings: emergencySettings, isTest: true)
+        case .lowSteps: quest = EmergencyRules.lowStepsQuest(now: now, settings: emergencySettings, isTest: true)
+        case .skippedStretch: quest = EmergencyRules.stretchQuest(now: now, settings: emergencySettings, isTest: true)
+        }
         begin(quest)
     }
 
@@ -155,9 +162,13 @@ final class GameStore: ObservableObject {
             emergency = resolved
             if persistence == .standard { EmergencyStore.save(resolved) }
         case .completed:
-            finish(resolved, message: resolved.kind == .bedtimeLockdown
-                   ? "Emergency quest complete: the lockdown has ended."
-                   : "Emergency quest complete: \(resolved.progressSteps.formatted()) steps walked.")
+            let message: String
+            switch resolved.kind {
+            case .bedtimeLockdown: message = "Emergency quest complete: the lockdown has ended."
+            case .lowSteps: message = "Emergency quest complete: \(resolved.progressSteps.formatted()) steps walked."
+            case .skippedStretch: message = "Emergency quest complete: \(Int(DailyStretch.minutes)) minutes stretched."
+            }
+            finish(resolved, message: message)
         case .failed:
             if EmergencyRules.opensPenalty(resolved) {
                 snapshot.emergencyFailedDayKey = resolved.dayKey
@@ -200,14 +211,27 @@ final class GameStore: ObservableObject {
                 }
                 // The quest may have ended while the steps loaded.
                 guard self.emergency?.id == quest.id else { return }
-                let resolved = EmergencyRules.resolve(quest, now: now, stepsSinceStart: steps)
+                if quest.kind == .skippedStretch, now.timeIntervalSince(self.lastStretchRefresh) >= 60 {
+                    // Hevy and Health stretch minutes arrive with the integration reload.
+                    self.lastStretchRefresh = now
+                    self.refreshIntegrations(now: now)
+                }
+                let stretchDone = quest.kind == .skippedStretch && DailyStretch.isDone(in: self.snapshot.bundle) == true
+                let resolved = EmergencyRules.resolve(quest, now: now, stepsSinceStart: steps, stretchDone: stretchDone)
                 self.settle(resolved)
-                if resolved.status == .active, resolved.kind == .lowSteps,
+                if resolved.status == .active, resolved.kind != .bedtimeLockdown,
                    EmergencyGroup.defaults.string(forKey: EmergencyGroup.lockdownKindKey) == nil {
-                    // A bedtime release may have cleared the shared store. Put the walk shields back.
+                    // A bedtime release may have cleared the shared store. Put the distractor shields back.
                     EmergencyEnforcement.applyLockdown(for: resolved)
                 }
                 self.ensureEmergencyTicker()
+                return
+            }
+
+            if EmergencyRules.shouldTriggerStretch(now: now, stretchDone: DailyStretch.isDone(in: self.snapshot.bundle),
+                                                   settings: settings, lastTriggeredDayKey: EmergencyStore.stretchDayKey, active: nil) {
+                EmergencyStore.stretchDayKey = QuestDay.key(for: now)
+                self.begin(EmergencyRules.stretchQuest(now: now, settings: settings))
                 return
             }
 
@@ -446,7 +470,7 @@ final class GameStore: ObservableObject {
         guard let prepared = QuestSafety.accepting(bundle, context: context, assignedAt: now) else { return }
         var next = snapshot
         next.generatedBundle = prepared
-        next.bundle = prepared
+        next.bundle = DailyStretch.ensure(in: prepared, now: now)
         snapshot = next
         runningTimersRemoveMissing()
         persist()
