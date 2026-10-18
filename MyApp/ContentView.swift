@@ -157,7 +157,7 @@ private struct Diamond: Shape {
     }
 }
 
-/// Slow, glowing wisps behind every window. Each curve sways on its own long cycle (about 40 to 80 seconds),
+/// Glowing wisps behind every window. Each curve sways on its own cycle (about 20 to 40 seconds),
 /// so the scene never visibly loops. It pauses off screen, in the background, and with Reduce Motion.
 struct DriftingThreads: View {
     /// False for a backdrop that is always covered, so it does not draw frames nobody sees.
@@ -173,11 +173,11 @@ struct DriftingThreads: View {
 
     /// Unit-space curves. The first three are the original threads; the last two are fainter depth layers.
     private static let wisps: [Wisp] = [
-        Wisp(start: CGPoint(x: -0.10, y: 0.20), control1: CGPoint(x: 0.22, y: 0.05), control2: CGPoint(x: 0.62, y: 0.73), end: CGPoint(x: 1.12, y: 0.48), width: 2.5, opacity: 1, speed: 0.11, phase: 0),
-        Wisp(start: CGPoint(x: -0.06, y: 0.70), control1: CGPoint(x: 0.35, y: 0.48), control2: CGPoint(x: 0.64, y: 0.60), end: CGPoint(x: 1.06, y: 0.25), width: 2.5, opacity: 1, speed: 0.08, phase: 2.1),
-        Wisp(start: CGPoint(x: 0.08, y: 1.03), control1: CGPoint(x: 0.22, y: 0.60), control2: CGPoint(x: 0.74, y: 0.47), end: CGPoint(x: 0.92, y: -0.03), width: 2.5, opacity: 1, speed: 0.14, phase: 4.0),
-        Wisp(start: CGPoint(x: -0.08, y: 0.42), control1: CGPoint(x: 0.30, y: 0.30), control2: CGPoint(x: 0.70, y: 0.90), end: CGPoint(x: 1.10, y: 0.82), width: 1.6, opacity: 0.55, speed: 0.09, phase: 1.3),
-        Wisp(start: CGPoint(x: 0.30, y: -0.04), control1: CGPoint(x: 0.10, y: 0.40), control2: CGPoint(x: 0.95, y: 0.35), end: CGPoint(x: 0.70, y: 1.04), width: 1.4, opacity: 0.45, speed: 0.12, phase: 5.2),
+        Wisp(start: CGPoint(x: -0.10, y: 0.20), control1: CGPoint(x: 0.22, y: 0.05), control2: CGPoint(x: 0.62, y: 0.73), end: CGPoint(x: 1.12, y: 0.48), width: 2.5, opacity: 1, speed: 0.22, phase: 0),
+        Wisp(start: CGPoint(x: -0.06, y: 0.70), control1: CGPoint(x: 0.35, y: 0.48), control2: CGPoint(x: 0.64, y: 0.60), end: CGPoint(x: 1.06, y: 0.25), width: 2.5, opacity: 1, speed: 0.16, phase: 2.1),
+        Wisp(start: CGPoint(x: 0.08, y: 1.03), control1: CGPoint(x: 0.22, y: 0.60), control2: CGPoint(x: 0.74, y: 0.47), end: CGPoint(x: 0.92, y: -0.03), width: 2.5, opacity: 1, speed: 0.28, phase: 4.0),
+        Wisp(start: CGPoint(x: -0.08, y: 0.42), control1: CGPoint(x: 0.30, y: 0.30), control2: CGPoint(x: 0.70, y: 0.90), end: CGPoint(x: 1.10, y: 0.82), width: 1.6, opacity: 0.55, speed: 0.18, phase: 1.3),
+        Wisp(start: CGPoint(x: 0.30, y: -0.04), control1: CGPoint(x: 0.10, y: 0.40), control2: CGPoint(x: 0.95, y: 0.35), end: CGPoint(x: 0.70, y: 1.04), width: 1.4, opacity: 0.45, speed: 0.24, phase: 5.2),
     ]
 
     var body: some View {
@@ -190,10 +190,10 @@ struct DriftingThreads: View {
                 for wisp in Self.wisps {
                     let path = Self.path(wisp, size: size, time: time)
                     // Brightness breathes slowly, out of step with the sway.
-                    let breath = 0.8 + 0.2 * sin(time * wisp.speed * 1.7 + wisp.phase * 2)
+                    let breath = 0.65 + 0.35 * sin(time * wisp.speed * 1.7 + wisp.phase * 2)
                     context.drawLayer { haze in
                         haze.addFilter(.blur(radius: 10))
-                        haze.opacity = 0.35 * wisp.opacity * breath
+                        haze.opacity = 0.5 * wisp.opacity * breath
                         haze.stroke(path, with: shading, style: StrokeStyle(lineWidth: wisp.width * 4, lineCap: .round))
                     }
                     context.drawLayer { thread in
@@ -216,10 +216,10 @@ struct DriftingThreads: View {
                            y: (unit.y + amount * sin(angle)) * size.height)
         }
         var path = Path()
-        path.move(to: point(wisp.start, amount: 0.02, offset: 0))
-        path.addCurve(to: point(wisp.end, amount: 0.02, offset: 1.9),
-                      control1: point(wisp.control1, amount: 0.08, offset: 0.7),
-                      control2: point(wisp.control2, amount: 0.09, offset: 3.1))
+        path.move(to: point(wisp.start, amount: 0.04, offset: 0))
+        path.addCurve(to: point(wisp.end, amount: 0.04, offset: 1.9),
+                      control1: point(wisp.control1, amount: 0.14, offset: 0.7),
+                      control2: point(wisp.control2, amount: 0.15, offset: 3.1))
         return path
     }
 }

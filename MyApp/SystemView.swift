@@ -150,7 +150,7 @@ struct QuestBackdrop: View {
                            center: .topTrailing, startRadius: 0, endRadius: 330)
             RadialGradient(colors: [Color.indigo.opacity(0.34), .clear],
                            center: .bottomLeading, startRadius: 20, endRadius: 380)
-            DriftingThreads().opacity(0.8)
+            DriftingThreads()
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
@@ -347,7 +347,7 @@ struct QuestHologram<Content: View>: View {
                     .clipShape(QuestGlassOutline())
                 // The same drifting wisps, seen through the glass, so the window feels alive.
                 DriftingThreads()
-                    .opacity(0.45)
+                    .opacity(0.7)
                     .clipShape(QuestGlassOutline())
             }
             .overlay { QuestFrame().allowsHitTesting(false).accessibilityHidden(true) }
