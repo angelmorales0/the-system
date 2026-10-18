@@ -8,7 +8,7 @@ enum StrengthLevel {
     static let windowDays = 180
     /// A set within 0.5% of the target weight passes, so 102.5 kg counts as 225 lb but 100 kg (220.5 lb) does not.
     static let weightTolerance = 0.005
-    static let weight = 100.0 / 13
+    static let weight = 100.0 / 15
 
     /// One barbell or dumbbell lift scored by weight × reps.
     struct Lift: Equatable {
@@ -18,6 +18,8 @@ enum StrengthLevel {
         var floorLb: Double
         var targetLb: Double
         var targetReps: Int
+        /// True when the weight is added to bodyweight (a dip belt). A set with no weight then counts as 0 lb.
+        var addedWeight = false
 
         /// Estimated one-rep max band in lb: floor weight × target reps up to target weight × target reps.
         var band: StatLevel.Band {
@@ -46,7 +48,11 @@ enum StrengthLevel {
     static let row = Lift(category: "Barbell row", aliases: ["bent over row", "barbell row", "pendlay row"], floorLb: 95, targetLb: 225, targetReps: 3)
     static let lateralRaise = Lift(category: "Lateral raise", aliases: ["lateral raise"], floorLb: 5, targetLb: 30, targetReps: 8)
     static let curl = Lift(category: "Dumbbell curl", aliases: ["bicep curl", "biceps curl", "dumbbell curl"], floorLb: 10, targetLb: 40, targetReps: 8)
-    static let lifts = [squat, deadlift, bench, overheadPress, row, lateralRaise, curl]
+    /// Dumbbells, weight per hand as Hevy logs it. Scored per leg like pistol squats: one set per leg on the same day.
+    static let bulgarianSplitSquat = Lift(category: "Bulgarian split squat", aliases: ["bulgarian split squat", "bulgarian split squats"], floorLb: 15, targetLb: 80, targetReps: 8)
+    /// Added weight only: two plates (90 lb) on a belt for 5 reps. Bodyweight dips count as 0 lb added.
+    static let dips = Lift(category: "Weighted dips", aliases: ["dip", "dips", "chest dip", "chest dips", "triceps dip", "triceps dips", "tricep dip", "tricep dips", "weighted dip", "weighted dips"], floorLb: 0, targetLb: 90, targetReps: 5, addedWeight: true)
+    static let lifts = [squat, deadlift, bench, overheadPress, row, lateralRaise, curl, bulgarianSplitSquat, dips]
 
     /// Strict pull-ups only. Chin-ups use a supinated grip and do not count.
     static let pullUps = RepRule(category: "Pull-ups", aliases: ["pull up", "pull ups", "pullup", "pullups"], targetReps: 20)
@@ -75,9 +81,11 @@ enum StrengthLevel {
             lift(bench, recent),
             lift(overheadPress, recent),
             lift(row, recent),
+            lift(dips, recent),
             repRule(pullUps, recent),
             farmersCarry(recent),
             pistolSquats(recent),
+            perLegLift(bulgarianSplitSquat, recent),
             repRule(handstandPushUps, recent),
             lift(lateralRaise, recent),
             lift(curl, recent),
@@ -118,17 +126,53 @@ enum StrengthLevel {
     /// Progress: best estimated one-rep max on the e1RM band. A pass is full progress.
     private static func lift(_ rule: Lift, _ workouts: [HevyWorkout]) -> StatRequirement {
         let sets = workingSets(rule.aliases, workouts).compactMap { set -> (pounds: Double, reps: Int)? in
-            guard let kg = set.weightKg, kg > 0, let reps = set.reps, reps > 0 else { return nil }
-            return (StatLevel.pounds(fromKilograms: kg), reps)
+            guard let reps = set.reps, reps > 0 else { return nil }
+            let kg = set.weightKg ?? 0
+            guard kg > 0 || rule.addedWeight else { return nil }
+            return (StatLevel.pounds(fromKilograms: max(kg, 0)), reps)
         }
         guard let best = sets.max(by: { e1RM($0) < e1RM($1) }) else { return missing(rule.category) }
         let passed = sets.contains { meetsWeight($0.pounds, rule.targetLb) && $0.reps >= rule.targetReps }
+        let sign = rule.addedWeight ? "+" : ""
         return StatRequirement(
             category: rule.category,
             passed: passed,
             progress: passed ? 1 : rule.band.progress(e1RM(best)),
             weight: weight,
-            detail: "best \(format(best.pounds)) lb × \(best.reps) (e1RM \(format(e1RM(best))) lb)"
+            detail: "best \(sign)\(format(best.pounds)) lb × \(best.reps) (e1RM \(format(e1RM(best))) lb)"
+        )
+    }
+
+    /// Dumbbell lifts done one leg at a time. Hevy cannot tell the legs apart, so each day scores its
+    /// second-best working set by e1RM (the reps need one set per leg). The best day in the window counts.
+    /// Strict rule: one day with two working sets at the target weight (0.5% tolerance) for the target reps.
+    private static func perLegLift(_ rule: Lift, _ workouts: [HevyWorkout]) -> StatRequirement {
+        var setsByDay: [String: [(pounds: Double, reps: Int)]] = [:]
+        for workout in workouts {
+            let sets = workingSets(rule.aliases, in: workout).compactMap { set -> (pounds: Double, reps: Int)? in
+                guard let kg = set.weightKg, kg > 0, let reps = set.reps, reps > 0 else { return nil }
+                return (StatLevel.pounds(fromKilograms: kg), reps)
+            }
+            setsByDay[QuestDay.key(for: workout.start), default: []] += sets
+        }
+        guard setsByDay.values.contains(where: { !$0.isEmpty }) else { return missing(rule.category) }
+        let secondBests = setsByDay.values.compactMap { sets -> (pounds: Double, reps: Int)? in
+            let sorted = sets.sorted { e1RM($0) > e1RM($1) }
+            return sorted.count >= 2 ? sorted[1] : nil
+        }
+        guard let best = secondBests.max(by: { e1RM($0) < e1RM($1) }) else {
+            return StatRequirement(category: rule.category, passed: false, progress: 0, weight: weight,
+                                   detail: "only one working set per day; log one set per leg")
+        }
+        let passed = setsByDay.values.contains { sets in
+            sets.filter { meetsWeight($0.pounds, rule.targetLb) && $0.reps >= rule.targetReps }.count >= 2
+        }
+        return StatRequirement(
+            category: rule.category,
+            passed: passed,
+            progress: passed ? 1 : rule.band.progress(e1RM(best)),
+            weight: weight,
+            detail: "best \(format(best.pounds)) lb/hand × \(best.reps) per leg (e1RM \(format(e1RM(best))) lb)"
         )
     }
 
@@ -236,9 +280,11 @@ enum StrengthLevel {
             HevyExercise(title: "Bench Press (Barbell)", sets: [workingSet(lb: 225, reps: 3)]),
             HevyExercise(title: "Overhead Press (Barbell)", sets: [workingSet(lb: 155, reps: 1)]),
             HevyExercise(title: "Bent Over Row (Barbell)", sets: [workingSet(lb: 225, reps: 3)]),
+            HevyExercise(title: "Chest Dip (Weighted)", sets: [workingSet(lb: 90, reps: 5)]),
             HevyExercise(title: "Pull Up", sets: [workingSet(reps: 20)]),
             HevyExercise(title: "Farmers Walk", sets: [workingSet(lb: 100, seconds: 60)]),
             HevyExercise(title: "Pistol Squat", sets: [workingSet(reps: 10), workingSet(reps: 10)]),
+            HevyExercise(title: "Bulgarian Split Squat (Dumbbell)", sets: [workingSet(lb: 80, reps: 8), workingSet(lb: 80, reps: 8)]),
             HevyExercise(title: "Handstand Push Up", sets: [workingSet(reps: 5)]),
             HevyExercise(title: "Lateral Raise (Dumbbell)", sets: [workingSet(lb: 30, reps: 8)]),
             HevyExercise(title: "Bicep Curl (Dumbbell)", sets: [workingSet(lb: 40, reps: 8)]),
@@ -257,6 +303,9 @@ enum StrengthLevel {
             HevyExercise(title: "Bent Over Row (Barbell)", sets: [workingSet(lb: 95, reps: 3)]),
             HevyExercise(title: "Lateral Raise (Dumbbell)", sets: [workingSet(lb: 5, reps: 8)]),
             HevyExercise(title: "Bicep Curl (Dumbbell)", sets: [workingSet(lb: 10, reps: 8)]),
+            HevyExercise(title: "Bulgarian Split Squat (Dumbbell)", sets: [workingSet(lb: 15, reps: 8), workingSet(lb: 15, reps: 8)]),
+            // Bodyweight dips: logged, but 0 lb added.
+            HevyExercise(title: "Chest Dip", sets: [workingSet(reps: 12)]),
             HevyExercise(title: "Farmers Walk", sets: [workingSet(lb: 100, reps: nil, seconds: nil)]),
             HevyExercise(title: "Pistol Squat", sets: [workingSet(reps: 6)]),
         ], daysAgo: 1, now: now)]
@@ -271,8 +320,8 @@ enum StrengthLevel {
             errors.append("perfect workouts should reach the max level and score 100, got level \(report.level) score \(report.score), failing: "
                 + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
         }
-        if report.requirements.count != 13 {
-            errors.append("STR should have 13 requirements, got \(report.requirements.count)")
+        if report.requirements.count != 15 {
+            errors.append("STR should have 15 requirements, got \(report.requirements.count)")
         }
         let totalWeight = report.requirements.reduce(0) { $0 + $1.weight }
         if abs(totalWeight - 100) > 0.001 {
@@ -376,6 +425,24 @@ enum StrengthLevel {
         }
         // A carry with distance but no duration does not count.
         failsOnly("Farmer's carry", edited("Farmers Walk", sets: [workingSet(lb: 100, reps: nil, seconds: nil)]))
+
+        // Bulgarian split squats need one set per leg on the same day; the weaker set scores.
+        failsOnly("Bulgarian split squat", edited("Bulgarian Split Squat (Dumbbell)", sets: [workingSet(lb: 80, reps: 8)]))
+        let unevenSplit = row("Bulgarian split squat", edited("Bulgarian Split Squat (Dumbbell)", sets: [workingSet(lb: 80, reps: 8), workingSet(lb: 50, reps: 8)]))
+        let unevenExpected = bulgarianSplitSquat.band.progress(StatLevel.estimatedOneRepMax(weight: 50, reps: 8))
+        if unevenSplit?.passed != false || abs((unevenSplit?.progress ?? 0) - unevenExpected) > 0.0001 {
+            errors.append("split squat sets of 80 and 50 lb should score the 50 lb leg (\(unevenExpected)), got \(String(describing: unevenSplit))")
+        }
+
+        // Dips count added weight only. Two plates × 5 passes; 70 lb does not; bodyweight dips log as +0 lb.
+        failsOnly("Weighted dips", edited("Chest Dip (Weighted)", sets: [workingSet(lb: 70, reps: 5)]))
+        if row("Weighted dips", edited("Chest Dip (Weighted)", newTitle: "Triceps Dip (Weighted)"))?.passed != true {
+            errors.append("\"Triceps Dip (Weighted)\" should match weighted dips")
+        }
+        let bodyweightDips = row("Weighted dips", edited("Chest Dip (Weighted)", newTitle: "Dip", sets: [workingSet(reps: 15)]))
+        if bodyweightDips?.progress != 0 || bodyweightDips?.detail != "best +0 lb × 15 (e1RM 0 lb)" {
+            errors.append("bodyweight dips should log +0 lb and no progress, got \(String(describing: bodyweightDips))")
+        }
 
         // Chin-ups are not strict pull-ups.
         failsOnly("Pull-ups", edited("Pull Up", newTitle: "Chin Up"))
