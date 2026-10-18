@@ -103,7 +103,10 @@ enum PenaltyRules {
         }
 
         var optionalOnly = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
-        optionalOnly.bundle.quests[0].kind = .optional
+        // Every row, including the fixed Stretching row, so the day has nothing required.
+        for index in optionalOnly.bundle.quests.indices {
+            optionalOnly.bundle.quests[index].kind = .optional
+        }
         optionalOnly.refreshIfNeeded(catalog: catalog, now: dayTwo)
         if optionalOnly.player.penaltyTier != 0 {
             errors.append("an optional miss should not open a penalty")

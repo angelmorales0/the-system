@@ -45,13 +45,16 @@ enum PenaltyShieldCopy {
         let defaults = UserDefaults(suiteName: suiteName) ?? .standard
         guard let kind = defaults.string(forKey: lockdownKindKey) else { return nil }
         let ends = Date(timeIntervalSince1970: defaults.double(forKey: lockdownEndsAtKey))
-        guard ends > Date() || kind == "low_steps" else { return nil }
+        guard ends > Date() || kind != "bedtime_lockdown" else { return nil }
         let time = ends.formatted(date: .omitted, time: .shortened)
         let title: String
         let subtitle: String
         if kind == "bedtime_lockdown" {
             title = "EMERGENCY QUEST: LIGHTS OUT"
             subtitle = "It is past bedtime. Put your phone down.\nThe lockdown ends at \(time)."
+        } else if kind == "skipped_stretch" {
+            title = "EMERGENCY QUEST: RESTORE FLEXIBILITY"
+            subtitle = "You skipped stretching. These apps unlock when 10 minutes of stretches are logged.\nTime limit: \(time)."
         } else {
             title = "EMERGENCY QUEST: MOVEMENT"
             subtitle = "Walk now. These apps unlock when the walk is done.\nTime limit: \(time)."

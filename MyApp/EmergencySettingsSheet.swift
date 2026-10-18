@@ -41,12 +41,26 @@ struct EmergencySettingsSheet: View {
                 }
 
                 Section {
+                    Toggle("Stretch check", isOn: $settings.stretchEnabled)
+                    timePicker("Check time", minutes: $settings.stretchCheckTime)
+                    Stepper("Time limit: \(settings.stretchLimitMinutes) min", value: $settings.stretchLimitMinutes, in: 15...180, step: 15)
+                } header: {
+                    Text("Restore Flexibility")
+                } footer: {
+                    Text("At \(Self.timeString(EmergencyRules.stretchCheckMinute(settings))), an open Stretching quest starts this emergency. Your distractor apps lock until \(Int(DailyStretch.minutes)) minutes of stretches are logged: timed stretch sets in Hevy, or a Flexibility, Yoga, or Cooldown workout in Apple Health. A miss after \(settings.stretchLimitMinutes) minutes opens a penalty tomorrow.")
+                }
+
+                Section {
                     Button("Test Lights Out now") {
                         store.startEmergencyTest(.bedtimeLockdown)
                         dismiss()
                     }
                     Button("Test Movement now") {
                         store.startEmergencyTest(.lowSteps)
+                        dismiss()
+                    }
+                    Button("Test Restore Flexibility now") {
+                        store.startEmergencyTest(.skippedStretch)
                         dismiss()
                     }
                 } header: {

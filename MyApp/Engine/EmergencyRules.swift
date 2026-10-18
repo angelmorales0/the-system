@@ -20,6 +20,11 @@ nonisolated struct EmergencySettings: Codable, Equatable {
     var walkSteps = 1_500
     var walkLimitMinutes = 60
 
+    var stretchEnabled = false
+    var stretchCheckTime = 21 * 60
+    /// Minutes to log the day's stretching before the quest fails.
+    var stretchLimitMinutes = 60
+
     static let standard = EmergencySettings()
 
     init() {}
@@ -39,6 +44,9 @@ nonisolated struct EmergencySettings: Codable, Equatable {
         minimumSteps = try c.decodeIfPresent(Int.self, forKey: .minimumSteps) ?? d.minimumSteps
         walkSteps = try c.decodeIfPresent(Int.self, forKey: .walkSteps) ?? d.walkSteps
         walkLimitMinutes = try c.decodeIfPresent(Int.self, forKey: .walkLimitMinutes) ?? d.walkLimitMinutes
+        stretchEnabled = try c.decodeIfPresent(Bool.self, forKey: .stretchEnabled) ?? d.stretchEnabled
+        stretchCheckTime = try c.decodeIfPresent(Int.self, forKey: .stretchCheckTime) ?? d.stretchCheckTime
+        stretchLimitMinutes = try c.decodeIfPresent(Int.self, forKey: .stretchLimitMinutes) ?? d.stretchLimitMinutes
     }
 }
 
@@ -47,6 +55,8 @@ nonisolated enum EmergencyKind: String, Codable, Equatable {
     case bedtimeLockdown = "bedtime_lockdown"
     /// Too few steps by the check time. Distractors lock until the walk is done or the limit runs out.
     case lowSteps = "low_steps"
+    /// The daily Stretching quest is still open at the check time. Distractors lock until its minutes are logged.
+    case skippedStretch = "skipped_stretch"
 }
 
 nonisolated enum EmergencyStatus: String, Codable, Equatable {
@@ -71,6 +81,7 @@ nonisolated struct EmergencyQuest: Codable, Equatable, Identifiable {
         switch kind {
         case .bedtimeLockdown: "Lights Out"
         case .lowSteps: "Movement"
+        case .skippedStretch: "Restore Flexibility"
         }
     }
 }
@@ -128,10 +139,8 @@ enum EmergencyRules {
         guard settings.stepsEnabled, active == nil, let stepsToday else { return false }
         guard lastTriggeredDayKey != QuestDay.key(for: now) else { return false }
         let minute = minuteOfDay(now)
-        let checkMinute = stepCheckMinute(settings)
-        guard minute >= checkMinute else { return false }
-        let bedtime = effectiveBedtimeStart(settings)
-        if settings.bedtimeEnabled, bedtime > checkMinute, minute >= bedtime { return false }
+        guard minute >= stepCheckMinute(settings) else { return false }
+        if settings.bedtimeEnabled, isBedtime(now, settings: settings) { return false }
         return stepsToday < settings.minimumSteps
     }
 
@@ -146,8 +155,34 @@ enum EmergencyRules {
         )
     }
 
+    static func stretchCheckMinute(_ settings: EmergencySettings) -> Int {
+        max(settings.stretchCheckTime, settings.earliestStart)
+    }
+
+    /// One stretch quest per day, after the check time, while the daily Stretching quest is still open.
+    static func shouldTriggerStretch(now: Date, stretchDone: Bool?, settings: EmergencySettings,
+                                     lastTriggeredDayKey: String?, active: EmergencyQuest?) -> Bool {
+        guard settings.stretchEnabled, active == nil, stretchDone == false else { return false }
+        guard lastTriggeredDayKey != QuestDay.key(for: now) else { return false }
+        let minute = minuteOfDay(now)
+        guard minute >= stretchCheckMinute(settings) else { return false }
+        if settings.bedtimeEnabled, isBedtime(now, settings: settings) { return false }
+        return true
+    }
+
+    static func stretchQuest(now: Date, settings: EmergencySettings, isTest: Bool = false) -> EmergencyQuest {
+        EmergencyQuest(
+            kind: .skippedStretch,
+            dayKey: QuestDay.key(for: now),
+            startedAt: now,
+            deadline: now.addingTimeInterval(Double(max(1, settings.stretchLimitMinutes)) * 60),
+            isTest: isTest
+        )
+    }
+
     /// Bedtime ends at its deadline. A walk completes at its step target and fails at its deadline.
-    static func resolve(_ quest: EmergencyQuest, now: Date, stepsSinceStart: Int?) -> EmergencyQuest {
+    /// A stretch completes when the daily Stretching quest completes from tracked minutes, and fails at its deadline.
+    static func resolve(_ quest: EmergencyQuest, now: Date, stepsSinceStart: Int?, stretchDone: Bool = false) -> EmergencyQuest {
         guard quest.status == .active else { return quest }
         var next = quest
         switch quest.kind {
@@ -156,6 +191,12 @@ enum EmergencyRules {
         case .lowSteps:
             if let steps = stepsSinceStart { next.progressSteps = max(next.progressSteps, steps) }
             if next.progressSteps >= quest.targetSteps {
+                next.status = .completed
+            } else if now >= quest.deadline {
+                next.status = .failed
+            }
+        case .skippedStretch:
+            if stretchDone {
                 next.status = .completed
             } else if now >= quest.deadline {
                 next.status = .failed
@@ -266,6 +307,42 @@ enum EmergencyRules {
         if resolve(bedtime, now: night.addingTimeInterval(599), stepsSinceStart: nil).status != .active
             || resolve(bedtime, now: night.addingTimeInterval(600), stepsSinceStart: nil).status != .completed {
             errors.append("bedtime lockdown should end exactly at 10 minutes")
+        }
+
+        // Restore Flexibility: 9 PM check, one hour to log the day's stretching.
+        let ninePM = at(21, 5)
+        var stretch = settings
+        stretch.stretchEnabled = true
+        stretch.bedtimeEnabled = false
+        if shouldTriggerStretch(now: late, stretchDone: false, settings: stretch, lastTriggeredDayKey: nil, active: nil) {
+            errors.append("stretch must not trigger before 9 PM")
+        }
+        if !shouldTriggerStretch(now: ninePM, stretchDone: false, settings: stretch, lastTriggeredDayKey: nil, active: nil) {
+            errors.append("an open Stretching quest at 21:05 should trigger")
+        }
+        if shouldTriggerStretch(now: ninePM, stretchDone: true, settings: stretch, lastTriggeredDayKey: nil, active: nil)
+            || shouldTriggerStretch(now: ninePM, stretchDone: nil, settings: stretch, lastTriggeredDayKey: nil, active: nil) {
+            errors.append("a done or missing Stretching quest must not trigger")
+        }
+        if shouldTriggerStretch(now: ninePM, stretchDone: false, settings: stretch, lastTriggeredDayKey: QuestDay.key(for: ninePM), active: nil) {
+            errors.append("stretch should trigger at most once per day")
+        }
+        var stretchBed = stretch
+        stretchBed.bedtimeEnabled = true
+        stretchBed.bedtimeStart = 21 * 60
+        if shouldTriggerStretch(now: ninePM, stretchDone: false, settings: stretchBed, lastTriggeredDayKey: nil, active: nil) {
+            errors.append("stretch must not trigger after bedtime")
+        }
+        let stiff = stretchQuest(now: ninePM, settings: stretch)
+        if stiff.deadline.timeIntervalSince(ninePM) != 3600 {
+            errors.append("a stretch quest should allow one hour, got \(stiff)")
+        }
+        if resolve(stiff, now: ninePM.addingTimeInterval(3599), stepsSinceStart: nil).status != .active
+            || !opensPenalty(resolve(stiff, now: ninePM.addingTimeInterval(3600), stepsSinceStart: nil)) {
+            errors.append("a stretch not logged in one hour should fail with a penalty")
+        }
+        if resolve(stiff, now: ninePM.addingTimeInterval(600), stepsSinceStart: nil, stretchDone: true).status != .completed {
+            errors.append("a completed Stretching quest should complete the emergency")
         }
 
         let partial = Data(#"{"bedtimeEnabled":true,"minimumSteps":2000}"#.utf8)

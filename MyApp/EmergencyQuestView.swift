@@ -113,6 +113,8 @@ struct EmergencyQuestView: View {
             return "It is past the Player's bedtime, and the Player is still awake. A body without rest grows weak. Put the phone down and sleep. Every app is locked until the lockdown ends."
         case .lowSteps:
             return "The Player has barely moved today. A body left still begins to waste away. Stand up and walk now, before the time runs out. Your distractor apps stay locked until the walk is done."
+        case .skippedStretch:
+            return "The Player has skipped stretching again. Muscles left unused grow stiff and short, and a stiff body is the first to break. Stretch now, before your body locks up. Log 10 minutes of stretches in Hevy. Your distractor apps stay locked until you finish."
         }
     }
 
@@ -132,6 +134,15 @@ struct EmergencyQuestView: View {
                     .monospacedDigit()
                     .fixedSize(horizontal: true, vertical: false)
                 QuestCheckbox(checked: quest.progressSteps >= quest.targetSteps)
+                    .frame(width: 16, height: 17)
+            case .skippedStretch:
+                // The daily Stretching row, live from Hevy and Apple Health.
+                Text(DailyStretch.title)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("[\(Int(DailyStretch.progressMinutes(in: store.snapshot.bundle)))/\(Int(DailyStretch.minutes))min]")
+                    .monospacedDigit()
+                    .fixedSize(horizontal: true, vertical: false)
+                QuestCheckbox(checked: DailyStretch.isDone(in: store.snapshot.bundle) == true)
                     .frame(width: 16, height: 17)
             }
         }
