@@ -167,7 +167,7 @@ struct QuestProgress: Codable, Equatable {
         return "[\(currentText)/\(targetText)]"
     }
 
-    private static let inlineUnits: Set<String> = ["min", "g", "h", "usd", "kcal"]
+    private static let inlineUnits: Set<String> = ["min", "g", "h", "usd", "kcal", "km"]
 
     private static func figure(_ value: Double) -> String {
         guard value.isFinite else { return "0" }

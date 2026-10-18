@@ -37,6 +37,8 @@ struct GameSnapshot: Codable, Equatable {
     var heldPenaltyTier: Int = 0
     /// True after a FamilyActivityPicker save. Tokens themselves stay in the App Group.
     var hasDistractorSelection: Bool = false
+    /// Hidden quests the player unlocked, oldest first. One Beyond the Limit per quest day.
+    var hiddenUnlocks: [HiddenQuestUnlock] = []
 
     static func fresh(
         catalog: FallbackCatalog,
@@ -421,6 +423,7 @@ extension GameSnapshot {
         case recentQuestTitles, generationAttemptDayKey, generatedBundle, readiness, recoveryComposite
         case finance, appliedFinProjection
         case fullRecoveryDayKey, queuedFullRecoveryDayKey, heldPenaltyTier, hasDistractorSelection
+        case hiddenUnlocks
     }
 
     init(from decoder: Decoder) throws {
@@ -441,6 +444,7 @@ extension GameSnapshot {
         queuedFullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .queuedFullRecoveryDayKey)
         heldPenaltyTier = try container.decodeIfPresent(Int.self, forKey: .heldPenaltyTier) ?? 0
         hasDistractorSelection = try container.decodeIfPresent(Bool.self, forKey: .hasDistractorSelection) ?? false
+        hiddenUnlocks = try container.decodeIfPresent([HiddenQuestUnlock].self, forKey: .hiddenUnlocks) ?? []
         generationAttemptDayKey = try container.decodeIfPresent(String.self, forKey: .generationAttemptDayKey)
         generatedBundle = try container.decodeIfPresent(QuestBundle.self, forKey: .generatedBundle)
     }
@@ -462,6 +466,7 @@ extension GameSnapshot {
         try container.encodeIfPresent(queuedFullRecoveryDayKey, forKey: .queuedFullRecoveryDayKey)
         try container.encode(heldPenaltyTier, forKey: .heldPenaltyTier)
         try container.encode(hasDistractorSelection, forKey: .hasDistractorSelection)
+        try container.encode(hiddenUnlocks, forKey: .hiddenUnlocks)
         try container.encodeIfPresent(generationAttemptDayKey, forKey: .generationAttemptDayKey)
         try container.encodeIfPresent(generatedBundle, forKey: .generatedBundle)
     }

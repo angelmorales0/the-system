@@ -14,10 +14,15 @@ struct HealthKitWorkoutVerifier: Verifier {
             break
         }
         let activity = quest.verification.params["activityType"]?.stringValue
+        let minDistance = DistanceRule.minimumMeters(quest)
         let minimum = quest.verification.params["minDurationSec"]?.doubleValue
-            ?? (quest.progress.unit == "min" ? quest.progress.target * 60 : quest.progress.target)
-        let matches = context.integrations.workouts.filter { workout in
-            workout.members.contains { $0.source == "healthkit" } && IntegrationMatch.matchesActivity(workout, activity: activity) && workout.movingTimeSec + 0.001 >= minimum
+            ?? (quest.progress.unit == "min" ? quest.progress.target * 60 : (minDistance == nil ? quest.progress.target : 0))
+        let candidates = context.integrations.workouts.filter { workout in
+            workout.members.contains { $0.source == "healthkit" } && IntegrationMatch.matchesActivity(workout, activity: activity)
+        }
+        let matches = candidates.filter { $0.movingTimeSec + 0.001 >= minimum && DistanceRule.meets($0, minDistance) }
+        if matches.isEmpty, minDistance != nil {
+            return DistanceRule.progress(candidates, quest: quest, context: context, source: "healthkit")
         }
         return workoutResult(matches, quest: quest, context: context, source: "healthkit")
     }
@@ -112,12 +117,15 @@ struct StravaActivityVerifier: Verifier {
             return .incomplete(reason: reading.reason.isEmpty ? "TODO: Strava is not connected." : reading.reason)
         }
         let types = IntegrationMatch.strings(quest.verification.params["types"])
+        let minDistance = DistanceRule.minimumMeters(quest)
         let minimum = quest.verification.params["minMovingTimeSec"]?.doubleValue
             ?? (quest.progress.unit == "min" ? quest.progress.target * 60 : 0)
-        let matches = context.integrations.workouts.filter { workout in
-            workout.members.contains { $0.source == "strava" }
-                && IntegrationMatch.matches(workout, types: types)
-                && workout.movingTimeSec + 0.001 >= minimum
+        let candidates = context.integrations.workouts.filter { workout in
+            workout.members.contains { $0.source == "strava" } && IntegrationMatch.matches(workout, types: types)
+        }
+        let matches = candidates.filter { $0.movingTimeSec + 0.001 >= minimum && DistanceRule.meets($0, minDistance) }
+        if matches.isEmpty, minDistance != nil {
+            return DistanceRule.progress(candidates, quest: quest, context: context, source: "strava")
         }
         return workoutResult(matches, quest: quest, context: context, source: "strava")
     }
@@ -277,6 +285,39 @@ struct MercurySpendUnderVerifier: Verifier {
             return .progress(current: min(max(spent, 0), quest.progress.target), evidence: evidence)
         }
         return .completed(evidence: evidence)
+    }
+}
+
+/// Distance targets for runs and walks. Param: `minDistanceMeters`; the quest shows km (`[6.2/10km]`).
+enum DistanceRule {
+    /// GPS tracks round. A run within 50 m of the target counts.
+    static let toleranceMeters = 50.0
+
+    static func minimumMeters(_ quest: Quest) -> Double? {
+        quest.verification.params["minDistanceMeters"]?.doubleValue
+    }
+
+    static func meets(_ workout: CanonicalWorkout, _ minimum: Double?) -> Bool {
+        guard let minimum else { return true }
+        return (workout.distanceMeters ?? 0) + toleranceMeters >= minimum
+    }
+
+    /// Km rounded down to one decimal, so 9.99 km never shows as 10.
+    static func kilometers(_ meters: Double) -> Double {
+        (max(meters, 0) / 100).rounded(.down) / 10
+    }
+
+    /// The longest matching workout that has not reached the distance yet, as partial progress.
+    static func progress(_ candidates: [CanonicalWorkout], quest: Quest, context: VerificationContext, source: String) -> VerificationResult {
+        guard let workout = candidates.filter({ ($0.distanceMeters ?? 0) > 0 }).max(by: { ($0.distanceMeters ?? 0) < ($1.distanceMeters ?? 0) }),
+              let meters = workout.distanceMeters else { return .unchanged }
+        let evidence = Evidence.make(
+            source: source,
+            externalId: "workout:\(workout.id)",
+            payload: "\(source)|\(workout.id)|\(context.dayKey)|\(Int(meters))",
+            timestamp: workout.end
+        )
+        return .progress(current: min(kilometers(meters), quest.progress.target), evidence: evidence)
     }
 }
 

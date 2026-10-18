@@ -31,6 +31,7 @@ final class GameStore: ObservableObject {
         let problems = VerificationFixtures.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check() + RecoveryLevel.check()
             + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check()
+            + HiddenQuestRules.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -83,6 +84,16 @@ final class GameStore: ObservableObject {
     }
 
     var player: PlayerState { snapshot.player }
+    /// A hidden quest unlocked and not yet acknowledged. The quest screen shows its reveal window.
+    var pendingHiddenReveal: HiddenQuestUnlock? { snapshot.pendingHiddenReveal }
+
+    func acknowledgeHiddenReveal() {
+        guard let reveal = snapshot.pendingHiddenReveal else { return }
+        var next = snapshot
+        next.markHiddenRevealSeen(id: reveal.id)
+        snapshot = next
+        persist()
+    }
     var bundle: QuestBundle { snapshot.bundle }
     var goalQuests: [Quest] { bundle.goalQuests }
 
@@ -353,6 +364,7 @@ final class GameStore: ObservableObject {
                 break
             }
         }
+        next.checkHiddenQuests(integrations: integrations, now: now)
         snapshot = next
     }
 
@@ -360,6 +372,7 @@ final class GameStore: ObservableObject {
         let title = snapshot.bundle.quests.first(where: { $0.id == questId })?.title ?? "Quest"
         var next = snapshot
         let outcome = next.apply(result, questId: questId, now: now)
+        next.checkHiddenQuests(integrations: integrations, now: now)
         snapshot = next
         clock = now
         note(for: outcome, title: title)

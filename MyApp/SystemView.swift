@@ -24,7 +24,12 @@ struct SystemView: View {
                 }
                 .scrollBounceBehavior(.basedOnSize)
             }
+            if let reveal = store.pendingHiddenReveal {
+                HiddenQuestReveal(unlock: reveal) { store.acknowledgeHiddenReveal() }
+                    .transition(.opacity)
+            }
         }
+        .animation(.easeOut(duration: 0.25), value: store.pendingHiddenReveal?.id)
     }
 
     private var questContent: some View {
@@ -77,6 +82,7 @@ struct SystemView: View {
                     .accessibilityValue(store.accessibilityValue(for: quest))
                     .accessibilityHint(questRowHint(quest))
                 }
+                HiddenQuestRow(unlock: store.snapshot.beyondTheLimitToday, hasCandidate: HiddenQuests.hasCandidate(in: store.bundle))
             }
 
             if let note = store.verificationNote, !note.isEmpty {
@@ -170,6 +176,8 @@ private struct QuestBackdropThreads: View {
 
 
 private struct QuestInfoHeader: View {
+    var title = "QUEST INFO"
+
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.circle")
@@ -177,7 +185,7 @@ private struct QuestInfoHeader: View {
                 .frame(width: 40, height: 40)
                 .overlay { Rectangle().stroke(QuestLight.ink.opacity(0.48), lineWidth: 0.6) }
                 .accessibilityHidden(true)
-            Text("QUEST INFO")
+            Text(title)
                 .font(.system(size: 20, weight: .regular))
                 .tracking(2.3)
                 .lineLimit(1)
@@ -190,6 +198,130 @@ private struct QuestInfoHeader: View {
         .foregroundStyle(QuestLight.ink)
         .background(QuestLight.cyan.opacity(0.025))
         .shadow(color: QuestLight.cyan.opacity(0.85), radius: 7)
+    }
+}
+
+/// A locked "???" row while a distance quest can still unlock Beyond the Limit today; the real name and the
+/// measured distance in blue once it unlocks. Hidden on days with no eligible quest.
+private struct HiddenQuestRow: View {
+    let unlock: HiddenQuestUnlock?
+    let hasCandidate: Bool
+
+    var body: some View {
+        if let unlock {
+            HStack(spacing: 11) {
+                Text(unlock.title)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(unlock.bracketLabel)
+                    .monospacedDigit()
+                    .fixedSize(horizontal: true, vertical: false)
+                QuestCheckbox(checked: true)
+                    .frame(width: 16, height: 17)
+            }
+            .font(.subheadline)
+            .foregroundStyle(QuestLight.cyan)
+            .shadow(color: QuestLight.blue, radius: 6)
+            .frame(minHeight: 44)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Hidden quest, \(unlock.title)")
+            .accessibilityValue("Completed, \(unlock.bracketLabel)")
+        } else if hasCandidate {
+            HStack(spacing: 11) {
+                Text("???")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("[hidden]")
+                    .fixedSize(horizontal: true, vertical: false)
+                Image(systemName: "lock")
+                    .font(.system(size: 12, weight: .light))
+                    .frame(width: 16, height: 17)
+            }
+            .font(.subheadline.italic())
+            .foregroundStyle(QuestLight.ink.opacity(0.42))
+            .frame(minHeight: 44)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Hidden quest")
+            .accessibilityValue("Locked")
+        }
+    }
+}
+
+/// The System's reveal window. Same glass, frame, and header as the quest window.
+private struct HiddenQuestReveal: View {
+    let unlock: HiddenQuestUnlock
+    let onClose: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.8)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onClose)
+                .accessibilityHidden(true)
+            // The quest glass is translucent; this backing keeps the rows underneath from showing through.
+            QuestHologram {
+                VStack(spacing: 0) {
+                    QuestInfoHeader(title: "HIDDEN QUEST")
+                    Text("[Hidden Quest: \(Text(unlock.title).bold().italic())\nhas been completed.]")
+                        .font(.subheadline)
+                        .lineSpacing(5)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 24)
+                    sectionTitle("GOAL").padding(.top, 22)
+                    Text("Exceed a daily quest's target by 50%.")
+                        .font(.footnote)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 10)
+                    HStack(spacing: 11) {
+                        Text(unlock.questTitle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(unlock.bracketLabel)
+                            .monospacedDigit()
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(QuestLight.cyan)
+                    .shadow(color: QuestLight.blue, radius: 6)
+                    .padding(.top, 14)
+                    Text("\(unlock.percentOver)% beyond the target.")
+                        .font(.caption)
+                        .foregroundStyle(QuestLight.ink.opacity(0.75))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 2)
+                    sectionTitle("REWARD").padding(.top, 22)
+                    Text(unlock.grantedToken ? "Full Recovery token ×1" : "Full Recovery bank is full. No token added.")
+                        .font(.subheadline)
+                        .padding(.top, 10)
+                    Button(action: onClose) {
+                        Text("OK")
+                            .font(.subheadline)
+                            .tracking(1.5)
+                            .frame(width: 120, height: 38)
+                            .overlay { Rectangle().stroke(QuestLight.ink.opacity(0.6), lineWidth: 0.8) }
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 26)
+                }
+                .foregroundStyle(QuestLight.ink)
+                .shadow(color: QuestLight.blue.opacity(0.7), radius: 5)
+                .padding(.horizontal, 30)
+                .padding(.vertical, 32)
+            }
+            .background { Color(red: 0.012, green: 0.03, blue: 0.055).padding(.horizontal, 16).padding(.vertical, 10) }
+            .frame(maxWidth: 380)
+            .padding(.horizontal, 26)
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isModal)
+        }
+    }
+
+    private func sectionTitle(_ text: String) -> some View {
+        VStack(spacing: 3) {
+            Text(text)
+                .font(.system(.headline, design: .default).weight(.medium))
+                .tracking(1.3)
+                .shadow(color: QuestLight.cyan, radius: 7)
+            Rectangle().fill(QuestLight.ink.opacity(0.85)).frame(width: 52, height: 1)
+        }
+        .accessibilityAddTraits(.isHeader)
     }
 }
 

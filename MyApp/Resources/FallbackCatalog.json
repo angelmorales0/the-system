@@ -13,8 +13,8 @@
       ],
       "quests": [
         {
-          "id": "run_intervals",
-          "title": "Run Intervals",
+          "id": "run_10k",
+          "title": "10K Run",
           "kind": "daily",
           "stat": "END",
           "verification": {
@@ -23,15 +23,15 @@
               "types": [
                 "Run"
               ],
-              "minMovingTimeSec": 1200
+              "minDistanceMeters": 10000
             }
           },
           "xp": 40,
           "difficulty": "normal",
           "progress": {
             "current": 0,
-            "target": 6,
-            "unit": "reps"
+            "target": 10,
+            "unit": "km"
           },
           "reward": null
         },
