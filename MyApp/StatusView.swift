@@ -4,6 +4,7 @@ struct StatusView: View {
     @EnvironmentObject private var store: GameStore
     @State private var confirmRecovery = false
     @State private var showShields = false
+    @State private var showAppIcon = false
 
     /// Overall level 146 = all seven stats at 350.
     private var overallLabel: String {
@@ -75,6 +76,16 @@ struct StatusView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.plain)
+                        Button {
+                            showAppIcon = true
+                        } label: {
+                            Text("APP ICON")
+                                .font(.caption2.weight(.semibold))
+                                .tracking(1.1)
+                                .foregroundStyle(SystemTheme.muted)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .confirmationDialog("Spend one Full Recovery token?", isPresented: $confirmRecovery, titleVisibility: .visible) {
@@ -85,6 +96,9 @@ struct StatusView: View {
                 }
                 .sheet(isPresented: $showShields) {
                     PenaltyTargetsSheet()
+                }
+                .sheet(isPresented: $showAppIcon) {
+                    AppIconSheet()
                 }
                 .padding(.horizontal, 22)
 
