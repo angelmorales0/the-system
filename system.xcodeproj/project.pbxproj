@@ -570,7 +570,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "the-system";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "The System reads workouts, protein, weight, and sleep to check daily quests.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "The System reads workouts, protein, weight, sleep, and steps to check daily and emergency quests.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "The System does not write health data.";
 				"INFOPLIST_KEY_NSSupportsLiveActivities[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_NSSupportsLiveActivities[sdk=iphonesimulator*]" = YES;
@@ -619,7 +619,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "the-system";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "The System reads workouts, protein, weight, and sleep to check daily quests.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "The System reads workouts, protein, weight, sleep, and steps to check daily and emergency quests.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "The System does not write health data.";
 				"INFOPLIST_KEY_NSSupportsLiveActivities[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_NSSupportsLiveActivities[sdk=iphonesimulator*]" = YES;

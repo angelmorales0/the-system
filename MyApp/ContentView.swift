@@ -26,6 +26,14 @@ struct ContentView: View {
         .tabViewStyle(.page(indexDisplayMode: .never))
         .ignoresSafeArea()
         .background { SystemBackground() }
+        // An active emergency quest covers every page until it ends.
+        .overlay {
+            if let emergency = store.emergency, emergency.status == .active {
+                EmergencyQuestView(quest: emergency)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: store.emergency?.id)
         .tint(SystemTheme.accent)
         .preferredColorScheme(.dark)
         .onChange(of: scenePhase) { _, phase in

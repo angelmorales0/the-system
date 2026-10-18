@@ -37,6 +37,8 @@ struct GameSnapshot: Codable, Equatable {
     var heldPenaltyTier: Int = 0
     /// True after a FamilyActivityPicker save. Tokens themselves stay in the App Group.
     var hasDistractorSelection: Bool = false
+    /// A real emergency quest failed on this day. Ending the day then opens a penalty.
+    var emergencyFailedDayKey: String?
 
     static func fresh(
         catalog: FallbackCatalog,
@@ -76,7 +78,8 @@ struct GameSnapshot: Codable, Equatable {
     /// True when ending the day now would raise the penalty tier.
     var missesRequiredSet: Bool {
         let required = bundle.quests.filter { $0.kind != .optional }
-        let missed = !required.isEmpty && required.contains { $0.status != .completed }
+        let missed = (!required.isEmpty && required.contains { $0.status != .completed })
+            || emergencyFailedDayKey == bundle.dayKey
         let waived = bundle.mode == .fullRecovery || signals.spendingFullRecovery || fullRecoveryDayKey == bundle.dayKey
         return missed && !waived
     }
@@ -421,6 +424,7 @@ extension GameSnapshot {
         case recentQuestTitles, generationAttemptDayKey, generatedBundle, readiness, recoveryComposite
         case finance, appliedFinProjection
         case fullRecoveryDayKey, queuedFullRecoveryDayKey, heldPenaltyTier, hasDistractorSelection
+        case emergencyFailedDayKey
     }
 
     init(from decoder: Decoder) throws {
@@ -441,6 +445,7 @@ extension GameSnapshot {
         queuedFullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .queuedFullRecoveryDayKey)
         heldPenaltyTier = try container.decodeIfPresent(Int.self, forKey: .heldPenaltyTier) ?? 0
         hasDistractorSelection = try container.decodeIfPresent(Bool.self, forKey: .hasDistractorSelection) ?? false
+        emergencyFailedDayKey = try container.decodeIfPresent(String.self, forKey: .emergencyFailedDayKey)
         generationAttemptDayKey = try container.decodeIfPresent(String.self, forKey: .generationAttemptDayKey)
         generatedBundle = try container.decodeIfPresent(QuestBundle.self, forKey: .generatedBundle)
     }
@@ -462,6 +467,7 @@ extension GameSnapshot {
         try container.encodeIfPresent(queuedFullRecoveryDayKey, forKey: .queuedFullRecoveryDayKey)
         try container.encode(heldPenaltyTier, forKey: .heldPenaltyTier)
         try container.encode(hasDistractorSelection, forKey: .hasDistractorSelection)
+        try container.encodeIfPresent(emergencyFailedDayKey, forKey: .emergencyFailedDayKey)
         try container.encodeIfPresent(generationAttemptDayKey, forKey: .generationAttemptDayKey)
         try container.encodeIfPresent(generatedBundle, forKey: .generatedBundle)
     }

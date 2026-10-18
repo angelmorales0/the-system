@@ -18,6 +18,9 @@ final class GameStore: ObservableObject {
     @Published private(set) var statLevels: StatLevelSet = .empty
     /// One saved reading per day for the stat history charts.
     @Published private(set) var statHistory = StatLevelHistory()
+    /// The emergency quest on screen. While it is active, it covers every page.
+    @Published private(set) var emergency: EmergencyQuest?
+    @Published private(set) var emergencySettings: EmergencySettings = .standard
 
     private let catalog: FallbackCatalog
     private let generator: any QuestGenerating
@@ -25,12 +28,15 @@ final class GameStore: ObservableObject {
     private var ticker: Timer?
     private var integrations: DayIntegrationSnapshot = .empty(dayKey: "")
     private var refreshingIntegrations = false
+    private var emergencyTicker: Timer?
+    private var evaluatingEmergency = false
 
     init(persistence: GamePersistence = .standard) {
         #if DEBUG
         let problems = VerificationFixtures.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check() + RecoveryLevel.check()
             + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check()
+            + EmergencyRules.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -55,6 +61,8 @@ final class GameStore: ObservableObject {
         if persistence == .standard {
             statHistory = StatLevelHistory.load()
             statLevels = statHistory.latest ?? .empty
+            emergencySettings = EmergencyStore.loadSettings()
+            emergency = EmergencyStore.loadQuest()
         }
         advanceTimers(now: .now)
         evaluateConnectedVerifiers(now: .now)
@@ -64,6 +72,11 @@ final class GameStore: ObservableObject {
         observeHealthUpdates()
         refreshIntegrations(now: .now)
         enforcePenalty()
+        if persistence == .standard {
+            EmergencyEnforcement.syncMonitoring(emergencySettings)
+            observeStepUpdates()
+            evaluateEmergencies(now: .now)
+        }
     }
 
     func spendFullRecovery(now: Date = .now) {
@@ -80,6 +93,159 @@ final class GameStore: ObservableObject {
         snapshot.hasDistractorSelection = PenaltySelectionStore.hasSelection
         persist()
         enforcePenalty()
+        // The bedtime watch counts use of the selected apps, so a new selection restarts it.
+        if persistence == .standard {
+            EmergencyEnforcement.syncMonitoring(emergencySettings)
+        }
+    }
+
+    // MARK: - Emergency quests
+
+    func updateEmergencySettings(_ settings: EmergencySettings) {
+        let turnedOn = (settings.bedtimeEnabled && !emergencySettings.bedtimeEnabled)
+            || (settings.stepsEnabled && !emergencySettings.stepsEnabled)
+        emergencySettings = settings
+        guard persistence == .standard else { return }
+        EmergencyStore.save(settings)
+        EmergencyEnforcement.syncMonitoring(settings)
+        if turnedOn {
+            EmergencyEnforcement.requestNotificationPermission()
+        }
+        evaluateEmergencies(now: .now)
+    }
+
+    /// Runs one emergency now, with the saved targets. A test can be ended early and never opens a penalty.
+    func startEmergencyTest(_ kind: EmergencyKind, now: Date = .now) {
+        guard emergency == nil else { return }
+        let quest = kind == .bedtimeLockdown
+            ? EmergencyRules.bedtimeQuest(triggeredAt: now, settings: emergencySettings, isTest: true)
+            : EmergencyRules.lowStepsQuest(now: now, settings: emergencySettings, isTest: true)
+        begin(quest)
+    }
+
+    func endEmergencyTest() {
+        guard let quest = emergency, quest.isTest else { return }
+        finish(quest, message: "Emergency test ended.")
+    }
+
+    private func begin(_ quest: EmergencyQuest) {
+        emergency = quest
+        if persistence == .standard {
+            EmergencyStore.save(quest)
+            EmergencyEnforcement.applyLockdown(for: quest)
+            EmergencyEnforcement.notify(quest)
+        }
+        ensureEmergencyTicker()
+    }
+
+    private func finish(_ quest: EmergencyQuest, message: String) {
+        emergency = nil
+        verificationNote = message
+        if persistence == .standard {
+            EmergencyStore.save(nil)
+            EmergencyEnforcement.clearLockdown()
+        }
+        ensureEmergencyTicker()
+    }
+
+    private func settle(_ resolved: EmergencyQuest) {
+        switch resolved.status {
+        case .active:
+            emergency = resolved
+            if persistence == .standard { EmergencyStore.save(resolved) }
+        case .completed:
+            finish(resolved, message: resolved.kind == .bedtimeLockdown
+                   ? "Emergency quest complete: the lockdown has ended."
+                   : "Emergency quest complete: \(resolved.progressSteps.formatted()) steps walked.")
+        case .failed:
+            if EmergencyRules.opensPenalty(resolved) {
+                snapshot.emergencyFailedDayKey = resolved.dayKey
+                persist()
+            }
+            finish(resolved, message: resolved.isTest
+                   ? "Emergency test failed. A test does not open a penalty."
+                   : "Emergency quest failed. A penalty opens tomorrow.")
+        }
+    }
+
+    /// Before a new day is judged, a walk whose deadline passed is settled on the steps it already has.
+    private func settleExpiredEmergency(now: Date) {
+        guard let quest = emergency, now >= quest.deadline else { return }
+        settle(EmergencyRules.resolve(quest, now: now, stepsSinceStart: nil))
+    }
+
+    /// Reads the bedtime trigger and Health steps, then starts, advances, or ends an emergency.
+    private func evaluateEmergencies(now: Date) {
+        guard persistence == .standard, !evaluatingEmergency else { return }
+        evaluatingEmergency = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.evaluatingEmergency = false }
+            let settings = self.emergencySettings
+
+            if let triggered = EmergencyStore.takeBedtimeTrigger(), self.emergency == nil {
+                let quest = EmergencyRules.bedtimeQuest(triggeredAt: triggered, settings: settings)
+                if quest.deadline > now {
+                    // The monitor already locked the apps and posted the alert.
+                    self.emergency = quest
+                    EmergencyStore.save(quest)
+                }
+            }
+
+            if let quest = self.emergency {
+                var steps: Int?
+                if quest.kind == .lowSteps {
+                    steps = await HealthKitBridge.steps(from: quest.startedAt, to: min(now, quest.deadline))
+                }
+                // The quest may have ended while the steps loaded.
+                guard self.emergency?.id == quest.id else { return }
+                let resolved = EmergencyRules.resolve(quest, now: now, stepsSinceStart: steps)
+                self.settle(resolved)
+                if resolved.status == .active, resolved.kind == .lowSteps,
+                   EmergencyGroup.defaults.string(forKey: EmergencyGroup.lockdownKindKey) == nil {
+                    // A bedtime release may have cleared the shared store. Put the walk shields back.
+                    EmergencyEnforcement.applyLockdown(for: resolved)
+                }
+                self.ensureEmergencyTicker()
+                return
+            }
+
+            guard settings.stepsEnabled else { return }
+            let startOfDay = QuestDay.calendar.startOfDay(for: now)
+            let stepsToday = await HealthKitBridge.steps(from: startOfDay, to: now)
+            guard self.emergency == nil else { return }
+            if EmergencyRules.shouldTriggerLowSteps(now: now, stepsToday: stepsToday, settings: settings,
+                                                    lastTriggeredDayKey: EmergencyStore.lowStepsDayKey, active: nil) {
+                EmergencyStore.lowStepsDayKey = QuestDay.key(for: now)
+                self.begin(EmergencyRules.lowStepsQuest(now: now, settings: settings))
+            }
+        }
+    }
+
+    private func observeStepUpdates() {
+        Task { @MainActor [weak self] in
+            for await _ in NotificationCenter.default.notifications(named: .stepsDidChange) {
+                self?.evaluateEmergencies(now: .now)
+            }
+        }
+    }
+
+    /// While an emergency runs, re-check every 15 seconds: steps for a walk, the clock for a lockdown.
+    private func ensureEmergencyTicker() {
+        guard emergency != nil else {
+            emergencyTicker?.invalidate()
+            emergencyTicker = nil
+            return
+        }
+        guard emergencyTicker == nil else { return }
+        let timer = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.evaluateEmergencies(now: .now)
+            }
+        }
+        timer.tolerance = 2
+        RunLoop.main.add(timer, forMode: .common)
+        emergencyTicker = timer
     }
 
     var player: PlayerState { snapshot.player }
@@ -163,6 +329,7 @@ final class GameStore: ObservableObject {
     }
 
     func refreshForToday(now: Date = .now) {
+        settleExpiredEmergency(now: now)
         let previousDay = snapshot.bundle.dayKey
         var next = snapshot
         next.refreshIfNeeded(catalog: catalog, now: now)
@@ -178,6 +345,7 @@ final class GameStore: ObservableObject {
         ensureTicker()
         refreshIntegrations(now: now)
         enforcePenalty()
+        evaluateEmergencies(now: now)
     }
 
     private func observeHealthUpdates() {
