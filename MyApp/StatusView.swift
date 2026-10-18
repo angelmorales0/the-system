@@ -5,6 +5,7 @@ struct StatusView: View {
     @State private var confirmRecovery = false
     @State private var showShields = false
     @State private var showAppIcon = false
+    @State private var showEmergency = false
 
     /// Overall level 146 = all seven stats at 350.
     private var overallLabel: String {
@@ -77,6 +78,16 @@ struct StatusView: View {
                         }
                         .buttonStyle(.plain)
                         Button {
+                            showEmergency = true
+                        } label: {
+                            Text("EMERGENCY QUESTS")
+                                .font(.caption2.weight(.semibold))
+                                .tracking(1.1)
+                                .foregroundStyle(SystemTheme.muted)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        Button {
                             showAppIcon = true
                         } label: {
                             Text("APP ICON")
@@ -99,6 +110,9 @@ struct StatusView: View {
                 }
                 .sheet(isPresented: $showAppIcon) {
                     AppIconSheet()
+                }
+                .sheet(isPresented: $showEmergency) {
+                    EmergencySettingsSheet()
                 }
                 .padding(.horizontal, 22)
 

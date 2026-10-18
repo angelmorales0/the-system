@@ -2,6 +2,7 @@ import Foundation
 
 extension Notification.Name {
     static let healthDataDidChange = Notification.Name("com.angelmorales.thesystem.healthDataDidChange")
+    static let stepsDidChange = Notification.Name("com.angelmorales.thesystem.stepsDidChange")
 }
 
 /// Reads workouts, nutrition, weight, and sleep. MacroFactor is preferred when its samples are present.
@@ -21,6 +22,16 @@ enum HealthKitBridge {
         HealthKitStore.shared.startObservers()
         #endif
     }
+
+    /// Steps from `start` to `end`, de-duplicated across iPhone and Watch. Nil when Health is unavailable or locked.
+    static func steps(from start: Date, to end: Date) async -> Int? {
+        #if canImport(HealthKit)
+        return await HealthKitStore.shared.steps(from: start, to: end)
+        #else
+        _ = (start, end)
+        return nil
+        #endif
+    }
 }
 
 #if canImport(HealthKit)
@@ -37,7 +48,7 @@ final class HealthKitStore {
     func summary(on day: Date) async -> HealthDaySummary {
         guard HKHealthStore.isHealthDataAvailable() else { return .unavailable }
         do {
-            try await store.requestAuthorization(toShare: [], read: Set(Self.sampleTypes))
+            try await store.requestAuthorization(toShare: [], read: Set(Self.readTypes))
         } catch {
             return .unavailable
         }
@@ -74,6 +85,40 @@ final class HealthKitStore {
             }
             store.execute(query)
             store.enableBackgroundDelivery(for: type, frequency: .hourly) { _, _ in }
+        }
+        // Steps get their own signal, so a step sample does not reload every integration.
+        // Hourly is the most often iOS delivers steps in the background.
+        if let steps = Self.stepType {
+            let query = HKObserverQuery(sampleType: steps, predicate: nil) { _, completion, error in
+                if error == nil {
+                    NotificationCenter.default.post(name: .stepsDidChange, object: nil)
+                }
+                completion()
+            }
+            store.execute(query)
+            store.enableBackgroundDelivery(for: steps, frequency: .hourly) { _, _ in }
+        }
+    }
+
+    func steps(from start: Date, to end: Date) async -> Int? {
+        guard HKHealthStore.isHealthDataAvailable(), let type = Self.stepType, end > start else { return nil }
+        do {
+            try await store.requestAuthorization(toShare: [], read: Set(Self.readTypes))
+        } catch {
+            return nil
+        }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
+        return await withCheckedContinuation { continuation in
+            let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, stats, error in
+                if let sum = stats?.sumQuantity() {
+                    continuation.resume(returning: Int(sum.doubleValue(for: .count()).rounded(.down)))
+                } else if let error = error as? HKError, error.code == .errorNoData {
+                    continuation.resume(returning: 0)
+                } else {
+                    continuation.resume(returning: error == nil ? 0 : nil)
+                }
+            }
+            store.execute(query)
         }
     }
 
@@ -134,6 +179,13 @@ final class HealthKitStore {
             }
             store.execute(query)
         }
+    }
+
+    private static var stepType: HKQuantityType? { HKQuantityType.quantityType(forIdentifier: .stepCount) }
+
+    /// Everything the app asks to read. Steps are read but observed separately.
+    private static var readTypes: [HKSampleType] {
+        sampleTypes + (stepType.map { [$0] } ?? [])
     }
 
     private static var sampleTypes: [HKSampleType] {

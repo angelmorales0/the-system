@@ -27,6 +27,19 @@ enum PenaltyRules {
             errors.append("penalty tier should cap at 3, got \(missed.player.penaltyTier)")
         }
 
+        var emergency = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
+        for quest in emergency.bundle.quests {
+            _ = emergency.apply(.completed(evidence: evidence("done \(quest.id)")), questId: quest.id, now: dayOne)
+        }
+        if emergency.missesRequiredSet {
+            errors.append("a fully completed day should not miss its required set")
+        }
+        emergency.emergencyFailedDayKey = emergency.bundle.dayKey
+        emergency.refreshIfNeeded(catalog: catalog, now: dayTwo)
+        if emergency.player.penaltyTier != 1 {
+            errors.append("a failed emergency quest should open penalty tier 1, got \(emergency.player.penaltyTier)")
+        }
+
         var rested = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
         rested.signals.spendingFullRecovery = true
         rested.fullRecoveryDayKey = rested.bundle.dayKey

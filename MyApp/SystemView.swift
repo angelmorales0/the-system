@@ -128,14 +128,14 @@ private func questRowHint(_ quest: Quest) -> String {
 }
 
 // This screen has its own holographic treatment; the shared panels retain their styling.
-private enum QuestLight {
+enum QuestLight {
     static let ink = Color(red: 0.87, green: 0.97, blue: 1)
     static let cyan = Color(red: 0.20, green: 0.80, blue: 1)
     static let blue = Color(red: 0.08, green: 0.42, blue: 1)
     static let penalty = Color(red: 1, green: 0.12, blue: 0.32)
 }
 
-private struct QuestBackdrop: View {
+struct QuestBackdrop: View {
     var body: some View {
         ZStack {
             Color(red: 0.008, green: 0.014, blue: 0.038)
@@ -175,7 +175,7 @@ private struct QuestBackdropThreads: View {
 }
 
 
-private struct QuestInfoHeader: View {
+struct QuestInfoHeader: View {
     var title = "QUEST INFO"
 
     var body: some View {
@@ -325,7 +325,7 @@ private struct HiddenQuestReveal: View {
     }
 }
 
-private struct QuestCheckbox: View {
+struct QuestCheckbox: View {
     let checked: Bool
     var body: some View {
         ZStack {
@@ -391,7 +391,7 @@ private struct QuestSignalRing: View {
     }
 }
 
-private struct QuestHologram<Content: View>: View {
+struct QuestHologram<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
