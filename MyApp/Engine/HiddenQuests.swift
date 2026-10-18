@@ -45,11 +45,6 @@ enum HiddenQuests {
         return DistanceRule.minimumMeters(quest) != nil
     }
 
-    /// The bundle has a quest that can unlock Beyond the Limit today, so the locked row shows.
-    static func hasCandidate(in bundle: QuestBundle) -> Bool {
-        bundle.mode != .penalty && bundle.quests.contains(where: { isEligible($0) })
-    }
-
     /// The workout that completed the quest. Only that workout can unlock the hidden quest.
     static func completingWorkout(for quest: Quest, in workouts: [CanonicalWorkout]) -> CanonicalWorkout? {
         let ids = Set(quest.evidence.map(\.externalId).filter { $0.hasPrefix("workout:") }.map { String($0.dropFirst("workout:".count)) })
@@ -69,6 +64,7 @@ extension GameSnapshot {
     /// Returns the new unlock, or nil when nothing changed.
     @discardableResult
     mutating func checkHiddenQuests(integrations: DayIntegrationSnapshot, now: Date) -> HiddenQuestUnlock? {
+        recordCompletedDistances(integrations: integrations)
         guard bundle.mode != .penalty, signals.readinessBand != .red else { return nil }
         guard !hiddenUnlocks.contains(where: { $0.hiddenId == HiddenQuests.beyondTheLimitId && $0.dayKey == bundle.dayKey }) else { return nil }
         for quest in bundle.quests where quest.status == .completed && HiddenQuests.isEligible(quest) {
@@ -92,6 +88,21 @@ extension GameSnapshot {
             return unlock
         }
         return nil
+    }
+
+    /// A completed distance quest shows the real distance of the run that completed it: 15.2 km on the
+    /// 10K Run reads `[15.2/10km]`. Completion alone stops at the target, so this lifts it afterwards.
+    /// Undo still resets the row to 0.
+    mutating func recordCompletedDistances(integrations: DayIntegrationSnapshot) {
+        for index in bundle.quests.indices {
+            let quest = bundle.quests[index]
+            guard quest.status == .completed, DistanceRule.minimumMeters(quest) != nil, quest.progress.unit == "km",
+                  let meters = HiddenQuests.completingWorkout(for: quest, in: integrations.workouts)?.distanceMeters else { continue }
+            let km = DistanceRule.kilometers(meters)
+            if km > quest.progress.current {
+                bundle.quests[index].progress.current = km
+            }
+        }
     }
 
     /// Today's Beyond the Limit unlock, if any.
@@ -164,13 +175,14 @@ enum HiddenQuestRules {
         if tenK?.status != .completed {
             errors.append("a 15.2 km run should complete the 10K Run, got \(String(describing: tenK?.status))")
         }
-        if !HiddenQuests.hasCandidate(in: fifteen.bundle) {
-            errors.append("the 10K Run day should show the locked hidden quest row")
-        }
-
         // 15.2 km on a 10 km target unlocks Beyond the Limit and banks one token.
         let bankBefore = fifteen.player.fullRecoveryBank
         let unlock = fifteen.checkHiddenQuests(integrations: fifteenData, now: now)
+        // The 10K Run row itself carries the extra distance.
+        let tenKRow = fifteen.bundle.quests.first { $0.id == tenK?.id }
+        if tenKRow?.progress.bracketLabel != "[15.2/10km]" || tenKRow?.status != .completed {
+            errors.append("the 10K Run row should show [15.2/10km] after a 15.2 km run, got \(String(describing: tenKRow?.progress))")
+        }
         if unlock == nil || unlock?.grantedToken != true || fifteen.player.fullRecoveryBank != bankBefore + 1 {
             errors.append("15.2 km should unlock Beyond the Limit and bank a token, got \(String(describing: unlock)) bank \(fifteen.player.fullRecoveryBank)")
         }
@@ -197,10 +209,21 @@ enum HiddenQuestRules {
             errors.append("the snapshot with a hidden unlock should encode and decode")
         }
 
-        // 14.9 km completes the 10K Run but stays under 150%.
+        // 14.9 km completes the 10K Run but stays under 150%. The row still shows the real distance.
         var short = day([run(km: 14.9)])
         if short.2?.status != .completed || short.0.checkHiddenQuests(integrations: short.1, now: now) != nil {
             errors.append("14.9 km should complete the 10K Run but not unlock Beyond the Limit")
+        }
+        if short.0.bundle.quests.first(where: { $0.id == short.2?.id })?.progress.bracketLabel != "[14.9/10km]" {
+            errors.append("14.9 km should show [14.9/10km] on the 10K Run row")
+        }
+        // Undo resets the row to 0, and the next pass does not lift an open quest.
+        if let id = short.2?.id {
+            short.0.undoQuest(id: id)
+            short.0.recordCompletedDistances(integrations: short.1)
+            if short.0.bundle.quests.first(where: { $0.id == id })?.progress.current != 0 {
+                errors.append("an undone 10K Run should go back to [0/10km]")
+            }
         }
 
         // 7.4 km is partial progress, shown in km.
@@ -209,10 +232,15 @@ enum HiddenQuestRules {
             errors.append("7.46 km should show [7.4/10km] and stay open, got \(String(describing: partial.2?.progress))")
         }
 
-        // A red recovery day never unlocks it.
+        // A red recovery day never unlocks it, but the row still shows the distance.
         var red = day([run(km: 16)], band: .red)
-        if let quest = red.2, quest.status == .completed, red.0.checkHiddenQuests(integrations: red.1, now: now) != nil {
-            errors.append("a red recovery day must not unlock Beyond the Limit")
+        if let quest = red.2, quest.status == .completed {
+            if red.0.checkHiddenQuests(integrations: red.1, now: now) != nil {
+                errors.append("a red recovery day must not unlock Beyond the Limit")
+            }
+            if red.0.bundle.quests.first(where: { $0.id == quest.id })?.progress.current != 16 {
+                errors.append("a red recovery day should still show the real distance on the row")
+            }
         }
 
         // A second, longer run that did not complete the quest does not count.

@@ -65,9 +65,13 @@ struct SystemView: View {
                         HStack(spacing: 11) {
                             Text(quest.title)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                            // Blue once this run unlocked Beyond the Limit: [15.2/10km].
+                            let beyond = store.snapshot.beyondTheLimitToday?.questId == quest.id
                             Text(store.rowLabel(for: quest))
                                 .monospacedDigit()
                                 .fixedSize(horizontal: true, vertical: false)
+                                .foregroundStyle(beyond ? QuestLight.cyan : QuestLight.ink)
+                                .shadow(color: beyond ? QuestLight.blue : .clear, radius: 6)
                             QuestCheckbox(checked: quest.status == .completed)
                                 .frame(width: 16, height: 17)
                         }
@@ -82,7 +86,6 @@ struct SystemView: View {
                     .accessibilityValue(store.accessibilityValue(for: quest))
                     .accessibilityHint(questRowHint(quest))
                 }
-                HiddenQuestRow(unlock: store.snapshot.beyondTheLimitToday, hasCandidate: HiddenQuests.hasCandidate(in: store.bundle))
             }
 
             if let note = store.verificationNote, !note.isEmpty {
@@ -198,50 +201,6 @@ struct QuestInfoHeader: View {
         .foregroundStyle(QuestLight.ink)
         .background(QuestLight.cyan.opacity(0.025))
         .shadow(color: QuestLight.cyan.opacity(0.85), radius: 7)
-    }
-}
-
-/// A locked "???" row while a distance quest can still unlock Beyond the Limit today; the real name and the
-/// measured distance in blue once it unlocks. Hidden on days with no eligible quest.
-private struct HiddenQuestRow: View {
-    let unlock: HiddenQuestUnlock?
-    let hasCandidate: Bool
-
-    var body: some View {
-        if let unlock {
-            HStack(spacing: 11) {
-                Text(unlock.title)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text(unlock.bracketLabel)
-                    .monospacedDigit()
-                    .fixedSize(horizontal: true, vertical: false)
-                QuestCheckbox(checked: true)
-                    .frame(width: 16, height: 17)
-            }
-            .font(.subheadline)
-            .foregroundStyle(QuestLight.cyan)
-            .shadow(color: QuestLight.blue, radius: 6)
-            .frame(minHeight: 44)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Hidden quest, \(unlock.title)")
-            .accessibilityValue("Completed, \(unlock.bracketLabel)")
-        } else if hasCandidate {
-            HStack(spacing: 11) {
-                Text("???")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text("[hidden]")
-                    .fixedSize(horizontal: true, vertical: false)
-                Image(systemName: "lock")
-                    .font(.system(size: 12, weight: .light))
-                    .frame(width: 16, height: 17)
-            }
-            .font(.subheadline.italic())
-            .foregroundStyle(QuestLight.ink.opacity(0.42))
-            .frame(minHeight: 44)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Hidden quest")
-            .accessibilityValue("Locked")
-        }
     }
 }
 
