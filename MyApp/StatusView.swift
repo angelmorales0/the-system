@@ -25,6 +25,7 @@ struct StatusView: View {
 
                 SystemPanel {
                     VStack(spacing: 20) {
+                        QuestInfoHeader(title: "STATUS")
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(store.player.statusDisplayName)
@@ -42,7 +43,7 @@ struct StatusView: View {
                         SystemDivider()
 
                         RadarChart(stats: stats)
-                            .frame(height: 310)
+                            .frame(height: 270)
                             .padding(.vertical, 6)
 
                         SystemDivider()

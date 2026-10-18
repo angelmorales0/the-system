@@ -9,56 +9,44 @@ struct EmergencySettingsSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
+            QuestSheet(title: "Emergency quests") {
+                VStack(alignment: .leading, spacing: 12) {
                     timePicker("Earliest start", minutes: $settings.earliestStart)
-                } footer: {
-                    Text("No emergency quest starts before this time. Bedtime starts at this time or later.")
+                    note("No emergency quest starts before this time. Bedtime starts at this time or later.")
                 }
 
-                Section {
+                QuestSectionTitle(text: "Lights Out")
+                VStack(alignment: .leading, spacing: 12) {
                     Toggle("Bedtime lockdown", isOn: $settings.bedtimeEnabled)
                     timePicker("Bedtime", minutes: $settings.bedtimeStart)
                     timePicker("Wake time", minutes: $settings.wakeTime)
                     Stepper("Use allowed: \(settings.bedtimeGraceMinutes) min", value: $settings.bedtimeGraceMinutes, in: 1...30)
                     Stepper("Lockdown: \(settings.lockdownMinutes) min", value: $settings.lockdownMinutes, in: 5...60, step: 5)
-                } header: {
-                    Text("Lights Out")
-                } footer: {
-                    Text(bedtimeFooter)
+                    note(bedtimeFooter)
                 }
 
-                Section {
+                QuestSectionTitle(text: "Movement")
+                VStack(alignment: .leading, spacing: 12) {
                     Toggle("Step check", isOn: $settings.stepsEnabled)
                     timePicker("Check time", minutes: $settings.stepCheckTime)
                     Stepper("Minimum: \(settings.minimumSteps.formatted()) steps", value: $settings.minimumSteps, in: 500...20_000, step: 500)
                     Stepper("Walk: \(settings.walkSteps.formatted()) steps", value: $settings.walkSteps, in: 500...10_000, step: 250)
                     Stepper("Time limit: \(settings.walkLimitMinutes) min", value: $settings.walkLimitMinutes, in: 15...180, step: 15)
-                } header: {
-                    Text("Movement")
-                } footer: {
-                    Text("After \(Self.timeString(EmergencyRules.stepCheckMinute(settings))), fewer than \(settings.minimumSteps.formatted()) steps starts a walk. Your distractor apps lock until you walk \(settings.walkSteps.formatted()) steps. A miss opens a penalty tomorrow. iOS checks Health about once an hour in the background.")
+                    note("After \(Self.timeString(EmergencyRules.stepCheckMinute(settings))), fewer than \(settings.minimumSteps.formatted()) steps starts a walk. Your distractor apps lock until you walk \(settings.walkSteps.formatted()) steps. A miss opens a penalty tomorrow. iOS checks Health about once an hour in the background.")
                 }
 
-                Section {
-                    Button("Test Lights Out now") {
-                        store.startEmergencyTest(.bedtimeLockdown)
-                        dismiss()
+                QuestSectionTitle(text: "Test")
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        testButton("Test Lights Out") { store.startEmergencyTest(.bedtimeLockdown) }
+                        testButton("Test Movement") { store.startEmergencyTest(.lowSteps) }
                     }
-                    Button("Test Movement now") {
-                        store.startEmergencyTest(.lowSteps)
-                        dismiss()
-                    }
-                } header: {
-                    Text("Test")
-                } footer: {
-                    Text("A test uses these targets. You can end it early, and it never opens a penalty.")
+                    .disabled(store.emergency != nil)
+                    note("A test uses these targets. You can end it early, and it never opens a penalty.")
                 }
-                .disabled(store.emergency != nil)
             }
-            .scrollContentBackground(.hidden)
-            .background(SystemTheme.background.ignoresSafeArea())
-            .navigationTitle("Emergency quests")
+            .font(.subheadline)
+            .tint(SystemTheme.accent)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -85,6 +73,29 @@ struct EmergencySettingsSheet: View {
             text += " Choose your distractor apps first (Status → Distractor shields). To watch all phone use, select every category there."
         }
         return text
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(SystemTheme.muted)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Boxed like the quest window's header boxes.
+    private func testButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+            dismiss()
+        } label: {
+            Text(title)
+                .font(.footnote)
+                .tracking(0.8)
+                .frame(maxWidth: .infinity, minHeight: 38)
+                .overlay { Rectangle().stroke(QuestLight.ink.opacity(0.6), lineWidth: 0.8) }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func timePicker(_ title: String, minutes: Binding<Int>) -> some View {

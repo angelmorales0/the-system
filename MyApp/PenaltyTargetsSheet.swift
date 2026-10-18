@@ -15,11 +15,18 @@ struct PenaltyTargetsSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(SystemTheme.muted)
-                    .padding(.horizontal, 20)
+            VStack(spacing: 0) {
+                SystemPanel {
+                    VStack(alignment: .leading, spacing: 14) {
+                        QuestInfoHeader(title: "DISTRACTOR SHIELDS")
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundStyle(SystemTheme.muted)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                // Apple's picker draws its own list. It cannot take the quest window style.
                 #if os(iOS)
                 FamilyActivityPicker(selection: $selection)
                 #else
@@ -30,8 +37,8 @@ struct PenaltyTargetsSheet: View {
                 Spacer()
                 #endif
             }
-            .background(SystemTheme.background.ignoresSafeArea())
-            .navigationTitle("Distractor shields")
+            .background { QuestBackdrop() }
+            .toolbarBackground(.hidden, for: .navigationBar)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

@@ -2,7 +2,7 @@
 
 **Repo:** `angelmorales0/the-system`  
 **Owner:** Angel Morales (personal Solo Leveling iOS app)  
-**UI constraint:** Keep the existing 4 swipe pages — `SystemView`, `GoalsView`, `HistoryView`, `StatusView` — and shared chrome in `ContentView.swift` (`SystemPanel`, `SystemTheme`, cut-corner panels, cyan/muted copy). **Do not redesign screens.** Additive content and data binding only.  
+**UI constraint:** Two swipe pages — `SystemView` and `StatusView`. The Goals and History pages were removed (October 2026). Every window uses the daily quest window (`QuestHologram`, `QuestInfoHeader` in `SystemView.swift`); `SystemPanel` in `ContentView.swift` wraps it. **Do not redesign screens.** Additive content and data binding only.  
 **Sources incorporated:**  
 - `/workspace/research/mercury-api-fin-brief.md`  
 - `/workspace/research/solo-leveling-api-integrations.md`  
