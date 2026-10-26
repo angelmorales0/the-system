@@ -63,6 +63,67 @@ MODEL_SECONDS = 100.0
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 logger = logging.getLogger("quests")
 
+# Structured output: the API returns JSON in exactly this shape, so field names, stats, and methods cannot drift.
+# Ranges (xp 5-200, id length, title length) are not schema features; validate_bundle still checks them.
+QUEST_PARAMS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "exercise": {"type": "string", "description": "Hevy exercise name without equipment"},
+        "sets": {"type": "integer"},
+        "minReps": {"type": "integer"},
+        "minWeightKg": {"type": "number", "description": "Only for a lift with logged history"},
+        "minDurationSec": {"type": "number"},
+        "types": {"type": "array", "items": {"type": "string"}},
+        "minDistanceMeters": {"type": "number", "enum": [5000, 10000]},
+        "activityType": {"type": "string"},
+        "minSec": {"type": "number"},
+        "label": {"type": "string"},
+        "prompt": {"type": "string"},
+    },
+    "required": [],
+    "additionalProperties": False,
+}
+QUEST_BUNDLE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "schemaVersion": {"type": "integer", "enum": [1]},
+        "dayKey": {"type": "string", "description": "player.localDate"},
+        "mode": {"type": "string", "enum": sorted(MODES)},
+        "headerLine": {"type": "string"},
+        "narrative": {"type": "string"},
+        "quests": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "8-64 characters, unique, e.g. bench_press_main"},
+                    "title": {"type": "string", "description": "3-48 characters"},
+                    "kind": {"type": "string", "enum": ["daily", "optional"]},
+                    "stat": {"type": "string", "enum": sorted(STATS), "description": "STR for lifts, END for runs"},
+                    "verification": {
+                        "type": "object",
+                        "properties": {"method": {"type": "string", "enum": sorted(METHODS)}, "params": QUEST_PARAMS_SCHEMA},
+                        "required": ["method", "params"],
+                        "additionalProperties": False,
+                    },
+                    "xp": {"type": "integer", "description": "5-200; about 25 for a main lift, 15 for an accessory, 40 for a 10K"},
+                    "difficulty": {"type": "string", "enum": ["easy", "normal", "hard"]},
+                    "progress": {
+                        "type": "object",
+                        "properties": {"target": {"type": "number"}, "unit": {"type": "string", "enum": ["sets", "km", "min", "session"]}},
+                        "required": ["target", "unit"],
+                        "additionalProperties": False,
+                    },
+                },
+                "required": ["id", "title", "kind", "stat", "verification", "xp", "difficulty", "progress"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["schemaVersion", "dayKey", "mode", "headerLine", "narrative", "quests"],
+    "additionalProperties": False,
+}
+
 SYSTEM_PROMPT = """You are The System, a strength and running coach. Write today's quests as JSON matching QuestBundle.
 
 Goals, in order:
@@ -295,6 +356,7 @@ def claude_or_none(context: dict[str, Any]) -> dict[str, Any] | None:
         locked = (context.get("modeDecision") or {}).get("selectedMode")
         if raw.get("mode") != locked:
             feedback = [f"mode must be {locked}"]
+            logger.info("Plan rejected: %s", feedback[0])
             continue
         local_date = (context.get("player") or {}).get("localDate")
         if raw.get("dayKey") not in (None, local_date):
@@ -305,6 +367,7 @@ def claude_or_none(context: dict[str, Any]) -> dict[str, Any] | None:
         feedback = validate_bundle(candidate, context)
         if not feedback:
             return candidate
+        logger.info("Plan rejected: %s", "; ".join(feedback))
     return None
 
 
@@ -327,7 +390,7 @@ def claude_request(context: dict[str, Any], feedback: list[str] | None = None) -
         "max_tokens": 16000,
         "system": SYSTEM_PROMPT,
         "thinking": {"type": "adaptive"},
-        "output_config": {"effort": EFFORT},
+        "output_config": {"effort": EFFORT, "format": {"type": "json_schema", "schema": QUEST_BUNDLE_SCHEMA}},
         "betas": [FALLBACK_BETA],
         "fallbacks": "default",
         "messages": [{"role": "user", "content": content}],
@@ -415,6 +478,12 @@ def sanitize(bundle: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
             row["xp"] = int(xp)
         if mode in MODES:
             row["mode"] = mode
+        if isinstance(day, str):
+            # The app decodes a deadline and expects day-scoped ids, as the template writes them.
+            row["deadline"] = f"{day}T23:59:59Z"
+            identifier = str(row.get("id") or "")
+            if identifier and not identifier.startswith("q_"):
+                row["id"] = f"q_{day}_{identifier}"[:64]
         # A run reads only its distance; the player sets the pace.
         params = (row.get("verification") or {}).get("params") or {}
         if is_training_row(row) and isinstance(params, dict) and params.get("minDistanceMeters") in RUN_METERS and row.get("kind") != "penalty":
@@ -1037,7 +1106,8 @@ def claude_checks() -> None:
     body = sample_request()
     first = claude_request(body)
     retry = claude_request(body, ["Bench Press is declining; do not add weight above the last top set"])
-    if first["model"] != "claude-opus-5-5" or first["thinking"] != {"type": "adaptive"} or first["output_config"] != {"effort": "high"}:
+    if first["model"] != "claude-opus-5-5" or first["thinking"] != {"type": "adaptive"} or first["output_config"].get("effort") != "high" \
+            or first["output_config"].get("format", {}).get("schema") is not QUEST_BUNDLE_SCHEMA:
         raise SystemExit(f"the request should use Opus 5.5 with adaptive thinking at high effort, got {first}")
     if first["fallbacks"] != "default" or first["betas"] != ["server-side-fallback-2026-07-01"] or "temperature" in first:
         raise SystemExit("the request should opt into default fallbacks and send no sampling settings")
