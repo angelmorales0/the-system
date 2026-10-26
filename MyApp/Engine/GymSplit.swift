@@ -1,11 +1,13 @@
 import Foundation
 
 /// A 5-day split: upper, lower, upper, lower, then an arms day, built around the STR targets and 5 10Ks a week.
+/// Overhead press comes twice (heavy on Press Day, light the next day on Deadlift Day); bench press once, heavy.
+/// Dead hangs come 3 times (Squat, Press, and Arms Day), never on Deadlift Day, so grip gets a day off between hard pulls.
 /// Lateral raises and curls, the current focus, come 3 times a rotation (Bench, Press, and Arms Day), never on a leg day.
 /// Pull-ups, the main goal (20 strict reps), also come 3 times, each with its own job: volume on Bench Day,
-/// weighted strength on Press Day, and a max-effort set on Arms Day. The light rows left Deadlift Day to make room. Bench press, rows, and squats come twice
-/// (heavy and light). Deadlift and overhead press come once: the deadlift is the most tiring lift next to the running,
-/// and bench and handstand push-ups train the press muscles again.
+/// weighted strength on Press Day, and a max-effort set on Arms Day. Squats come twice (heavy and light).
+/// Rows and the deadlift come once: the deadlift is the most tiring lift next to the running.
+/// Pistol squats and handstand push-ups are optional rows, done at home on a good day: one per day at most.
 /// The fifth day is upper body with no pressing, so it does not tire the chest before the next Bench Day.
 /// The two lower days are the only heavy leg days, two days apart, so the split stays inside the heavy-leg limits
 /// next to the running. A third leg day would cost the runs more than it gives the lifts.
@@ -72,6 +74,7 @@ enum GymSplit {
         // Sets count both legs: 2 per leg.
         lift("Bulgarian Split Squat", .accessory, 4, 8...12, target: "Bulgarian split squat", aliases: StrengthLevel.bulgarianSplitSquat.aliases),
         lift("Toes To Bar", .accessory, 3, 5...10, target: "Toes-to-bar", aliases: StrengthLevel.toesToBar.aliases),
+        hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
         // Optional and last: done at home on a good day, so the gym session stays short next to the running.
         lift("Pistol Squat", .accessory, 6, 3...10, target: "Pistol squats", aliases: StrengthLevel.pistolAliases, optional: true,
              note: "Optional. Do them at home only if your legs feel good. Skipping them never misses the day."),
@@ -82,16 +85,19 @@ enum GymSplit {
         lift("Pull Up", .main, 5, 3...5, target: "Pull-ups", aliases: StrengthLevel.pullUps.aliases, note: pullUpStrength),
         lift("Lateral Raise", .accessory, 4, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
         lift("Bicep Curl", .accessory, 4, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
-        lift("Bench Press", .light, 3, 6...8, target: "Bench press", aliases: StrengthLevel.bench.aliases),
-        lift("Handstand Push Up", .accessory, 3, 1...5, target: "Handstand push-ups", aliases: StrengthLevel.handstandPushUps.aliases),
+        hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
+        // Optional and last, like the pistol squats: done at home if there is time.
+        lift("Handstand Push Up", .accessory, 3, 1...5, target: "Handstand push-ups", aliases: StrengthLevel.handstandPushUps.aliases, optional: true,
+             note: "Optional. Do them at home if you have time. Skipping them never misses the day."),
     ])
 
-    static let deadlift = Day(id: "deadlift", name: "Deadlift Day", focus: "Lower body and back: deadlift, grip, and core", lowerBody: true, exercises: [
+    static let deadlift = Day(id: "deadlift", name: "Deadlift Day", focus: "Lower body: deadlift and light squat, plus light overhead press, grip, and core", lowerBody: true, exercises: [
         lift("Deadlift", .main, 3, 1...5, target: "Deadlift", aliases: StrengthLevel.deadlift.aliases),
         lift("Squat", .light, 3, 8...8, target: "Squat", aliases: StrengthLevel.squat.aliases),
+        // The day after the heavy press: practice at a light weight.
+        lift("Overhead Press", .light, 3, 7...8, target: "Overhead press", aliases: StrengthLevel.overheadPress.aliases),
         hold("Farmers Walk", 3, seconds: 60, target: "Farmer's carry", aliases: StrengthLevel.farmerAliases),
         lift("Toes To Bar", .accessory, 3, 5...10, target: "Toes-to-bar", aliases: StrengthLevel.toesToBar.aliases),
-        hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
     ])
 
     static let arms = Day(id: "arms", name: "Arms Day", focus: "Pull-ups first while fresh, then side delts, biceps, grip, and core. No pressing", lowerBody: false, exercises: [
@@ -228,8 +234,8 @@ enum GymSplit {
         // Days a rotation that train each target. The focus targets come 3 times; the hardest lifts once.
         let expectedDays: [String: Int] = [
             "Lateral raise": 3, "Dumbbell curl": 3, "Toes-to-bar": 3,
-            "Pull-ups": 3, "Bench press": 2, "Squat": 2, "Dead hang": 2, "Barbell row": 1,
-            "Deadlift": 1, "Overhead press": 1, "Weighted dips": 1, "Handstand push-ups": 1,
+            "Pull-ups": 3, "Dead hang": 3, "Squat": 2, "Overhead press": 2, "Barbell row": 1,
+            "Deadlift": 1, "Bench press": 1, "Weighted dips": 1, "Handstand push-ups": 1,
             "Bulgarian split squat": 1, "Pistol squats": 1, "Farmer's carry": 1,
         ]
         for target in targets {
@@ -304,6 +310,16 @@ enum GymSplit {
         }
         if skipped.missesRequiredSet {
             errors.append("skipping only the optional pistol squats should not miss the day")
+        }
+
+        // Optional rows: pistol squats and handstand push-ups only, last in their day, and one per day at most.
+        let optionalTargets = rotation.flatMap { $0.exercises.filter(\.optional).map(\.target) }.sorted()
+        if optionalTargets != ["Handstand push-ups", "Pistol squats"] {
+            errors.append("only pistol squats and handstand push-ups should be optional, got \(optionalTargets)")
+        }
+        for day in rotation where day.exercises.filter(\.optional).count > MorningConstraints.standard.maxOptionalQuests
+            || day.exercises.dropLast().contains(where: \.optional) {
+            errors.append("\(day.name) should have at most \(MorningConstraints.standard.maxOptionalQuests) optional row, and only last")
         }
 
         // Pull-ups: three sessions, three jobs. Weighted strength is the only heavy one.
