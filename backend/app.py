@@ -129,7 +129,7 @@ SYSTEM_PROMPT = """You are The System, a strength and running coach. Write today
 Goals, in order:
 1. Reach the strength targets in trainingHistory.strengthTargets (goal, bestE1rmLb, gapLb). Spend the most work on the biggest gaps that were not trained recently.
 2. Keep at least goals.runKmPer7Days km of running in every 7-day window, today included. trainingHistory.runWindow says what today needs: runsToday lists the runs to write (5K and 10K quests).
-   goals.focus lists the targets to put first right now (lateral raises and biceps). The split trains them 3 times a rotation with the most sets: never drop them for time or readiness, and progress them first.
+   goals.focus lists the targets to put first right now (lateral raises and biceps). The split trains them 4 times a rotation with the most sets: never drop them for time or readiness, and progress them first.
 3. Reach the body weight target in goals.bodyWeight. Do not write nutrition quests for it; it only informs how hard to push.
 
 Read the context before you plan:
@@ -142,7 +142,7 @@ Read the context before you plan:
 Progression (pick loads from the logged sets, never guess):
 - Main lifts (squat, deadlift, bench press, overhead press, barbell row, pull-ups, dips): one top set at RPE 8, then 2-3 back-off sets at about 90% of the top set. If the last session's top set reached its reps at RPE 8 or lower, add 2.5 kg for upper-body lifts and 5 kg for squat and deadlift. At RPE 9, repeat the weight. At RPE 10 or a missed rep, drop 5%.
 - Accessories (lateral raise, curls, Bulgarian split squat, and other lifts): double progression in an 8-12 rep range. Add reps until every set reaches 12, then add the smallest weight step and go back to 8.
-- The split trains bench press, rows, and squats twice a rotation, lateral raises and curls three times, and deadlift and overhead press once.
+- The split has 5 days: Bench Day, Squat Day, Press Day, Deadlift Day, Arms Day. It trains lateral raises and curls 4 times a rotation; bench press, rows, and squats twice (heavy and light); and deadlift and overhead press once. Arms Day has no pressing.
 - No data yet: if trainingHistory.lifts has no entry for an exercise, write only sets and minReps, with no minWeightKg and no weight in the title (e.g. "Squat 4x3-5"). The player picks the weight and logs it in Hevy. In the narrative, say to pick a weight that leaves about 2 reps in reserve at the top of the range. From the first logged session on, set loads from the log.
 - Write exact loads once an exercise has history. Title: "Squat 3x5 @ 265 lb". Params: exercise (the Hevy name without equipment, e.g. "Squat"), sets, minReps, minWeightKg (the working weight in kg, rounded down to 2.5 kg). Unit "sets".
 
@@ -1167,7 +1167,7 @@ def claude_checks() -> None:
 
 def split_checks() -> None:
     body = sample_request()
-    body["split"] = {"name": "4-day upper/lower", "rotation": ["Bench Day", "Squat Day"], "today": SAMPLE_SPLIT_DAY, "lastDone": {}}
+    body["split"] = {"name": "5-day upper/lower + arms", "rotation": ["Bench Day", "Squat Day"], "today": SAMPLE_SPLIT_DAY, "lastDone": {}}
     body["trainingHistory"] = {"lifts": {}, "strengthSessions": []}
     day = template_bundle(body)
     titles = [row["title"] for row in day["quests"]]

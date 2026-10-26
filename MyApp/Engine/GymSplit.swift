@@ -1,14 +1,15 @@
 import Foundation
 
-/// A 4-day upper/lower split built around the STR targets and 5 10Ks a week.
-/// Every muscle group is trained twice a rotation; lateral raises and curls, the current focus, three times.
-/// Bench press, rows, and squats come twice (heavy and light). Deadlift and overhead press come once:
-/// the deadlift is the most tiring lift next to the running, and bench and handstand push-ups train the press muscles again.
-/// The two lower days are the only heavy leg days,
-/// so the split stays inside the heavy-leg limits next to the running.
+/// A 5-day split: upper, lower, upper, lower, then an arms day, built around the STR targets and 5 10Ks a week.
+/// Lateral raises and curls, the current focus, come 4 times a rotation. Bench press, rows, and squats come twice
+/// (heavy and light). Deadlift and overhead press come once: the deadlift is the most tiring lift next to the running,
+/// and bench and handstand push-ups train the press muscles again.
+/// The fifth day is upper body with no pressing, so it does not tire the chest before the next Bench Day.
+/// The two lower days are the only heavy leg days, two days apart, so the split stays inside the heavy-leg limits
+/// next to the running. A third leg day would cost the runs more than it gives the lifts.
 /// Days run in order. A day moves on only after one of its lifts is done, so a missed day comes back next.
 enum GymSplit {
-    static let name = "4-day upper/lower"
+    static let name = "5-day upper/lower + arms"
 
     enum Role: String, Codable, Equatable {
         /// The day's heavy lift: one top set at RPE 8, then back-off sets.
@@ -54,10 +55,9 @@ enum GymSplit {
     static let bench = Day(id: "bench", name: "Bench Day", focus: "Upper body: chest, back, side delts, biceps", lowerBody: false, exercises: [
         lift("Bench Press", .main, 4, 3...5, target: "Bench press", aliases: StrengthLevel.bench.aliases),
         lift("Bent Over Row", .main, 4, 5...8, target: "Barbell row", aliases: StrengthLevel.row.aliases),
-        lift("Lateral Raise", .accessory, 4, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
-        lift("Bicep Curl", .accessory, 4, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
-        lift("Pull Up", .accessory, 3, 5...20, target: "Pull-ups", aliases: StrengthLevel.pullUps.aliases),
         lift("Chest Dip", .accessory, 3, 5...8, target: "Weighted dips", aliases: StrengthLevel.dips.aliases),
+        lift("Lateral Raise", .accessory, 4, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
+        lift("Bicep Curl", .accessory, 3, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
     ])
 
     static let squat = Day(id: "squat", name: "Squat Day", focus: "Lower body: squat and single-leg work, plus side delts and biceps", lowerBody: true, exercises: [
@@ -88,13 +88,22 @@ enum GymSplit {
         hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
     ])
 
-    /// The player's top focus right now. Each is trained 3 times a rotation, and is never dropped for time.
+    static let arms = Day(id: "arms", name: "Arms Day", focus: "Side delts and biceps, plus pull-ups, grip, and core. No pressing", lowerBody: false, exercises: [
+        lift("Lateral Raise", .accessory, 5, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
+        lift("Bicep Curl", .accessory, 5, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
+        lift("Pull Up", .accessory, 3, 5...20, target: "Pull-ups", aliases: StrengthLevel.pullUps.aliases),
+        lift("Toes To Bar", .accessory, 3, 5...10, target: "Toes-to-bar", aliases: StrengthLevel.toesToBar.aliases),
+        hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
+    ])
+
+    /// The player's top focus right now. Each is trained 4 times a rotation, and is never dropped for time.
     static let focusTargets = ["Lateral raise", "Dumbbell curl"]
     /// At most this many lifts a day, so a day with two 10Ks still fits the quest limits.
     static let maxExercisesPerDay = 6
 
     /// Upper and lower alternate, so lifting on back-to-back days never puts two leg days together.
-    static let rotation = [bench, squat, press, deadlift]
+    /// Arms Day ends the rotation: it is upper body with no pressing, so the next Bench Day starts fresh.
+    static let rotation = [bench, squat, press, deadlift, arms]
 
     static func day(named name: String) -> Day? {
         rotation.first { $0.name == name }
@@ -189,8 +198,11 @@ enum GymSplit {
         if !trained.isSubset(of: targets) || trained != targets {
             errors.append("the split should train exactly the STR targets, missing \(targets.subtracting(trained).sorted()), extra \(trained.subtracting(targets).sorted())")
         }
-        if rotation.map(\.lowerBody) != [false, true, false, true] {
-            errors.append("upper and lower days should alternate")
+        if rotation.map(\.lowerBody) != [false, true, false, true, false] {
+            errors.append("the split should run upper, lower, upper, lower, arms")
+        }
+        if arms.exercises.contains(where: { ["Bench press", "Overhead press", "Weighted dips", "Handstand push-ups"].contains($0.target) }) {
+            errors.append("Arms Day must not press, so the next Bench Day starts fresh")
         }
         for day in rotation where day.exercises.count > maxExercisesPerDay {
             errors.append("\(day.name) should have at most \(maxExercisesPerDay) exercises so the day fits the quest limits")
@@ -198,11 +210,16 @@ enum GymSplit {
         if maxExercisesPerDay + NoGymDay.runCount > MorningConstraints.standard.maxRequiredQuests || maxExercisesPerDay + NoGymDay.runCount > QuestSafety.maxQuests {
             errors.append("a full split day with two 10Ks should fit the quest limits")
         }
-        // Each target twice a rotation; the focus targets three times. The lifts below once, for the reasons above.
-        let once: Set<String> = ["Deadlift", "Overhead press", "Pistol squats", "Farmer's carry", "Weighted dips", "Dead hang", "Handstand push-ups", "Bulgarian split squat"]
+        // Days a rotation that train each target. The focus targets come 4 times; the hardest lifts once.
+        let expectedDays: [String: Int] = [
+            "Lateral raise": 4, "Dumbbell curl": 4, "Toes-to-bar": 3,
+            "Bench press": 2, "Barbell row": 2, "Squat": 2, "Pull-ups": 2, "Dead hang": 2,
+            "Deadlift": 1, "Overhead press": 1, "Weighted dips": 1, "Handstand push-ups": 1,
+            "Bulgarian split squat": 1, "Pistol squats": 1, "Farmer's carry": 1,
+        ]
         for target in targets {
             let count = rotation.filter { day in day.exercises.contains { $0.target == target } }.count
-            let expected = focusTargets.contains(target) ? 3 : once.contains(target) ? 1 : 2
+            let expected = expectedDays[target] ?? -1
             if count != expected {
                 errors.append("\(target) should be trained \(expected) times a rotation, got \(count)")
             }
@@ -245,8 +262,12 @@ enum GymSplit {
         finishDay(&snapshot, lift: true, dayOffset: 3)
         finishDay(&snapshot, lift: true, dayOffset: 4)
         finishDay(&snapshot, lift: true, dayOffset: 5)
+        if snapshot.bundle.headerLine != "Arms Day" {
+            errors.append("after Deadlift Day the split should move to Arms Day, got \(snapshot.bundle.headerLine)")
+        }
+        finishDay(&snapshot, lift: true, dayOffset: 6)
         if snapshot.bundle.headerLine != "Bench Day" {
-            errors.append("after Deadlift Day the split should start again at Bench Day, got \(snapshot.bundle.headerLine)")
+            errors.append("after Arms Day the split should start again at Bench Day, got \(snapshot.bundle.headerLine)")
         }
         if lastDone(history: snapshot.questHistory)["Squat Day"] != QuestDay.key(for: now.addingTimeInterval(2 * 86_400)) {
             errors.append("the last Squat Day should be the one that was done, got \(lastDone(history: snapshot.questHistory))")
