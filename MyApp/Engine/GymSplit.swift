@@ -1,7 +1,7 @@
 import Foundation
 
 /// A 5-day split: upper, lower, upper, lower, then an arms day, built around the STR targets and 5 10Ks a week.
-/// Lateral raises and curls, the current focus, come 4 times a rotation. Bench press, rows, and squats come twice
+/// Lateral raises and curls, the current focus, come 3 times a rotation (Bench, Press, and Arms Day), never on a leg day. Bench press, rows, and squats come twice
 /// (heavy and light). Deadlift and overhead press come once: the deadlift is the most tiring lift next to the running,
 /// and bench and handstand push-ups train the press muscles again.
 /// The fifth day is upper body with no pressing, so it does not tire the chest before the next Bench Day.
@@ -60,12 +60,10 @@ enum GymSplit {
         lift("Bicep Curl", .accessory, 3, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
     ])
 
-    static let squat = Day(id: "squat", name: "Squat Day", focus: "Lower body: squat and single-leg work, plus side delts and biceps", lowerBody: true, exercises: [
+    static let squat = Day(id: "squat", name: "Squat Day", focus: "Lower body: squat, single-leg work, and core", lowerBody: true, exercises: [
         lift("Squat", .main, 4, 1...5, target: "Squat", aliases: StrengthLevel.squat.aliases),
-        // Sets count both legs: 3 per leg.
-        lift("Bulgarian Split Squat", .accessory, 6, 8...12, target: "Bulgarian split squat", aliases: StrengthLevel.bulgarianSplitSquat.aliases),
-        lift("Lateral Raise", .accessory, 3, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
-        lift("Bicep Curl", .accessory, 3, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
+        // Sets count both legs: 2 per leg.
+        lift("Bulgarian Split Squat", .accessory, 4, 8...12, target: "Bulgarian split squat", aliases: StrengthLevel.bulgarianSplitSquat.aliases),
         lift("Pistol Squat", .accessory, 6, 3...10, target: "Pistol squats", aliases: StrengthLevel.pistolAliases),
         lift("Toes To Bar", .accessory, 3, 5...10, target: "Toes-to-bar", aliases: StrengthLevel.toesToBar.aliases),
     ])
@@ -96,7 +94,7 @@ enum GymSplit {
         hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
     ])
 
-    /// The player's top focus right now. Each is trained 4 times a rotation, and is never dropped for time.
+    /// The player's top focus right now. Each is trained 3 times a rotation, and is never dropped for time.
     static let focusTargets = ["Lateral raise", "Dumbbell curl"]
     /// At most this many lifts a day, so a day with two 10Ks still fits the quest limits.
     static let maxExercisesPerDay = 6
@@ -210,9 +208,9 @@ enum GymSplit {
         if maxExercisesPerDay + NoGymDay.runCount > MorningConstraints.standard.maxRequiredQuests || maxExercisesPerDay + NoGymDay.runCount > QuestSafety.maxQuests {
             errors.append("a full split day with two 10Ks should fit the quest limits")
         }
-        // Days a rotation that train each target. The focus targets come 4 times; the hardest lifts once.
+        // Days a rotation that train each target. The focus targets come 3 times; the hardest lifts once.
         let expectedDays: [String: Int] = [
-            "Lateral raise": 4, "Dumbbell curl": 4, "Toes-to-bar": 3,
+            "Lateral raise": 3, "Dumbbell curl": 3, "Toes-to-bar": 3,
             "Bench press": 2, "Barbell row": 2, "Squat": 2, "Pull-ups": 2, "Dead hang": 2,
             "Deadlift": 1, "Overhead press": 1, "Weighted dips": 1, "Handstand push-ups": 1,
             "Bulgarian split squat": 1, "Pistol squats": 1, "Farmer's carry": 1,
