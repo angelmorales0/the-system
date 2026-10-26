@@ -14,11 +14,17 @@ enum PenaltyRules {
 
         var missed = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
         missed.refreshIfNeeded(catalog: catalog, now: dayTwo)
-        if missed.player.penaltyTier != 1 || missed.bundle.mode != .penalty {
-            errors.append("a missed required day should open penalty tier 1, got tier \(missed.player.penaltyTier) \(missed.bundle.mode.rawValue)")
+        if missed.player.penaltyTier != 1 || missed.bundle.mode != .performanceTraining {
+            errors.append("a missed required day should open penalty tier 1 on a normal day, got tier \(missed.player.penaltyTier) \(missed.bundle.mode.rawValue)")
         }
-        if missed.bundle.headerLine != "Penalty Quest" {
-            errors.append("penalty morning should use the fallback header")
+        if missed.bundle.quests.first?.kind != .penalty || missed.bundle.quests.first?.id != "q_2026-10-02_penalty_pen" {
+            errors.append("penalty quests should come first, got \(missed.bundle.quests.map(\.id))")
+        }
+        if !missed.bundle.quests.contains(where: { $0.title == "Run" }) || missed.bundle.headerLine != "Performance Training" {
+            errors.append("the day's own quests should stay under the penalty quests")
+        }
+        if !missed.penaltyOpen {
+            errors.append("an open penalty quest should keep the phone locked")
         }
         missed.refreshIfNeeded(catalog: catalog, now: dayThree)
         missed.refreshIfNeeded(catalog: catalog, now: dayFour)
@@ -52,6 +58,14 @@ enum PenaltyRules {
             errors.append("a Full Recovery day must not open a penalty, got tier \(rested.player.penaltyTier)")
         }
 
+        var owed = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
+        owed.player.penaltyTier = 2
+        owed.signals.spendingFullRecovery = true
+        owed.rebuildForTest(catalog: catalog, now: dayOne)
+        if owed.bundle.quests.contains(where: { $0.kind == .penalty }) || owed.penaltyOpen {
+            errors.append("a Full Recovery day should not add penalty quests")
+        }
+
         var banked = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
         banked.player.fullRecoveryBank = 1
         let assigned = banked.spendFullRecovery(catalog: catalog, now: dayOne)
@@ -83,18 +97,24 @@ enum PenaltyRules {
         cleared.rebuildForTest(catalog: catalog, now: dayOne)
         let beforeXP = cleared.player.xp
         let quest = cleared.bundle.quests[0]
-        _ = cleared.apply(.completed(evidence: evidence("pen")), questId: quest.id, now: dayOne)
-        if cleared.player.penaltyTier != 0 {
-            errors.append("finishing every penalty quest should drop the tier")
+        if quest.kind != .penalty {
+            errors.append("a penalty tier should add penalty quests to the day")
         }
-        let taxed = GameSnapshot.xpGrant(for: quest, mode: .penalty)
+        _ = cleared.apply(.completed(evidence: evidence("pen")), questId: quest.id, now: dayOne)
+        if cleared.player.penaltyTier != 0 || cleared.penaltyOpen {
+            errors.append("finishing every penalty quest should drop the tier and unlock the phone")
+        }
+        if !cleared.missesRequiredSet {
+            errors.append("the day's own quests should still be due after the penalty clears")
+        }
+        let taxed = GameSnapshot.xpGrant(for: quest, mode: .performanceTraining)
         if taxed != 27 || cleared.bundle.quests[0].grantedXP != taxed {
             errors.append("penalty XP should be 0.9× once, got grant \(taxed) stored \(cleared.bundle.quests[0].grantedXP)")
         }
         if cleared.player.xp != beforeXP + taxed {
             errors.append("the 0.9× tax should be applied once")
         }
-        if GameSnapshot.xpGrant(for: quest, mode: .penalty) != taxed {
+        if GameSnapshot.xpGrant(for: quest, mode: .performanceTraining) != taxed {
             errors.append("asking for the grant again should not compound the tax")
         }
         cleared.undoQuest(id: quest.id)

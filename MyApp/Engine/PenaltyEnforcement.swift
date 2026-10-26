@@ -13,8 +13,12 @@ enum PenaltyGroup {
     static let penaltyActiveKey = "penaltyActive"
     static let selectionKey = "familyActivitySelection"
     static let startedAtKey = "penaltyStartedAt"
+    /// The quest day whose required set is still open. The monitor locks the phone at 5:00 when this day has ended.
+    static let openDayKey = "penaltyOpenDayKey"
     static let storeName = "penalty"
     static let activityName = "penalty"
+    /// Starts every day at `QuestDay.startHour`, so a missed day locks the phone even if the app stays closed.
+    static let dawnActivityName = "penaltyDawn"
     /// ActivityKit removes a Live Activity after about 8 hours. Shields are separate and stay up.
     static let liveActivityLimit: TimeInterval = 8 * 60 * 60
 
@@ -49,11 +53,19 @@ enum PenaltySelectionStore {
     #endif
 }
 
-/// Foreground-only. The Device Activity monitor cannot reliably start a Live Activity.
+/// A penalty locks every app and website. iOS keeps calls and emergency SOS open, and it does not let an app
+/// block the Lock Screen or the Settings app. The Live Activity is foreground-only: the monitor cannot reliably start one.
 enum PenaltyEnforcement {
-    static func sync(penaltyVisible: Bool, tier: Int, questTitle: String, dayKey: String) {
+    /// `openDayKey` is the quest day whose required set is still open, or nil when it is done or waived.
+    static func sync(penaltyVisible: Bool, tier: Int, questTitle: String, dayKey: String, openDayKey: String?) {
         #if os(iOS)
         let defaults = PenaltyGroup.defaults
+        if let openDayKey {
+            defaults.set(openDayKey, forKey: PenaltyGroup.openDayKey)
+        } else {
+            defaults.removeObject(forKey: PenaltyGroup.openDayKey)
+        }
+        scheduleDawnCheck()
         if tier == 0 || !penaltyVisible {
             defaults.set(false, forKey: PenaltyGroup.penaltyActiveKey)
             if tier == 0 {
@@ -75,23 +87,29 @@ enum PenaltyEnforcement {
             await startOrUpdateLiveActivity(questTitle: questTitle, tier: tier, dayKey: dayKey, startedAt: started)
         }
         #else
-        _ = (penaltyVisible, tier, questTitle, dayKey)
+        _ = (penaltyVisible, tier, questTitle, dayKey, openDayKey)
         #endif
     }
 
     #if os(iOS)
+    /// Every app category and website, not only the distractor selection. The app cannot be deleted while it holds.
     private static func applyShields() {
-        let selection = PenaltySelectionStore.load()
         let store = ManagedSettingsStore(named: .init(PenaltyGroup.storeName))
-        store.shield.applications = selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
-        store.shield.webDomains = selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens
-        if selection.categoryTokens.isEmpty {
-            store.shield.applicationCategories = nil
-            store.shield.webDomainCategories = nil
-        } else {
-            store.shield.applicationCategories = .specific(selection.categoryTokens)
-            store.shield.webDomainCategories = .specific(selection.categoryTokens)
-        }
+        store.shield.applications = nil
+        store.shield.webDomains = nil
+        store.shield.applicationCategories = .all()
+        store.shield.webDomainCategories = .all()
+        store.application.denyAppRemoval = true
+    }
+
+    /// A daily 15-minute window from 5:00. Its start runs the monitor, which locks the phone after a missed day.
+    private static func scheduleDawnCheck() {
+        let schedule = DeviceActivitySchedule(
+            intervalStart: DateComponents(hour: QuestDay.startHour, minute: 0),
+            intervalEnd: DateComponents(hour: QuestDay.startHour, minute: 15),
+            repeats: true
+        )
+        try? DeviceActivityCenter().startMonitoring(DeviceActivityName(PenaltyGroup.dawnActivityName), during: schedule)
     }
 
     private static func clearShields() {

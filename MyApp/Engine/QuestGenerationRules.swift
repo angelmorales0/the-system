@@ -23,8 +23,8 @@ enum QuestGenerationRules {
 
         snapshot.player.penaltyTier = 1
         let penalty = ContextBuilder.make(snapshot: snapshot, now: now)
-        if penalty.modeDecision.selectedMode != .penalty || penalty.modeDecision.lockedByRules != true {
-            errors.append("penalty tier should lock penalty mode")
+        if penalty.modeDecision.selectedMode != .performanceTraining || penalty.modeDecision.lockedByRules != true {
+            errors.append("a penalty tier should keep the day's own mode: penalty quests are added on top")
         }
         snapshot.player.penaltyTier = 0
         snapshot.signals.spendingFullRecovery = true

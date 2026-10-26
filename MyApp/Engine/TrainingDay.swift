@@ -1,6 +1,6 @@
 import Foundation
 
-/// A Training day is exercise only: runs, walks, and lifts, plus the fixed Stretching row.
+/// A Training day is exercise only: runs, walks, and lifts, plus the fixed Stretching row and any penalty quests.
 /// The catalog follows this already; generated bundles are filtered here, so a model cannot add
 /// protein, spending, or a specific stretch such as Splits to a Training day.
 enum TrainingDay {
@@ -12,8 +12,8 @@ enum TrainingDay {
         guard bundle.mode == .performanceTraining else { return bundle }
         var copy = bundle
         copy.headerLine = header
-        copy.quests = bundle.quests.filter { isExercise($0) }
-        return copy.quests.contains(where: { $0.kind != .optional }) ? copy : nil
+        copy.quests = bundle.quests.filter { $0.kind == .penalty || isExercise($0) }
+        return copy.quests.contains(where: { $0.kind != .optional && $0.kind != .penalty }) ? copy : nil
     }
 
     static func isExercise(_ quest: Quest) -> Bool {

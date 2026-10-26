@@ -4,13 +4,18 @@ import FamilyControls
 import ManagedSettings
 import UserNotifications
 
-/// Re-asserts distractor shields while a penalty is active. It does not start a Live Activity.
+/// Re-asserts the all-app penalty lock while a penalty is active. It does not start a Live Activity.
+/// At 5:00 it locks the phone if the quest day that just ended left its required set open, even when the app is closed.
 /// Interval end does not lift shields; only the main app clears them after the penalty quests are done.
 /// It also runs the bedtime emergency: distractor use after bedtime locks every app, and the release schedule lifts it.
 /// This target is `nonisolated`. If the SDK marks these overrides isolated, drop the `nonisolated` keyword.
 class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
     nonisolated override func intervalDidStart(for activity: DeviceActivityName) {
         if EmergencyMonitor.isEmergency(activity) { return }
+        if activity.rawValue == PenaltyMonitorGroup.dawnActivity {
+            PenaltyMonitorShields.lockIfDayMissed(now: Date())
+            return
+        }
         PenaltyMonitorShields.reassert()
     }
 
@@ -19,7 +24,7 @@ class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
             EmergencyMonitor.endLockdown()
             return
         }
-        if EmergencyMonitor.isEmergency(activity) { return }
+        if EmergencyMonitor.isEmergency(activity) || activity.rawValue == PenaltyMonitorGroup.dawnActivity { return }
         PenaltyMonitorShields.reassert()
     }
 
@@ -29,34 +34,67 @@ class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
     }
 }
 
+/// Mirrors `PenaltyGroup` and `QuestDay.startHour` in the app. Keep the strings in step.
 enum PenaltyMonitorGroup {
     static let suiteName = "group.devplaceholder.HDDJMVMX.thesystem"
     static let penaltyActiveKey = "penaltyActive"
-    static let selectionKey = "familyActivitySelection"
+    static let startedAtKey = "penaltyStartedAt"
+    static let openDayKey = "penaltyOpenDayKey"
     static let storeName = "penalty"
+    static let dawnActivity = "penaltyDawn"
+    static let dayStartHour = 5
 }
 
 enum PenaltyMonitorShields {
     nonisolated static func reassert() {
         let defaults = UserDefaults(suiteName: PenaltyMonitorGroup.suiteName) ?? .standard
-        let store = ManagedSettingsStore(named: .init(PenaltyMonitorGroup.storeName))
         guard defaults.bool(forKey: PenaltyMonitorGroup.penaltyActiveKey) else {
-            store.clearAllSettings()
+            ManagedSettingsStore(named: .init(PenaltyMonitorGroup.storeName)).clearAllSettings()
             return
         }
-        guard let data = defaults.data(forKey: PenaltyMonitorGroup.selectionKey),
-              let selection = try? PropertyListDecoder().decode(FamilyActivitySelection.self, from: data) else {
+        lockEverything()
+    }
+
+    /// The app writes the open quest day. If that day ended before this 5:00, the penalty starts now.
+    nonisolated static func lockIfDayMissed(now: Date) {
+        let defaults = UserDefaults(suiteName: PenaltyMonitorGroup.suiteName) ?? .standard
+        guard let openDay = defaults.string(forKey: PenaltyMonitorGroup.openDayKey), openDay < questDayKey(for: now) else {
+            reassert()
             return
         }
-        store.shield.applications = selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
-        store.shield.webDomains = selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens
-        if selection.categoryTokens.isEmpty {
-            store.shield.applicationCategories = nil
-            store.shield.webDomainCategories = nil
-        } else {
-            store.shield.applicationCategories = .specific(selection.categoryTokens)
-            store.shield.webDomainCategories = .specific(selection.categoryTokens)
+        let alreadyActive = defaults.bool(forKey: PenaltyMonitorGroup.penaltyActiveKey)
+        defaults.set(true, forKey: PenaltyMonitorGroup.penaltyActiveKey)
+        if defaults.object(forKey: PenaltyMonitorGroup.startedAtKey) == nil {
+            defaults.set(now.timeIntervalSince1970, forKey: PenaltyMonitorGroup.startedAtKey)
         }
+        lockEverything()
+        guard !alreadyActive else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "PENALTY QUEST"
+        content.body = "Yesterday's daily quest was not completed. Every app is locked until the penalty quest is cleared in The System."
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "penalty-\(openDay)", content: content, trigger: nil))
+    }
+
+    /// Every app category and website. iOS keeps calls and emergency SOS open.
+    nonisolated private static func lockEverything() {
+        let store = ManagedSettingsStore(named: .init(PenaltyMonitorGroup.storeName))
+        store.shield.applications = nil
+        store.shield.webDomains = nil
+        store.shield.applicationCategories = .all()
+        store.shield.webDomainCategories = .all()
+        store.application.denyAppRemoval = true
+    }
+
+    /// Same rule as `QuestDay.key` in the app: before 5:00 is still the day before.
+    nonisolated private static func questDayKey(for date: Date) -> String {
+        let calendar = Calendar.autoupdatingCurrent
+        let local = calendar.component(.hour, from: date) < PenaltyMonitorGroup.dayStartHour
+            ? calendar.date(byAdding: .day, value: -1, to: date) ?? date
+            : date
+        let parts = calendar.dateComponents([.year, .month, .day], from: local)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
     }
 }
 

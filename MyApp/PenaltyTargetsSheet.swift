@@ -11,7 +11,7 @@ struct PenaltyTargetsSheet: View {
     #if os(iOS)
     @State private var selection = PenaltySelectionStore.load()
     #endif
-    @State private var message = "Choose the distractor apps, categories, and sites to shield on a penalty day. This is not a full phone lock."
+    @State private var message = "Choose the distractor apps, categories, and sites to shield during a walk or stretch emergency quest. A penalty locks every app, not only these."
 
     var body: some View {
         NavigationStack {

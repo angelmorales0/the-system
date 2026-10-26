@@ -50,8 +50,7 @@ final class GameStore: ObservableObject {
         self.persistence = persistence
         dayClock = DayClock.resolve(
             current: persistence == .standard ? DayClock.load() : nil,
-            now: .now,
-            boot: DayClock.bootTime()
+            now: .now
         )
         switch persistence {
         case .memory:
@@ -236,7 +235,7 @@ final class GameStore: ObservableObject {
             }
 
             guard settings.stepsEnabled else { return }
-            let startOfDay = QuestDay.calendar.startOfDay(for: now)
+            let startOfDay = QuestDay.interval(for: now).start
             let stepsToday = await HealthKitBridge.steps(from: startOfDay, to: now)
             guard self.emergency == nil else { return }
             if EmergencyRules.shouldTriggerLowSteps(now: now, stepsToday: stepsToday, settings: settings,
@@ -372,7 +371,7 @@ final class GameStore: ObservableObject {
         if snapshot.bundle.dayKey != previousDay {
             verificationNote = nil
         }
-        dayClock = DayClock.resolve(current: dayClock, now: now, boot: DayClock.bootTime())
+        dayClock = DayClock.resolve(current: dayClock, now: now)
         advanceTimers(now: now)
         evaluateConnectedVerifiers(now: now)
         requestGenerationIfNeeded(now: now)
@@ -424,13 +423,14 @@ final class GameStore: ObservableObject {
     }
 
     private func enforcePenalty() {
-        let visible = snapshot.player.penaltyTier > 0 && snapshot.bundle.mode == .penalty
-        let title = snapshot.bundle.quests.first(where: { $0.status != .completed })?.title ?? snapshot.bundle.headerLine
+        let visible = snapshot.penaltyOpen
+        let title = snapshot.bundle.quests.first(where: { $0.kind == .penalty && $0.status != .completed })?.title ?? "Penalty Quest"
         PenaltyEnforcement.sync(
             penaltyVisible: visible,
             tier: snapshot.player.penaltyTier,
             questTitle: title,
-            dayKey: snapshot.bundle.dayKey
+            dayKey: snapshot.bundle.dayKey,
+            openDayKey: snapshot.missesRequiredSet ? snapshot.bundle.dayKey : nil
         )
     }
 
@@ -471,7 +471,7 @@ final class GameStore: ObservableObject {
               let prepared = TrainingDay.exerciseOnly(accepted) else { return }
         var next = snapshot
         next.generatedBundle = prepared
-        next.bundle = DailyStretch.ensure(in: prepared, now: now)
+        next.bundle = next.prepared(prepared, catalog: catalog, now: now)
         snapshot = next
         runningTimersRemoveMissing()
         persist()

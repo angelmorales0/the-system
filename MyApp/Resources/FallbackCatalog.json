@@ -494,7 +494,7 @@
         "green"
       ],
       "headerLine": "Penalty Quest",
-      "narrative": "Yesterday was missed. Clear every penalty row.",
+      "narrative": "The phone is locked until the penalty is cleared. Record workouts on a watch: every other app is blocked.",
       "warnings": [
         "Failure to complete\nthe penalty quest will extend\nthe penalty."
       ],
@@ -505,12 +505,10 @@
           "kind": "penalty",
           "stat": "END",
           "verification": {
-            "method": "strava_activity",
+            "method": "healthkit_workout",
             "params": {
-              "types": [
-                "Run"
-              ],
-              "minMovingTimeSec": 1800
+              "activityType": "running",
+              "minDurationSec": 1800
             }
           },
           "xp": 30,
@@ -544,7 +542,7 @@
           "reward": null
         },
         {
-          "id": "mobility",
+          "id": "penalty_mobility",
           "title": "Mobility",
           "kind": "penalty",
           "stat": "AGI",
@@ -563,26 +561,6 @@
             "unit": "min"
           },
           "reward": null
-        },
-        {
-          "id": "protein",
-          "title": "Protein",
-          "kind": "penalty",
-          "stat": "END",
-          "verification": {
-            "method": "macrofactor_protein",
-            "params": {
-              "minProteinG": 160
-            }
-          },
-          "xp": 20,
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 160,
-            "unit": "g"
-          },
-          "reward": null
         }
       ]
     },
@@ -592,7 +570,7 @@
         "yellow"
       ],
       "headerLine": "Penalty Quest",
-      "narrative": "Penalty day, moderate readiness. Still required.",
+      "narrative": "The phone is locked until the penalty is cleared. Record workouts on a watch: every other app is blocked.",
       "warnings": [
         "Failure to complete\nthe penalty quest will extend\nthe penalty."
       ],
@@ -603,9 +581,10 @@
           "kind": "penalty",
           "stat": "END",
           "verification": {
-            "method": "whoop_strain",
+            "method": "healthkit_workout",
             "params": {
-              "minStrain": 10
+              "activityType": "running",
+              "minDurationSec": 1500
             }
           },
           "xp": 30,
@@ -639,7 +618,7 @@
           "reward": null
         },
         {
-          "id": "mobility",
+          "id": "penalty_mobility",
           "title": "Mobility",
           "kind": "penalty",
           "stat": "AGI",
@@ -658,26 +637,6 @@
             "unit": "min"
           },
           "reward": null
-        },
-        {
-          "id": "protein",
-          "title": "Protein",
-          "kind": "penalty",
-          "stat": "END",
-          "verification": {
-            "method": "macrofactor_protein",
-            "params": {
-              "minProteinG": 160
-            }
-          },
-          "xp": 20,
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 160,
-            "unit": "g"
-          },
-          "reward": null
         }
       ]
     },
@@ -687,7 +646,7 @@
         "red"
       ],
       "headerLine": "Penalty Quest",
-      "narrative": "Penalty day on red readiness. Hard lifting stays off the card.",
+      "narrative": "The phone is locked until the penalty is cleared. Record workouts on a watch: every other app is blocked.",
       "warnings": [
         "Failure to complete\nthe penalty quest will extend\nthe penalty."
       ],
@@ -698,12 +657,10 @@
           "kind": "penalty",
           "stat": "END",
           "verification": {
-            "method": "strava_activity",
+            "method": "healthkit_workout",
             "params": {
-              "types": [
-                "Walk"
-              ],
-              "minMovingTimeSec": 1500
+              "activityType": "walking",
+              "minDurationSec": 1500
             }
           },
           "xp": 25,
@@ -716,7 +673,7 @@
           "reward": null
         },
         {
-          "id": "mobility",
+          "id": "penalty_mobility",
           "title": "Mobility",
           "kind": "penalty",
           "stat": "AGI",
@@ -737,27 +694,7 @@
           "reward": null
         },
         {
-          "id": "protein",
-          "title": "Protein",
-          "kind": "penalty",
-          "stat": "END",
-          "verification": {
-            "method": "macrofactor_protein",
-            "params": {
-              "minProteinG": 160
-            }
-          },
-          "xp": 20,
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 160,
-            "unit": "g"
-          },
-          "reward": null
-        },
-        {
-          "id": "focus_block",
+          "id": "penalty_focus",
           "title": "Focus Block",
           "kind": "penalty",
           "stat": "FOC",

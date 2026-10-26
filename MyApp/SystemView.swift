@@ -287,9 +287,9 @@ struct QuestCheckbox: View {
     }
 }
 
-/// Counts down the quest day: full at power-on, one dash goes dark each 1/28 of the day, empty at midnight.
+/// Counts down the quest day: full at 5:00, one dash goes dark each 1/28 of the day, empty at 5:00 the next morning.
 /// The dashes turn penalty red under 15% of the day left, and the whole ring lights red
-/// once midnight passes with the required set still open.
+/// once the deadline passes with the required set still open.
 private struct QuestSignalRing: View {
     let dayClock: DayClock
     let missesRequiredSet: Bool
@@ -324,9 +324,9 @@ private struct QuestSignalRing: View {
     }
 
     private func accessibilityValue(at now: Date, failed: Bool) -> String {
-        if failed { return "Midnight passed. Daily quest failed." }
+        if failed { return "The day ended. Daily quest failed." }
         let minutes = max(0, Int(dayClock.deadline.timeIntervalSince(now) / 60))
-        return "\(minutes / 60) hours \(minutes % 60) minutes until midnight"
+        return "\(minutes / 60) hours \(minutes % 60) minutes until 5 AM"
     }
 }
 
