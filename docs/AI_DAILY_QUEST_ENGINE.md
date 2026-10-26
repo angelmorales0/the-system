@@ -202,19 +202,18 @@ Run once per local day at first open after `questDayKey` change (or BG refresh ~
 ### 2.2 Deterministic mode picker (before LLM)
 
 ```
-if penaltyTier > 0 and not spending_full_recovery:
-    mode = penalty
-elif user_confirmed_spend_full_recovery:
+if spending_full_recovery:
     mode = full_recovery
-elif weekday == Sunday and whoop.readinessBand == red:
-    mode = recovery  # still offer optional bank quest
-elif activeTarget and whoop.readinessBand != red:
-    mode = hybrid  # or interview_prep if Target.kind forces
-elif whoop.readinessBand == red or sleepPerformance < 60:
-    mode = recovery
 else:
     mode = performance_training
+
+# Readiness and sleep size the Training day. They never pick another mode.
+trainingBand = whoop.readinessBand
+if sleepPerformance < 60:
+    trainingBand = one step lower  # green → yellow, yellow → red
 ```
+
+`modeDecision.trainingBand` carries the result. An open penalty adds its rows to the day; it is not a mode.
 
 LLM **must not** override `modeDecision.selectedMode` when `lockedByRules == true`. It only authors quests inside that mode.
 
@@ -251,9 +250,7 @@ Rules:
     "mode": {
       "type": "string",
       "enum": [
-        "performance_training", "interview_prep", "study_block", "recovery",
-        "full_recovery", "nutrition_focus", "finance_discipline", "focus_deepwork",
-        "hybrid", "penalty"
+        "performance_training", "full_recovery"
       ]
     },
     "headerLine": {
@@ -586,7 +583,7 @@ Post-filters reject / rewrite if:
 - Text matches unsafe patterns: “starve”, “all-nighter”, “ignore injury”, “max debt”, etc.
 - Mercury cap < $0 or absurd
 
-Also: System copy never diagnoses injury; WHOOP red → force recovery mode regardless of LLM.
+Also: System copy never diagnoses injury; a red trainingBand → easy walk only, regardless of LLM.
 
 ### 6.4 Privacy
 

@@ -234,10 +234,14 @@ struct GameSnapshot: Codable, Equatable {
     func modeInput(now: Date) -> ModePickerInput {
         ModePickerInput(
             spendingFullRecovery: signals.spendingFullRecovery,
-            isSunday: QuestDay.isSunday(now),
             readinessBand: signals.readinessBand,
             sleepPerformance: signals.sleepPerformance
         )
+    }
+
+    /// Readiness band that sizes today's Training quests, after the sleep adjustment.
+    var trainingBand: ReadinessBand {
+        ModePicker.trainingBand(readiness: signals.readinessBand, sleepPerformance: signals.sleepPerformance)
     }
 
     static func loadFromUserDefaults() -> GameSnapshot? {
@@ -276,12 +280,12 @@ struct GameSnapshot: Codable, Equatable {
     }
 
     /// Stores WHOOP recovery as readiness. Does not write `player.stats.REC`.
-    /// A quiet morning rebuilds the catalog when the locked mode changes.
+    /// A quiet morning rebuilds the catalog when the locked mode or the training band changes.
     @discardableResult
     mutating func applyWhoopReadiness(_ reading: WhoopDayReading, catalog: FallbackCatalog, now: Date) -> Bool {
         guard reading.available, let score = reading.recoveryScore else { return false }
         let previousREC = player.stats.REC
-        let previousMode = bundle.mode
+        let previousDecision = ModePicker.decide(modeInput(now: now))
         let band = ReadinessBand.from(recoveryScore: score)
         readiness = ReadinessSnapshot(
             recoveryScore: score,
@@ -297,9 +301,9 @@ struct GameSnapshot: Codable, Equatable {
         }
         recoveryComposite.record(score: score, on: reading.dayKey)
         player.stats.REC = previousREC
-        let nextMode = ModePicker.decide(modeInput(now: now)).selectedMode
+        let nextDecision = ModePicker.decide(modeInput(now: now))
         let quiet = runningTimers.isEmpty && !bundle.quests.contains { $0.status == .completed }
-        guard quiet, nextMode != previousMode, bundle.dayKey == QuestDay.key(for: now) else { return false }
+        guard quiet, nextDecision != previousDecision, bundle.dayKey == QuestDay.key(for: now) else { return false }
         rebuildBundle(catalog: catalog, now: now)
         return true
     }
@@ -346,7 +350,7 @@ struct GameSnapshot: Codable, Equatable {
         }
         bundle = finished(catalog.makeBundle(
             mode: decision.selectedMode,
-            band: signals.readinessBand,
+            band: decision.trainingBand,
             dayKey: dayKey,
             now: now
         ), catalog: catalog, now: now)
@@ -357,7 +361,7 @@ struct GameSnapshot: Codable, Equatable {
         PenaltyQuests.ensure(
             in: DailyStretch.ensure(in: bundle, now: now),
             tier: player.penaltyTier,
-            band: signals.readinessBand,
+            band: trainingBand,
             catalog: catalog,
             now: now
         )

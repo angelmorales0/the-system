@@ -71,7 +71,7 @@ enum QuestSafety {
             if quest.progress.current < 0 {
                 issues.append("progress current cannot be negative")
             }
-            issues.append(contentsOf: bounds(for: quest, band: context.whoop.readinessBand))
+            issues.append(contentsOf: bounds(for: quest, band: context.modeDecision.trainingBand))
         }
 
         let haystack = (

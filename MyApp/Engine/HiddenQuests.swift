@@ -65,7 +65,7 @@ extension GameSnapshot {
     @discardableResult
     mutating func checkHiddenQuests(integrations: DayIntegrationSnapshot, now: Date) -> HiddenQuestUnlock? {
         recordCompletedDistances(integrations: integrations)
-        guard signals.readinessBand != .red else { return nil }
+        guard trainingBand != .red else { return nil }
         guard !hiddenUnlocks.contains(where: { $0.hiddenId == HiddenQuests.beyondTheLimitId && $0.dayKey == bundle.dayKey }) else { return nil }
         for quest in bundle.quests where quest.status == .completed && HiddenQuests.isEligible(quest) {
             guard let workout = HiddenQuests.completingWorkout(for: quest, in: integrations.workouts),

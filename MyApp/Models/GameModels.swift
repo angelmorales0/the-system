@@ -7,19 +7,17 @@ enum Stat: String, Codable, CaseIterable, Equatable {
 
 enum QuestMode: String, Codable, CaseIterable, Equatable {
     case performanceTraining = "performance_training"
-    case recovery
     case fullRecovery = "full_recovery"
 
     /// Text inside `[Daily Quest: {headerLine} has arrived.]`
     var headerLine: String {
         switch self {
         case .performanceTraining: "Training"
-        case .recovery: "Recovery"
         case .fullRecovery: "Full Recovery Day"
         }
     }
 
-    /// Old saves can name removed modes (`hybrid`, `interview_prep`, `study_block`, `nutrition_focus`,
+    /// Old saves can name removed modes (`recovery`, `hybrid`, `interview_prep`, `study_block`, `nutrition_focus`,
     /// `finance_discipline`, `focus_deepwork`, `penalty`). Read those as Performance Training.
     /// An old Penalty day keeps its `kind: .penalty` rows, so clearing them still drops the tier.
     init(from decoder: Decoder) throws {
@@ -493,10 +491,6 @@ enum QuestDay {
     static func key(for date: Date) -> String {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
-    }
-
-    static func isSunday(_ date: Date) -> Bool {
-        calendar.component(.weekday, from: date) == 1
     }
 
     static func endOfDay(_ date: Date) -> Date {

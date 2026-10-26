@@ -57,9 +57,9 @@ enum TrainingDay {
         if exerciseOnly(nothing) != nil {
             errors.append("a Training bundle with no exercise should fall back to the catalog")
         }
-        var recovery = bundle
-        recovery.mode = .recovery
-        if exerciseOnly(recovery) != recovery {
+        var rest = bundle
+        rest.mode = .fullRecovery
+        if exerciseOnly(rest) != rest {
             errors.append("other modes must not be filtered")
         }
         return errors

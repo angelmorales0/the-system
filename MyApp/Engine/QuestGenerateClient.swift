@@ -55,7 +55,7 @@ struct MockQuestGenerateClient: QuestGenerating {
 
     func bundle(for context: MorningContext, now: Date) -> QuestBundle {
         let mode = context.modeDecision.selectedMode
-        let band = context.whoop.readinessBand
+        let band = context.modeDecision.trainingBand
         var built = catalog.makeBundle(mode: mode, band: band, dayKey: context.player.localDate, now: now)
         built.generatedBy = "mock"
         if let accepted = QuestSafety.accepting(built, context: context, assignedAt: now) {
@@ -124,7 +124,7 @@ extension MockQuestGenerateClient {
     fileprivate func catalogFallback(context: MorningContext, now: Date) -> QuestBundle {
         var built = catalog.makeBundle(
             mode: context.modeDecision.selectedMode,
-            band: context.whoop.readinessBand,
+            band: context.modeDecision.trainingBand,
             dayKey: context.player.localDate,
             now: now
         )

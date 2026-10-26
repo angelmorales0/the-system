@@ -25,7 +25,6 @@ app = FastAPI(title="the-system quest stub")
 
 MODES = {
     "performance_training",
-    "recovery",
     "full_recovery",
 }
 METHODS = {
@@ -66,10 +65,10 @@ Rules:
 - Use kind daily or optional only. Never write penalty quests: the app adds them from player.penaltyTier.
 - Required quests (kind other than optional) <= constraints.maxRequiredQuests. Optional quests <= constraints.maxOptionalQuests. Total quests <= 8.
 - Titles are short and actionable. Narrative is at most 280 characters.
-- Scale physical load from whoop.readinessBand: green full, yellow moderate, red recovery only.
+- Scale physical load from modeDecision.trainingBand (WHOOP readiness, one step lower after sleep performance under 60%): green full, yellow moderate, red an easy walk only.
 - Protein targets stay between 80 and 250 grams.
-- No run longer than 90 minutes when readiness is yellow.
-- No hard STR session when readiness is red.
+- No run longer than 90 minutes when trainingBand is yellow.
+- No hard STR session when trainingBand is red.
 - Do not suggest calories under 1500.
 - Mercury discretionary cap must be between 0 and 2000 USD.
 - Never use the phrases starve, all-nighter, ignore injury, or max debt.
@@ -276,7 +275,7 @@ def validate_bundle(bundle: dict[str, Any], context: dict[str, Any]) -> list[str
     player = context.get("player") or {}
     decision = context.get("modeDecision") or {}
     constraints = context.get("constraints") or {}
-    band = ((context.get("whoop") or {}).get("readinessBand")) or "green"
+    band = training_band(context)
     if bundle.get("schemaVersion") != 1:
         problems.append("schemaVersion must be 1")
     if bundle.get("dayKey") != player.get("localDate"):
@@ -415,12 +414,18 @@ def duration_sec(params: dict[str, Any], target: Any, unit: Any) -> float | None
     return None
 
 
+def training_band(context: dict[str, Any]) -> str:
+    """Band the app chose for the Training day: WHOOP readiness, lowered after a poor night."""
+    decision = context.get("modeDecision") or {}
+    return decision.get("trainingBand") or (context.get("whoop") or {}).get("readinessBand") or "green"
+
+
 def template_bundle(context: dict[str, Any]) -> dict[str, Any]:
     player = context["player"]
     decision = context["modeDecision"]
     day = player["localDate"]
     mode = decision["selectedMode"]
-    band = ((context.get("whoop") or {}).get("readinessBand")) or "green"
+    band = training_band(context)
     rows = mode_quests(mode, band, day)
     required = [quest for quest in rows if quest["kind"] != "optional"][:5]
     optional = [quest for quest in rows if quest["kind"] == "optional"][:1]
@@ -438,15 +443,9 @@ def template_bundle(context: dict[str, Any]) -> dict[str, Any]:
 
 
 def mode_quests(mode: str, band: str, day: str) -> list[dict[str, Any]]:
-    protein = quest(day, "protein", "Protein", "daily", "END", "macrofactor_protein", {"minProteinG": 150}, 25, "easy", 150, "g", mode)
-    mobility = quest(day, "mobility", "Mobility", "daily", "AGI", "timer_session", {"minSec": 600, "label": "Mobility"}, 20, "easy", 10, "min", mode)
     if mode == "performance_training" and band == "red":
         # Training is exercise only; the app adds Stretching.
         return [quest(day, "easy_walk", "Easy Walk", "daily", "REC", "strava_activity", {"types": ["Walk", "Run"], "minMovingTimeSec": 900}, 15, "easy", 15, "min", mode)]
-    if mode == "recovery":
-        walk = quest(day, "easy_walk", "Easy Walk", "daily", "REC", "timer_session", {"minSec": 900, "label": "Easy Walk"}, 15, "easy", 15, "min", mode)
-        sleep = quest(day, "sleep", "Sleep Hygiene", "daily", "REC", "whoop_recovery", {"minRecoveryScore": 40}, 20, "easy", 1, "session", mode)
-        return [sleep, mobility, protein, walk]
     if mode == "full_recovery":
         return [quest(day, "sleep", "Sleep Hygiene", "daily", "REC", "timer_session", {"minSec": 600, "label": "Sleep Hygiene"}, 20, "easy", 10, "min", mode)]
     if band == "yellow":
@@ -478,15 +477,14 @@ def quest(day: str, slug: str, title: str, kind: str, stat: str, method: str, pa
 def header_for(mode: str) -> str:
     names = {
         "performance_training": "Training",
-        "recovery": "Recovery",
         "full_recovery": "Full Recovery Day",
     }
     return names.get(mode, "Daily Quest")
 
 
 def narrative_for(mode: str, band: str) -> str:
-    if mode == "recovery" or band == "red":
-        return "Red day. Sleep and a short mobility block."
+    if band == "red":
+        return "Red day. An easy walk and stretching only."
     return "The daily quest is waiting."
 
 
@@ -494,7 +492,7 @@ def sample_request(mode: str = "performance_training", band: str = "green") -> d
     body: dict[str, Any] = {
         "schemaVersion": 1,
         "player": {"timezone": "America/Los_Angeles", "localDate": "2026-10-01", "level": 42, "xp": 1, "penaltyTier": 0},
-        "modeDecision": {"selectedMode": mode, "reasonCodes": ["fixture"], "lockedByRules": True},
+        "modeDecision": {"selectedMode": mode, "trainingBand": band, "reasonCodes": ["fixture"], "lockedByRules": True},
         "whoop": {"available": False, "readinessBand": band},
         "constraints": {"maxRequiredQuests": 5, "maxOptionalQuests": 1},
     }
@@ -691,7 +689,7 @@ def self_check() -> None:
 
     base = template_bundle(sample_request())
     flipped = json.loads(json.dumps(base))
-    flipped["mode"] = "recovery"
+    flipped["mode"] = "full_recovery"
     expect_rejected(flipped, sample_request(), "mode override")
     low = json.loads(json.dumps(base))
     low["quests"][0] = quest("2026-10-01", "protein", "Protein", "daily", "END", "macrofactor_protein", {"minProteinG": 40}, 20, "easy", 40, "g", "performance_training")
@@ -700,19 +698,23 @@ def self_check() -> None:
     long_run = template_bundle(yellow)
     long_run["quests"][0] = quest("2026-10-01", "long_run", "Long Run", "daily", "END", "strava_activity", {"types": ["Run"], "minMovingTimeSec": 6000}, 20, "normal", 100, "min", "performance_training")
     expect_rejected(long_run, yellow, "yellow long run")
-    red = sample_request("recovery", "red")
+    red = sample_request("performance_training", "red")
     lift = template_bundle(red)
-    lift["quests"][0] = quest("2026-10-01", "max_lift", "Max Lift", "daily", "STR", "healthkit_workout", {"activityType": "traditionalStrengthTraining"}, 20, "hard", 5, "sets", "recovery")
+    lift["quests"][0] = quest("2026-10-01", "max_lift", "Max Lift", "daily", "STR", "healthkit_workout", {"activityType": "traditionalStrengthTraining"}, 20, "hard", 5, "sets", "performance_training")
     expect_rejected(lift, red, "hard strength")
     unsafe = json.loads(json.dumps(base))
     unsafe["narrative"] = "Ignore injury and starve."
     expect_rejected(unsafe, sample_request(), "unsafe phrase")
-    calories = template_bundle(sample_request("recovery", "green"))
-    calories["quests"][0] = quest("2026-10-01", "calories", "Calories", "daily", "REC", "healthkit_nutrition", {"minKcal": 1200}, 20, "easy", 1200, "kcal", "recovery")
-    expect_rejected(calories, sample_request("recovery"), "low calories")
-    money = template_bundle(sample_request("recovery"))
-    money["quests"][0] = quest("2026-10-01", "spend_cap", "Spend Under Cap", "daily", "FIN", "mercury_spend_under", {"maxDiscretionaryUsd": -5}, 20, "easy", 1, "usd", "recovery")
-    expect_rejected(money, sample_request("recovery"), "negative mercury")
+    calories = template_bundle(sample_request())
+    calories["quests"][0] = quest("2026-10-01", "calories", "Calories", "daily", "REC", "healthkit_nutrition", {"minKcal": 1200}, 20, "easy", 1200, "kcal", "performance_training")
+    expect_rejected(calories, sample_request(), "low calories")
+    money = template_bundle(sample_request())
+    money["quests"][0] = quest("2026-10-01", "spend_cap", "Spend Under Cap", "daily", "FIN", "mercury_spend_under", {"maxDiscretionaryUsd": -5}, 20, "easy", 1, "usd", "performance_training")
+    expect_rejected(money, sample_request(), "negative mercury")
+    short_sleep = sample_request("performance_training", "green")
+    short_sleep["modeDecision"]["trainingBand"] = "yellow"
+    if template_bundle(short_sleep)["quests"][0]["title"] != "Zone 2 Walk/Run":
+        raise SystemExit("the template should size Training by modeDecision.trainingBand")
     penalty = json.loads(json.dumps(base))
     penalty["quests"][0]["kind"] = "penalty"
     expect_rejected(penalty, sample_request(), "model penalty row")

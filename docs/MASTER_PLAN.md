@@ -191,18 +191,19 @@ https://developer.whoop.com/api · https://developers.strava.com/docs/authentica
 2. **Deterministic mode picker** (locked):
 
 ```
-if penaltyTier > 0 and not spending_full_recovery → penalty
-elif user_confirmed_spend_full_recovery → full_recovery
-elif Sunday and whoop.readinessBand == red → recovery (+ optional bank quest)
-elif activeTarget and readiness != red → hybrid (or Target.kind-forced)
-elif readiness red or sleepPerformance < 60 → recovery
+if spending_full_recovery → full_recovery
 else → performance_training
+
+trainingBand = whoop.readinessBand
+if sleepPerformance < 60 → trainingBand one step lower (green → yellow, yellow → red)
 ```
+
+An open penalty does not pick a mode. Its rows are added to the day. Readiness and sleep only size the Training day.
 
 3. Build `MorningContext` (player, whoop, activeTarget, goalsBias, nutrition, mercury, focus, freshness, recentQuestTitles, constraints).  
 4. `POST /v1/quests/generate` → LLM returns `QuestBundle`.  
 5. Server JSON Schema + safety filter → client re-validate → persist `DayPlan` → bind `SystemView`.  
-6. Fail/timeout (>8s) → `FallbackCatalog.json` by mode + readinessBand; `generatedBy: "fallback"`.
+6. Fail/timeout (>8s) → `FallbackCatalog.json` by mode + trainingBand; `generatedBy: "fallback"`.
 
 LLM **must not** override `modeDecision.selectedMode` when `lockedByRules == true`. Strip any `completed` fields from LLM output.
 
@@ -347,7 +348,7 @@ Do **not** set REC = today’s recovery_score.
 | Lift session | WHOOP strength sports **or** HK strength **or** Strava WeightTraining; duration/strain; `SCORED` |
 | Sleep Y h | WHOOP overnight non-nap; else HK asleep stages |
 | Protein g | Sum HK `dietaryProtein` (MacroFactor source preferred) |
-| Readiness gate | Soft: red → force recovery mode regardless of LLM |
+| Readiness gate | Soft: red → red Training day (easy walk) regardless of LLM |
 
 ### MacroFactor
 

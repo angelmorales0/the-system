@@ -24,11 +24,14 @@ struct MorningPlayer: Codable, Equatable {
 
 struct MorningModeDecision: Codable, Equatable {
     var selectedMode: QuestMode
+    /// Band the generator sizes Training quests to. `whoop.readinessBand` stays the raw WHOOP band.
+    var trainingBand: ReadinessBand
     var reasonCodes: [String]
     var lockedByRules: Bool
 
     init(_ decision: ModeDecision) {
         selectedMode = decision.selectedMode
+        trainingBand = decision.trainingBand
         reasonCodes = decision.reasonCodes
         lockedByRules = decision.lockedByRules
     }

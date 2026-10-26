@@ -35,8 +35,15 @@ enum QuestGenerationRules {
         snapshot.signals.spendingFullRecovery = false
         snapshot.signals.readinessBand = .red
         let red = ContextBuilder.make(snapshot: snapshot, now: now)
-        if red.modeDecision.selectedMode != .recovery {
-            errors.append("red readiness should lock recovery")
+        if red.modeDecision.selectedMode != .performanceTraining || red.modeDecision.trainingBand != .red {
+            errors.append("red readiness should lock a red Training day")
+        }
+        snapshot.signals.readinessBand = .green
+        snapshot.signals.sleepPerformance = 50
+        let shortSleep = ContextBuilder.make(snapshot: snapshot, now: now)
+        if shortSleep.modeDecision.selectedMode != .performanceTraining || shortSleep.modeDecision.trainingBand != .yellow
+            || shortSleep.whoop.readinessBand != .green {
+            errors.append("low sleep should drop a green Training day to yellow and keep the WHOOP band")
         }
 
         snapshot.signals = .placeholder
@@ -61,9 +68,9 @@ enum QuestGenerationRules {
         }
 
         var overridden = mock
-        overridden.mode = .recovery
+        overridden.mode = .fullRecovery
         if QuestSafety.issues(in: overridden, context: morning).isEmpty {
-            errors.append("locked training mode should reject a recovery bundle")
+            errors.append("locked training mode should reject a full recovery bundle")
         }
         if QuestSafety.accepting(overridden, context: morning, assignedAt: now) != nil {
             errors.append("accepting should drop a mode override")
@@ -80,8 +87,8 @@ enum QuestGenerationRules {
             errors.append("yellow readiness should reject a run over 90 minutes")
         }
 
-        let redContext = sampleContext(mode: .recovery, band: .red, dayKey: dayKey)
-        var hardLift = sampleBundle(mode: .recovery, dayKey: dayKey, now: now)
+        let redContext = sampleContext(mode: .performanceTraining, band: .red, dayKey: dayKey)
+        var hardLift = sampleBundle(mode: .performanceTraining, dayKey: dayKey, now: now)
         hardLift.quests[0].title = "Max Lift"
         hardLift.quests[0].stat = .STR
         hardLift.quests[0].difficulty = .hard
@@ -109,18 +116,18 @@ enum QuestGenerationRules {
             errors.append("unsafe phrasing should be rejected")
         }
 
-        var cheapCalories = sampleBundle(mode: .recovery, dayKey: dayKey, now: now)
+        var cheapCalories = sampleBundle(mode: .performanceTraining, dayKey: dayKey, now: now)
         cheapCalories.quests[0].verification.params = ["minKcal": .number(1200)]
         cheapCalories.quests[0].progress = QuestProgress(current: 0, target: 1200, unit: "kcal")
-        let recoveryGreen = sampleContext(mode: .recovery, band: .green, dayKey: dayKey)
-        if QuestSafety.issues(in: cheapCalories, context: recoveryGreen).isEmpty {
+        let trainingGreen = sampleContext(mode: .performanceTraining, band: .green, dayKey: dayKey)
+        if QuestSafety.issues(in: cheapCalories, context: trainingGreen).isEmpty {
             errors.append("calorie target under 1500 should be rejected")
         }
 
-        var debt = sampleBundle(mode: .recovery, dayKey: dayKey, now: now)
+        var debt = sampleBundle(mode: .performanceTraining, dayKey: dayKey, now: now)
         debt.quests[0].verification = VerificationSpec(method: .mercurySpendUnder, params: ["maxDiscretionaryUsd": .number(-5)])
         debt.quests[0].progress = QuestProgress(current: 0, target: 1, unit: "usd")
-        if QuestSafety.issues(in: debt, context: recoveryGreen).isEmpty {
+        if QuestSafety.issues(in: debt, context: trainingGreen).isEmpty {
             errors.append("negative mercury cap should be rejected")
         }
 
@@ -249,7 +256,7 @@ enum QuestGenerationRules {
                 streaks: .unknown
             ),
             modeDecision: MorningModeDecision(
-                ModeDecision(selectedMode: mode, reasonCodes: ["fixture"], lockedByRules: true)
+                ModeDecision(selectedMode: mode, trainingBand: band, reasonCodes: ["fixture"], lockedByRules: true)
             ),
             whoop: MorningWhoop(
                 available: false,
