@@ -36,6 +36,15 @@ struct ZoneTwoSession: Codable, Equatable {
     var source: String
 }
 
+/// One body weight reading in kg, from Apple Health. MacroFactor's trend weight is used first when it is there.
+struct BodyMassReading: Codable, Equatable {
+    var kg: Double
+    var date: Date
+    var source: String
+
+    var pounds: Double { kg * StatLevel.poundsPerKilogram }
+}
+
 /// Deterministic END (endurance) level 0...350.
 /// Pure: the same inputs and `now` always give the same report. No network and no clock.
 enum EnduranceLevel {
@@ -43,6 +52,15 @@ enum EnduranceLevel {
     static let effortWindowDays = 180
     /// VO₂ max is a current fitness estimate: the newest reading within 90 days, not the best.
     static let vo2WindowDays = 90
+    /// Body weight uses the newest weigh-in within 30 days.
+    static let bodyWeightWindowDays = 30
+
+    /// Target body weight in lb. A lighter runner carries less over 10 km.
+    static let bodyWeightTargetLb = 145.0
+    /// Pounds either side of the target that still pass. Daily weigh-ins move about this much.
+    static let bodyWeightToleranceLb = 2.0
+    /// Pounds from the target, either side, at level 0.
+    static let bodyWeightFloorLb = 30.0
 
     // Floors are the level 0 limits; targets are the max level rules. Times put the floor above the target.
     static let mileBand = StatLevel.Band(floor: 720, target: 330)      // seconds: 12:00 → 5:30
@@ -52,23 +70,33 @@ enum EnduranceLevel {
     static let zoneTwoBand = StatLevel.Band(floor: 0, target: 90)      // continuous minutes
     static let swimMileBand = StatLevel.Band(floor: 3600, target: 1500) // seconds: 60:00 → 25:00
 
-    /// Six equal requirements.
+    /// Seven equal requirements.
     enum Weight {
-        static let mile = 100.0 / 6
-        static let fiveK = 100.0 / 6
-        static let tenK = 100.0 / 6
-        static let vo2 = 100.0 / 6
-        static let zoneTwo = 100.0 / 6
-        static let swimMile = 100.0 / 6
+        static let mile = 100.0 / 7
+        static let fiveK = 100.0 / 7
+        static let tenK = 100.0 / 7
+        static let vo2 = 100.0 / 7
+        static let zoneTwo = 100.0 / 7
+        static let swimMile = 100.0 / 7
+        static let bodyWeight = 100.0 / 7
     }
 
-    static func evaluate(efforts: [RunEffort], swims: [SwimEffort], vo2: [VO2MaxReading], zoneTwo: [ZoneTwoSession], now: Date) -> StatLevelReport {
+    static func evaluate(
+        efforts: [RunEffort],
+        swims: [SwimEffort],
+        vo2: [VO2MaxReading],
+        zoneTwo: [ZoneTwoSession],
+        bodyMass: [BodyMassReading] = [],
+        now: Date
+    ) -> StatLevelReport {
         let effortStart = now.addingTimeInterval(-Double(effortWindowDays) * 86_400)
         let recentEfforts = efforts.filter { $0.date >= effortStart && $0.seconds > 0 }
         let recentZoneTwo = zoneTwo.filter { $0.date >= effortStart && $0.minutes > 0 }
         let recentSwims = swims.filter { $0.date >= effortStart && $0.seconds > 0 }
         let vo2Start = now.addingTimeInterval(-Double(vo2WindowDays) * 86_400)
         let recentVO2 = vo2.filter { $0.date >= vo2Start && $0.value > 0 }
+        let massStart = now.addingTimeInterval(-Double(bodyWeightWindowDays) * 86_400)
+        let recentMass = bodyMass.filter { $0.date >= massStart && $0.date <= now && $0.kg > 0 }
         return StatLevelReport(stat: .END, requirements: [
             runRule("1-mile run", .mile, recentEfforts, band: mileBand, weight: Weight.mile),
             runRule("5K run", .fiveK, recentEfforts, band: fiveKBand, weight: Weight.fiveK),
@@ -77,7 +105,27 @@ enum EnduranceLevel {
             vo2Max(recentVO2),
             zoneTwoEndurance(recentZoneTwo),
             swimMile(recentSwims),
+            bodyWeight(recentMass),
         ])
+    }
+
+    // MARK: - Body weight
+
+    /// Strict rule: the newest weigh-in in 30 days is within 2 lb of 145 lb, either side.
+    /// Progress is 1 inside that range and falls to 0 at 30 lb away.
+    private static func bodyWeight(_ readings: [BodyMassReading]) -> StatRequirement {
+        guard let latest = readings.max(by: { $0.date < $1.date }) else {
+            return StatRequirement(category: "Body weight", passed: false, progress: 0, weight: Weight.bodyWeight, detail: "no weigh-in in \(bodyWeightWindowDays) days")
+        }
+        let off = abs(latest.pounds - bodyWeightTargetLb)
+        let progress = 1 - (off - bodyWeightToleranceLb) / (bodyWeightFloorLb - bodyWeightToleranceLb)
+        return StatRequirement(
+            category: "Body weight",
+            passed: off <= bodyWeightToleranceLb,
+            progress: min(max(progress, 0), 1),
+            weight: Weight.bodyWeight,
+            detail: "latest \(format(latest.pounds)) lb (\(QuestDay.key(for: latest.date)))"
+        )
     }
 
     // MARK: - Runs
@@ -182,9 +230,10 @@ enum EnduranceLevel {
         var swims: [SwimEffort] = []
         var vo2: [VO2MaxReading]
         var zoneTwo: [ZoneTwoSession]
+        var bodyMass: [BodyMassReading] = []
 
         func evaluate(now: Date = checkNow) -> StatLevelReport {
-            EnduranceLevel.evaluate(efforts: efforts, swims: swims, vo2: vo2, zoneTwo: zoneTwo, now: now)
+            EnduranceLevel.evaluate(efforts: efforts, swims: swims, vo2: vo2, zoneTwo: zoneTwo, bodyMass: bodyMass, now: now)
         }
     }
 
@@ -198,7 +247,8 @@ enum EnduranceLevel {
             ],
             swims: [SwimEffort(seconds: 1470, date: daysAgo(12), source: "Strava")],
             vo2: [VO2MaxReading(value: 57, date: daysAgo(5), source: "Apple Health")],
-            zoneTwo: [ZoneTwoSession(minutes: 95, date: daysAgo(15), source: "Strava")]
+            zoneTwo: [ZoneTwoSession(minutes: 95, date: daysAgo(15), source: "Strava")],
+            bodyMass: [BodyMassReading(kg: 145 / StatLevel.poundsPerKilogram, date: daysAgo(1), source: "MacroFactor")]
         )
     }
 
@@ -212,7 +262,8 @@ enum EnduranceLevel {
             ],
             swims: [SwimEffort(seconds: 4200, date: daysAgo(12), source: "Strava")],
             vo2: [VO2MaxReading(value: 22, date: daysAgo(5), source: "Apple Health")],
-            zoneTwo: []
+            zoneTwo: [],
+            bodyMass: [BodyMassReading(kg: 180 / StatLevel.poundsPerKilogram, date: daysAgo(1), source: "MacroFactor")]
         )
     }
 
@@ -223,8 +274,8 @@ enum EnduranceLevel {
         if !report.isMaxLevel {
             errors.append("perfect fixture should reach the max level, failing: " + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
         }
-        if report.requirements.count != 6 {
-            errors.append("END should have 6 requirements, got \(report.requirements.count)")
+        if report.requirements.count != 7 {
+            errors.append("END should have 7 requirements, got \(report.requirements.count)")
         }
         let totalWeight = report.requirements.reduce(0) { $0 + $1.weight }
         if abs(totalWeight - 100) > 0.001 {
@@ -343,6 +394,30 @@ enum EnduranceLevel {
                 ZoneTwoSession(minutes: 45, date: daysAgo(2), source: "Strava"),
             ]
         }
+
+        // Body weight: 147 lb and 143 lb pass, 147.5 lb fails. 160 lb is 15 lb off: 1 - (15 - 2) / (30 - 2) = 15/28 of the band.
+        func pounds(_ lb: Double, daysAgo days: Int = 1) -> [BodyMassReading] {
+            [BodyMassReading(kg: lb / StatLevel.poundsPerKilogram, date: daysAgo(days), source: "MacroFactor")]
+        }
+        for lb in [147.0, 143.0] {
+            var near = perfect
+            near.bodyMass = pounds(lb)
+            if !near.evaluate().isMaxLevel {
+                errors.append("\(lb) lb should pass the 145 lb target")
+            }
+        }
+        failsOnly("Body weight") { $0.bodyMass = pounds(147.5) }
+        failsOnly("Body weight") { $0.bodyMass = pounds(130) }
+        failsOnly("Body weight") { $0.bodyMass = [] }
+        failsOnly("Body weight") { $0.bodyMass = pounds(145, daysAgo: 31) }
+        var heavy = perfect
+        heavy.bodyMass = pounds(160)
+        let heavyRow = heavy.evaluate().requirements.first { $0.category == "Body weight" }
+        if abs((heavyRow?.progress ?? 0) - 15.0 / 28.0) > 0.0001 || heavyRow?.detail.hasPrefix("latest 160.0 lb") != true {
+            errors.append("160 lb should give progress 15/28, got \(String(describing: heavyRow))")
+        }
+        // The newest weigh-in counts, not the closest one.
+        failsOnly("Body weight") { $0.bodyMass = pounds(145, daysAgo: 10) + pounds(150, daysAgo: 2) }
 
         if clock(372) != "6:12" || clock(5400) != "90:00" || clock(59.6) != "1:00" {
             errors.append("clock format wrong: \(clock(372)) \(clock(5400)) \(clock(59.6))")

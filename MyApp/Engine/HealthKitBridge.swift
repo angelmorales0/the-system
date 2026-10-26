@@ -17,6 +17,16 @@ enum HealthKitBridge {
         #endif
     }
 
+    /// The newest weigh-in from `days` before `now` up to `now`, MacroFactor's trend weight first. Nil without one.
+    static func latestBodyMass(days: Int, now: Date) async -> BodyMassReading? {
+        #if canImport(HealthKit)
+        return await HealthKitStore.shared.latestBodyMass(since: now.addingTimeInterval(-Double(days) * 86_400), until: now)
+        #else
+        _ = (days, now)
+        return nil
+        #endif
+    }
+
     static func startObservers() {
         #if canImport(HealthKit)
         HealthKitStore.shared.startObservers()
@@ -128,6 +138,18 @@ final class HealthKitStore {
         let chosen = MacroFactorSamples.prefer(samples)
         let total = chosen.reduce(0) { $0 + $1.quantity.doubleValue(for: unit) }
         return MacroFactorTotal(total: total, prefersMacroFactor: MacroFactorSamples.containsMacroFactor(samples))
+    }
+
+    func latestBodyMass(since start: Date, until end: Date) async -> BodyMassReading? {
+        guard HKHealthStore.isHealthDataAvailable(), let type = HKQuantityType.quantityType(forIdentifier: .bodyMass) else { return nil }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
+        let samples: [HKQuantitySample] = await samples(type: type, predicate: predicate)
+        guard let latest = MacroFactorSamples.prefer(samples).max(by: { $0.startDate < $1.startDate }) else { return nil }
+        return BodyMassReading(
+            kg: latest.quantity.doubleValue(for: .gramUnit(with: .kilo)),
+            date: latest.startDate,
+            source: MacroFactorSamples.isMacroFactor(latest) ? "MacroFactor" : "Apple Health"
+        )
     }
 
     private func latestQuantity(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit, predicate: NSPredicate) async -> MacroFactorOptional {
