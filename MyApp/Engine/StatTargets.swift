@@ -53,6 +53,7 @@ struct StatTargets: Codable, Equatable {
         goals["VO₂ max"] = "\(Int(EnduranceLevel.vo2Band.target)) mL/kg/min"
         goals["Zone 2 endurance"] = "\(Int(EnduranceLevel.zoneTwoBand.target)) min unbroken in zone 2"
         goals["1-mile swim"] = "\(clock(EnduranceLevel.swimMileBand.target)) or faster"
+        goals["Body weight"] = "\(Int(EnduranceLevel.bodyWeightTargetLb)) lb, within \(Int(EnduranceLevel.bodyWeightToleranceLb)) lb"
 
         goals["Codeforces rating"] = "\(Int(IntelligenceLevel.ratingBand.target)) rating (Master)"
 

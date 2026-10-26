@@ -150,6 +150,20 @@ enum PenaltyRules {
             errors.append("starter stats must be at or under the cap")
         }
 
+        // The bundled penalty run is a 10K at every tier and band. Only timed rows grow with the tier.
+        let bundled = FallbackCatalog.bundled()
+        for band in ReadinessBand.allCases {
+            var day = GameSnapshot.fresh(catalog: bundled, now: dayOne, signals: .placeholder)
+            day.signals.readinessBand = band
+            day.player.penaltyTier = 3
+            day.rebuildForTest(catalog: bundled, now: dayOne)
+            let runs = PenaltyQuests.rows(in: day.bundle).filter { $0.stat == .END }
+            if runs.isEmpty || runs.contains(where: { !TrainingDay.isRaceRun($0) || $0.progress.target != 10 || $0.progress.unit != "km"
+                || $0.verification.params["minDistanceMeters"]?.doubleValue != TrainingDay.tenKMeters }) {
+                errors.append("a \(band.rawValue) tier 3 penalty run should be a 10K, got \(runs.map { "\($0.title) \($0.verification.params)" })")
+            }
+        }
+
         return errors
     }
 

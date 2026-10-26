@@ -34,7 +34,7 @@ final class GameStore: ObservableObject {
     private var evaluatingEmergency = false
     private var lastStretchRefresh = Date.distantPast
     /// The last live stat inputs, so a target change can recalculate without a new fetch. Nil until the first refresh.
-    private var statInputs: (codeforces: CodeforcesReading, financeMonths: [FinanceMonth])?
+    private var statInputs: (codeforces: CodeforcesReading, financeMonths: [FinanceMonth], bodyMass: BodyMassReading?)?
 
     init(persistence: GamePersistence = .standard) {
         #if DEBUG
@@ -131,7 +131,13 @@ final class GameStore: ObservableObject {
     /// Before the first refresh there are no live inputs; the next refresh applies the new targets.
     private func recomputeStatLevels(now: Date) {
         guard let statInputs else { return }
-        statLevels = StatLevelSet.compute(codeforces: statInputs.codeforces, financeMonths: statInputs.financeMonths, targets: statTargets, now: now)
+        statLevels = StatLevelSet.compute(
+            codeforces: statInputs.codeforces,
+            financeMonths: statInputs.financeMonths,
+            bodyMass: statInputs.bodyMass.map { [$0] } ?? [],
+            targets: statTargets,
+            now: now
+        )
         statHistory.record(statLevels, on: QuestDay.key(for: now))
     }
 
@@ -419,6 +425,7 @@ final class GameStore: ObservableObject {
         let dayKey = QuestDay.key(for: now)
         Task { @MainActor [weak self] in
             let health = await HealthKitBridge.summary(on: now)
+            let bodyMass = await HealthKitBridge.latestBodyMass(days: EnduranceLevel.bodyWeightWindowDays, now: now)
             let remote = await IntegrationClient.load(dayKey: dayKey)
             guard let self else { return }
             self.refreshingIntegrations = false
@@ -433,7 +440,7 @@ final class GameStore: ObservableObject {
                 mercury: remote.mercury,
                 hevy: remote.hevy
             )
-            self.statInputs = (remote.codeforces, remote.financeMonths)
+            self.statInputs = (remote.codeforces, remote.financeMonths, bodyMass)
             self.recomputeStatLevels(now: now)
             if rebuilt {
                 self.runningTimersRemoveMissing()

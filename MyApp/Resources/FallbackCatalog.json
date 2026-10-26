@@ -160,22 +160,24 @@
       "quests": [
         {
           "id": "penalty_run",
-          "title": "Penalty Run",
+          "title": "Penalty 10K",
           "kind": "penalty",
           "stat": "END",
           "verification": {
-            "method": "healthkit_workout",
+            "method": "strava_activity",
             "params": {
-              "activityType": "running",
-              "minDurationSec": 1800
+              "types": [
+                "Run"
+              ],
+              "minDistanceMeters": 10000
             }
           },
           "xp": 30,
           "difficulty": "penalty",
           "progress": {
             "current": 0,
-            "target": 30,
-            "unit": "min"
+            "target": 10,
+            "unit": "km"
           },
           "reward": null
         },
@@ -210,22 +212,24 @@
       "quests": [
         {
           "id": "penalty_run",
-          "title": "Penalty Run",
+          "title": "Penalty 10K",
           "kind": "penalty",
           "stat": "END",
           "verification": {
-            "method": "healthkit_workout",
+            "method": "strava_activity",
             "params": {
-              "activityType": "running",
-              "minDurationSec": 1500
+              "types": [
+                "Run"
+              ],
+              "minDistanceMeters": 10000
             }
           },
           "xp": 25,
           "difficulty": "penalty",
           "progress": {
             "current": 0,
-            "target": 25,
-            "unit": "min"
+            "target": 10,
+            "unit": "km"
           },
           "reward": null
         },

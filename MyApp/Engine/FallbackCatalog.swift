@@ -183,7 +183,7 @@ struct FallbackCatalog {
         let seconds = band == .green ? 1800.0 : 1500.0
         let xp = band == .green ? 30 : 25
         return [
-            row("penalty_run", "Penalty Run", .END, .healthkitWorkout, ["activityType": .string("running"), "minDurationSec": .number(seconds)], xp, seconds / 60),
+            template("penalty_run", "Penalty 10K", .penalty, .END, .stravaActivity, ["types": .array([.string("Run")]), "minDistanceMeters": .number(TrainingDay.tenKMeters)], xp, .penalty, 10, "km"),
             row("penalty_lift", "Penalty Lift", .STR, .healthkitWorkout, ["activityType": .string("traditionalStrengthTraining"), "minDurationSec": .number(seconds)], xp, seconds / 60),
         ]
     }

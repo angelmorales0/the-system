@@ -61,7 +61,7 @@ Rules:
 - Do not invent medical diagnoses or extreme deficits.
 - Use only the verification methods already defined for this app.
 - hevy_sets reads Hevy. Strength: params exercise (Hevy title without the equipment, e.g. "Bench Press") and sets, optional minReps and minWeightKg; unit "sets".
-- performance_training is strength and 10K runs only. Lifts use hevy_sets or healthkit_workout with activityType traditionalStrengthTraining. A run is always a 10K: strava_activity with types ["Run"] and minDistanceMeters 10000, progress target 10, unit "km". Two 10Ks on one day are two separate quests. No walks, intervals, sprints, other run distances, protein, nutrition, spending, or stretch quests. The app adds its own Stretching quest.
+- performance_training is strength and 5K or 10K runs only. Lifts use hevy_sets or healthkit_workout with activityType traditionalStrengthTraining. A run is always a 5K or a 10K: strava_activity with types ["Run"] and minDistanceMeters 5000 or 10000, progress target 5 or 10, unit "km". Prefer the 10K. Two 10Ks on one day are two separate quests. No walks, intervals, sprints, other run distances, protein, nutrition, spending, or stretch quests. The app adds its own Stretching quest.
 - Use kind daily or optional only. Never write penalty quests: the app adds them from player.penaltyTier.
 - Required quests (kind other than optional) <= constraints.maxRequiredQuests. Optional quests <= constraints.maxOptionalQuests. Total quests <= 8.
 - Titles are short and actionable. Narrative is at most 280 characters.
@@ -307,7 +307,7 @@ def validate_bundle(bundle: dict[str, Any], context: dict[str, Any]) -> list[str
             continue
         problems.extend(validate_quest(quest, band, seen))
         if bundle.get("mode") == "performance_training" and not is_training_row(quest):
-            problems.append("Training allows only 10K runs and strength")
+            problems.append("Training allows only 5K or 10K runs and strength")
         texts.append(str(quest.get("title") or ""))
         params = (quest.get("verification") or {}).get("params") or {}
         if isinstance(params, dict):
@@ -387,11 +387,13 @@ def bound_problems(title: str, method: str | None, params: dict[str, Any], diffi
     return problems
 
 
+FIVE_K_METERS = 5_000
 TEN_K_METERS = 10_000
+RUN_METERS = {FIVE_K_METERS, TEN_K_METERS}
 
 
 def is_training_row(quest: dict[str, Any]) -> bool:
-    """A Training day is strength and 10K runs only. Two 10Ks on one day are two rows."""
+    """A Training day is strength and 5K or 10K runs only. Two 10Ks on one day are two rows."""
     verification = quest.get("verification") or {}
     method = verification.get("method")
     params = verification.get("params") or {}
@@ -400,7 +402,7 @@ def is_training_row(quest: dict[str, Any]) -> bool:
     activity = str(params.get("activityType") or "").lower()
     if method == "hevy_sets" or (method == "healthkit_workout" and "strength" in activity):
         return True
-    if params.get("minDistanceMeters") != TEN_K_METERS:
+    if params.get("minDistanceMeters") not in RUN_METERS:
         return False
     if method == "strava_activity":
         types = params.get("types") or []
@@ -728,7 +730,7 @@ def self_check() -> None:
     if validate_bundle(lift, red):
         raise SystemExit("a red Training day should allow hard strength")
     for label, params in (
-        ("5K run", {"types": ["Run"], "minDistanceMeters": 5000}),
+        ("8K run", {"types": ["Run"], "minDistanceMeters": 8000}),
         ("intervals", {"types": ["Run"], "minMovingTimeSec": 1200}),
         ("walk", {"types": ["Walk"], "minDistanceMeters": 10000}),
     ):
@@ -739,6 +741,10 @@ def self_check() -> None:
     double["quests"].append(quest("2026-10-01", "run_10k_2", "Second 10K", "daily", "END", "strava_activity", {"types": ["Run"], "minDistanceMeters": TEN_K_METERS}, 40, "normal", 10, "km", "performance_training"))
     if validate_bundle(double, sample_request()):
         raise SystemExit("two 10Ks on one day should be allowed")
+    five = template_bundle(sample_request())
+    five["quests"][0] = quest("2026-10-01", "run_5k", "5K Run", "daily", "END", "strava_activity", {"types": ["Run"], "minDistanceMeters": FIVE_K_METERS}, 30, "normal", 5, "km", "performance_training")
+    if validate_bundle(five, sample_request()):
+        raise SystemExit("a 5K run should be allowed")
     unsafe = json.loads(json.dumps(base))
     unsafe["narrative"] = "Ignore injury and starve."
     expect_rejected(unsafe, sample_request(), "unsafe phrase")
