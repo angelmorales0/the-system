@@ -59,6 +59,9 @@ struct MockQuestGenerateClient: QuestGenerating {
         let mode = context.modeDecision.selectedMode
         let band = context.modeDecision.trainingBand
         var built = catalog.makeBundle(mode: mode, band: band, dayKey: context.player.localDate, now: now)
+        if let today = context.split?.today {
+            built = GymSplit.apply(today, to: built, band: band, now: now)
+        }
         built.generatedBy = "mock"
         if let accepted = QuestSafety.accepting(built, context: context, assignedAt: now) {
             return accepted
@@ -130,6 +133,9 @@ extension MockQuestGenerateClient {
             dayKey: context.player.localDate,
             now: now
         )
+        if let today = context.split?.today {
+            built = GymSplit.apply(today, to: built, band: context.modeDecision.trainingBand, now: now)
+        }
         built.generatedBy = "fallback"
         return built
     }

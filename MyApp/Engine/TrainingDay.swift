@@ -17,8 +17,10 @@ enum TrainingDay {
     static func exerciseOnly(_ bundle: QuestBundle) -> QuestBundle? {
         guard bundle.mode == .performanceTraining else { return bundle }
         var copy = bundle
-        copy.headerLine = header
         copy.quests = bundle.quests.filter { $0.kind == .penalty || isExercise($0) }
+        // A split day keeps its name while it has lifts; anything else reads Training.
+        let splitDay = GymSplit.day(named: bundle.headerLine) != nil && copy.quests.contains { isStrength($0) && $0.id != DailyStretch.questId }
+        copy.headerLine = splitDay ? bundle.headerLine : header
         return copy.quests.contains(where: { $0.kind != .optional && $0.kind != .penalty }) ? copy : nil
     }
 

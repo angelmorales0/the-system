@@ -41,6 +41,12 @@ HEAVY_LOWER_MAX_PER_7_DAYS = 2
 HEAVY_LOWER_MIN_DAYS_APART = 2
 MAX_TEN_KS_PER_DAY = 2
 
+# Fatigue: a lift is declining when its newest session scores under 97% of the better of the two before it.
+DECLINE_SHARE = 0.97
+# A deload is due when this many lifts are declining at once, or two are and HRV is 10% under its 30-day average.
+DELOAD_DECLINING_LIFTS = 3
+HRV_DROP_SHARE = 0.90
+
 HEAVY_LOWER_PATTERN = re.compile(r"squat|deadlift")
 LOWER_PATTERN = re.compile(r"squat|deadlift|lunge|leg press|hip thrust|step up|leg curl|leg extension|calf|romanian|rdl|good morning")
 RUN_TYPES = {"run", "trailrun", "virtualrun"}
@@ -187,6 +193,7 @@ def summarize(
         "runs": runs,
         "recovery": recovery,
         "week": week_summary(today, runs, sessions, quest_days, int(goals.get("weeklyTenKs") or 5)),
+        "fatigue": fatigue_summary(lifts, recovery),
         "limits": {
             "heavyLowerMaxPer7Days": HEAVY_LOWER_MAX_PER_7_DAYS,
             "heavyLowerMinDaysApart": HEAVY_LOWER_MIN_DAYS_APART,
@@ -239,6 +246,7 @@ def lift_summaries(workouts: list[dict[str, Any]], today: date, zone: ZoneInfo) 
                     "date": day.isoformat(),
                     "sets": [set_text(item) for item in sets],
                     "topSet": set_text(top) if top else None,
+                    "topSetKg": top["weightKg"] if top else None,
                     "e1rmKg": round(e1rm(top["weightKg"], top["reps"]), 1) if top else None,
                     "e1rmLb": round(e1rm(top["weightKg"], top["reps"]) * LB_PER_KG) if top else None,
                     "bestReps": max((item.get("reps") or 0 for item in sets), default=0),
@@ -257,7 +265,46 @@ def lift_summaries(workouts: list[dict[str, Any]], today: date, zone: ZoneInfo) 
         entry["lowerBody"] = bool(LOWER_PATTERN.search(entry["exercise"]))
         if len(values) >= 2:
             entry["e1rmChangeKg"] = round(values[0] - values[-1], 1)
+        entry.update(lift_trend(entry["sessions"]))
     return lifts
+
+
+def session_score(session: dict[str, Any]) -> float:
+    """e1RM for weighted work, else reps in the best set, else seconds held."""
+    return float(session.get("e1rmKg") or session.get("bestReps") or session.get("seconds") or 0)
+
+
+def lift_trend(sessions: list[dict[str, Any]]) -> dict[str, Any]:
+    """`improving`, `steady`, `stalled`, `declining`, or `dropping` from the newest sessions (newest first),
+    with what to do next time. Weighted lifts compare e1RM, bodyweight lifts reps, holds seconds."""
+    scores = [session_score(item) for item in sessions if session_score(item) > 0]
+    if len(scores) < 3:
+        return {"trend": "new", "advice": "Not enough sessions to judge. Progress normally."}
+    newest, previous = scores[0], scores[1:3]
+    if newest < DECLINE_SHARE * max(previous):
+        if scores[0] < scores[1] < scores[2]:
+            return {"trend": "dropping", "advice": "Dropped two sessions in a row. Deload this lift: half the sets at 60-70% of the top set, no added weight."}
+        return {"trend": "declining", "advice": "Below the last sessions. Cut its sets by a third and use 5-10% less weight than the last top set."}
+    if len(scores) >= 4 and newest <= max(scores[1:4]):
+        return {"trend": "stalled", "advice": "No new best in 3 sessions. Repeat the weight and aim for one more rep, or drop 5% and build back."}
+    if newest > max(previous):
+        return {"trend": "improving", "advice": "Progress as planned."}
+    return {"trend": "steady", "advice": "Progress as planned."}
+
+
+def fatigue_summary(lifts: dict[str, dict[str, Any]], recovery: list[dict[str, Any]]) -> dict[str, Any]:
+    """Whole-body fatigue: how many lifts are falling, and whether HRV is down. Says when to deload."""
+    falling = sorted(name for name, entry in lifts.items() if entry.get("trend") in ("declining", "dropping") and entry.get("daysSinceLast", 99) <= 10)
+    hrv = [row["hrv"] for row in recovery if isinstance(row.get("hrv"), (int, float))]
+    recent = hrv[:7]
+    hrv_down = len(hrv) >= 14 and sum(recent) / len(recent) < HRV_DROP_SHARE * (sum(hrv) / len(hrv))
+    deload = len(falling) >= DELOAD_DECLINING_LIFTS or (len(falling) >= 2 and hrv_down)
+    return {
+        "decliningLifts": falling,
+        "hrv7DayVs30Day": round((sum(recent) / len(recent)) / (sum(hrv) / len(hrv)), 2) if recent else None,
+        "deloadRecommended": deload,
+        "advice": "Deload today: every lift at half its sets and 60-70% of its last top set. Runs stay easy." if deload else "",
+    }
 
 
 def set_text(entry: dict[str, Any]) -> str:
@@ -481,6 +528,17 @@ def limit_problems(bundle: dict[str, Any], history: dict[str, Any] | None) -> li
         return []
     quests = [quest for quest in bundle.get("quests") or [] if isinstance(quest, dict)]
     problems = []
+    lifts_by_name = (history or {}).get("lifts") or {}
+    for quest in quests:
+        verification = quest.get("verification") or {}
+        params = verification.get("params") or {}
+        if verification.get("method") != "hevy_sets" or not isinstance(params, dict):
+            continue
+        entry = lifts_by_name.get(base_name(str(params.get("exercise") or "")))
+        weight = params.get("minWeightKg")
+        last = (entry or {}).get("sessions", [{}])[0].get("topSetKg")
+        if entry and entry.get("trend") in ("declining", "dropping") and isinstance(weight, (int, float)) and last and weight > last:
+            problems.append(f"{entry['exercise']} is {entry['trend']}; do not add weight above the last top set")
     ten_ks = sum(1 for quest in quests if is_ten_k(quest))
     if ten_ks > MAX_TEN_KS_PER_DAY:
         problems.append(f"more than {MAX_TEN_KS_PER_DAY} 10Ks in one day")
@@ -561,6 +619,27 @@ def self_check() -> None:
         raise SystemExit(f"squat target should show a 6 lb gap, got {target}")
     if week["missedQuestDays"] != ["2026-10-20"]:
         raise SystemExit("missed quest days should carry through")
+
+    # Trends: 3 rising sessions improve; a 5% drop declines; two drops in a row is dropping; no new best in 3 stalls.
+    def sessions(*scores: float) -> list[dict[str, Any]]:
+        return [{"e1rmKg": score} for score in scores]
+    trends = [lift_trend(sessions(*scores))["trend"] for scores in ((110, 105, 100), (95, 100, 98), (90, 95, 100), (100, 102, 101, 99), (100,), (101, 100, 100))]
+    if trends != ["improving", "declining", "dropping", "stalled", "new", "improving"]:
+        raise SystemExit(f"lift trends wrong: {trends}")
+    if lift_trend([{"bestReps": 8}, {"bestReps": 10}, {"bestReps": 10}])["trend"] != "declining":
+        raise SystemExit("fewer reps on a bodyweight lift should count as declining")
+    falling = {name: {"trend": "declining", "daysSinceLast": 2} for name in ("squat", "bench press", "lateral raise")}
+    if not fatigue_summary(falling, [])["deloadRecommended"]:
+        raise SystemExit("three declining lifts should call for a deload")
+    two = dict(list(falling.items())[:2])
+    low_hrv = [{"hrv": 50}] * 7 + [{"hrv": 70}] * 7
+    if fatigue_summary(two, [])["deloadRecommended"] or not fatigue_summary(two, low_hrv)["deloadRecommended"]:
+        raise SystemExit("two declining lifts should call for a deload only with HRV down")
+    declining = {"lifts": {"lateral raise": {"exercise": "lateral raise", "trend": "declining", "sessions": [{"topSetKg": 12.5}]}}, "strengthSessions": []}
+    raise_it = {"mode": "performance_training", "quests": [{"verification": {"method": "hevy_sets", "params": {"exercise": "Lateral Raise", "minWeightKg": 15}}}]}
+    hold_it = {"mode": "performance_training", "quests": [{"verification": {"method": "hevy_sets", "params": {"exercise": "Lateral Raise", "minWeightKg": 10}}}]}
+    if not limit_problems(raise_it, declining) or limit_problems(hold_it, declining):
+        raise SystemExit("a declining lift should not get more weight, but less is fine")
 
     def bundle(*quests: dict[str, Any]) -> dict[str, Any]:
         return {"mode": "performance_training", "quests": list(quests)}

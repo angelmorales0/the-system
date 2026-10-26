@@ -13,6 +13,9 @@ enum NoGymDay {
         guard bundle.mode == .performanceTraining else { return bundle }
         var copy = bundle
         copy.quests.removeAll { isSwappable($0) && TrainingDay.isStrength($0) && $0.status != .completed }
+        if !copy.quests.contains(where: { TrainingDay.isStrength($0) && $0.id != DailyStretch.questId }) {
+            copy.headerLine = TrainingDay.header
+        }
         let runs = copy.quests.filter { isSwappable($0) && TrainingDay.isRaceRun($0) }
         guard runs.count < runCount else { return copy }
         let template = runs.first { isTenK($0) }
@@ -92,6 +95,7 @@ extension GameSnapshot {
         let insertAt = quests.firstIndex { $0.id == DailyStretch.questId || $0.kind != .daily } ?? quests.count
         quests.insert(contentsOf: lifts, at: insertAt)
         bundle.quests = quests
+        bundle.headerLine = fresh.bundle.headerLine
         return "Gym day again. Strength quests are back."
     }
 }

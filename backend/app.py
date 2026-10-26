@@ -63,6 +63,7 @@ SYSTEM_PROMPT = """You are The System, a strength and running coach. Write today
 Goals, in order:
 1. Reach the strength targets in trainingHistory.strengthTargets (goal, bestE1rmLb, gapLb). Spend the most work on the biggest gaps that were not trained recently.
 2. Run at least goals.weeklyTenKs 10Ks every Monday-to-Sunday week. trainingHistory.week says how many are done and how many are still needed.
+   goals.focus lists the targets to put first right now (lateral raises and biceps). The split trains them 3 times a rotation with the most sets: never drop them for time or readiness, and progress them first.
 3. Reach the body weight target in goals.bodyWeight. Do not write nutrition quests for it; it only informs how hard to push.
 
 Read the context before you plan:
@@ -75,8 +76,21 @@ Read the context before you plan:
 Progression (pick loads from the logged sets, never guess):
 - Main lifts (squat, deadlift, bench press, overhead press, barbell row, pull-ups, dips): one top set at RPE 8, then 2-3 back-off sets at about 90% of the top set. If the last session's top set reached its reps at RPE 8 or lower, add 2.5 kg for upper-body lifts and 5 kg for squat and deadlift. At RPE 9, repeat the weight. At RPE 10 or a missed rep, drop 5%.
 - Accessories (lateral raise, curls, Bulgarian split squat, and other lifts): double progression in an 8-12 rep range. Add reps until every set reaches 12, then add the smallest weight step and go back to 8.
-- Train each main lift about twice a week, and never two days in a row.
+- The split trains bench press, rows, and squats twice a rotation, lateral raises and curls three times, and deadlift and overhead press once.
 - Write exact loads. Title: "Squat 3x5 @ 265 lb". Params: exercise (the Hevy name without equipment, e.g. "Squat"), sets, minReps, minWeightKg (the working weight in kg, rounded down to 2.5 kg). Unit "sets".
+
+Gym split (split in the context):
+- Follow split.today: write its exercises, in order, with headerLine exactly split.today.name. The split rotates in the order of split.rotation; the app picks today's day.
+- Roles: "main" is the day's heavy lift (top set at RPE 8, then back-offs). "light" is a main lift on its light day: keep every set under 80% of the lift's best e1RM and above 6 reps. "accessory" uses double progression in minReps-maxReps. secondsPerSet exercises are timed: params minDurationSec is the total seconds (sets × secondsPerSet), unit "min".
+- Use each exercise's Hevy name from trainingHistory.lifts when the player has logged it under one of its aliases; otherwise use split.today exercise.
+- You may drop other accessories or a set when readiness or recovery calls for it, but keep the goals.focus exercises. Do not add exercises from other days.
+- If splitAdvice says today's heavy lift would break the heavy-leg limits, make today a run-only day: write no lifts and headerLine "Training". The same split day comes back next time.
+
+Fatigue (adjust instead of pushing through):
+- Each entry in trainingHistory.lifts has a trend and advice from its newest sessions: improving, steady, stalled, declining, or dropping. Follow the advice for that lift.
+- declining: cut that lift's sets by a third and use 5-10% less weight than its last top set. dropping: half the sets at 60-70%. stalled: repeat the weight and add a rep, or drop 5% and build back. Never add weight to a declining or dropping lift; the backend rejects it.
+- If trainingHistory.fatigue.deloadRecommended is true, deload the whole day: every lift at half its split sets (rounded up) and 60-70% of its last top set, runs easy. The backend rejects more sets than that.
+- Falling reps or loads on the focus lifts mean too much volume, not too little: cut sets before adding any.
 
 Running with lifting:
 - Heavy lower-body work interferes with running. Obey trainingHistory.limits: at most heavyLowerMaxPer7Days heavy squat or deadlift days in 7, at least heavyLowerMinDaysApart days apart, and no heavy squats or deadlifts on a two-10K day. The backend rejects any plan that breaks these.
@@ -92,7 +106,7 @@ App rules:
 - Obey modeDecision.selectedMode. Do not change it. lockedByRules is authoritative.
 - performance_training is strength and 5K or 10K runs only. Lifts use hevy_sets, or healthkit_workout with activityType traditionalStrengthTraining. A run is always a 5K or a 10K: strava_activity with types ["Run"] and minDistanceMeters 5000 or 10000, progress target 5 or 10, unit "km". Prefer the 10K. Two 10Ks on one day are two separate quests. No walks, intervals, sprints, other run distances, protein, nutrition, spending, or stretch quests. The app adds its own Stretching quest.
 - Use kind daily or optional only. Never write penalty quests: the app adds them from player.penaltyTier.
-- Required quests (kind other than optional) <= constraints.maxRequiredQuests. Optional quests <= constraints.maxOptionalQuests. Total quests <= 8.
+- Required quests (kind other than optional) <= constraints.maxRequiredQuests. Optional quests <= constraints.maxOptionalQuests. Total quests <= 9.
 - Titles are at most 48 characters. The narrative, at most 280 characters, says why today looks the way it does.
 - No run longer than 90 minutes when trainingBand is yellow.
 - Do not invent medical diagnoses or extreme deficits. Do not suggest calories under 1500.
@@ -144,7 +158,64 @@ def with_history(body: dict[str, Any]) -> dict[str, Any]:
         training = history.build(body)
     except Exception as error:  # noqa: BLE001 - a broken feed must fall back, not 500
         training = {"sources": {"error": type(error).__name__}}
-    return {**body, "trainingHistory": training}
+    context = {**body, "trainingHistory": training}
+    advice = split_advice(context)
+    if advice:
+        context["splitAdvice"] = advice
+    return context
+
+
+def split_today(context: dict[str, Any]) -> dict[str, Any] | None:
+    today = (context.get("split") or {}).get("today")
+    return today if isinstance(today, dict) and isinstance(today.get("exercises"), list) else None
+
+
+def split_advice(context: dict[str, Any]) -> str:
+    """Says when today's split day is a leg day that the heavy-leg limits would block."""
+    today = split_today(context)
+    if not today or not today.get("lowerBody"):
+        return ""
+    main = next((item for item in today["exercises"] if item.get("role") == "main"), None)
+    if not main:
+        return ""
+    probe = {"mode": "performance_training", "quests": [{"verification": {"method": "hevy_sets", "params": {"exercise": main.get("exercise"), "minReps": 1}}}]}
+    problems = history.limit_problems(probe, context.get("trainingHistory"))
+    if not problems:
+        return ""
+    return f"Today's {today.get('name')} heavy {main.get('exercise')} would break the limits ({'; '.join(problems)}). Make today a run-only day."
+
+
+def split_names(exercise: dict[str, Any]) -> set[str]:
+    names = {str(exercise.get("exercise") or "")} | {str(alias) for alias in exercise.get("aliases") or []}
+    return {history.base_name(name).replace("-", " ") for name in names if name}
+
+
+def split_problems(bundle: dict[str, Any], context: dict[str, Any]) -> list[str]:
+    """On a split day, lifts must come from today's split day, under its name."""
+    today = split_today(context)
+    if not today or bundle.get("mode") != "performance_training":
+        return []
+    lifts = [quest for quest in bundle.get("quests") or [] if isinstance(quest, dict) and quest.get("stat") == "STR"]
+    if not lifts:
+        return []
+    problems = []
+    if bundle.get("headerLine") != today.get("name"):
+        problems.append(f"headerLine must be {today.get('name')} on a split day")
+    allowed = set().union(*(split_names(item) for item in today["exercises"]))
+    deload = ((context.get("trainingHistory") or {}).get("fatigue") or {}).get("deloadRecommended") is True
+    for quest in lifts:
+        params = (quest.get("verification") or {}).get("params") or {}
+        name = history.base_name(str(params.get("exercise") or "")).replace("-", " ") if isinstance(params, dict) else ""
+        planned = next((item for item in today["exercises"] if name in split_names(item)), None)
+        sets = params.get("sets") if isinstance(params, dict) else None
+        if deload and planned and isinstance(sets, (int, float)) and sets > -(-int(planned.get("sets") or 1) // 2):
+            problems.append(f"{quest.get('title')} has too many sets for a deload day")
+        verification = quest.get("verification") or {}
+        params = verification.get("params") or {}
+        name = history.base_name(str(params.get("exercise") or "")).replace("-", " ") if isinstance(params, dict) else ""
+        if verification.get("method") != "hevy_sets" or name not in allowed:
+            problems.append(f"{quest.get('title')} is not part of {today.get('name')}")
+    return problems
 
 
 def validate_request(body: dict[str, Any]) -> list[str]:
@@ -330,11 +401,11 @@ def validate_bundle(bundle: dict[str, Any], context: dict[str, Any]) -> list[str
     if not isinstance(quests, list) or not quests:
         problems.append("bundle has no quests")
         quests = []
-    required_cap = constraints.get("maxRequiredQuests") or 5
+    required_cap = constraints.get("maxRequiredQuests") or 8
     optional_cap = constraints.get("maxOptionalQuests") or 1
     required = sum(1 for quest in quests if isinstance(quest, dict) and quest.get("kind") != "optional")
     optional = sum(1 for quest in quests if isinstance(quest, dict) and quest.get("kind") == "optional")
-    if len(quests) > 8:
+    if len(quests) > 9:
         problems.append("too many quests")
     if required > required_cap:
         problems.append("too many required quests")
@@ -354,6 +425,7 @@ def validate_bundle(bundle: dict[str, Any], context: dict[str, Any]) -> list[str
         if isinstance(params, dict):
             texts.extend(str(value) for value in params.values() if isinstance(value, str))
     problems.extend(history.limit_problems(bundle, context.get("trainingHistory")))
+    problems.extend(split_problems(bundle, context))
     haystack = "\n".join(texts).lower()
     if any(phrase in haystack for phrase in UNSAFE):
         problems.append("unsafe phrasing")
@@ -489,17 +561,25 @@ def template_bundle(context: dict[str, Any]) -> dict[str, Any]:
     mode = decision["selectedMode"]
     band = training_band(context)
     rows = mode_quests(mode, band, day)
-    if mode == "performance_training" and (context.get("constraints") or {}).get("noGymToday") is True:
+    header = header_for(mode)
+    today = split_today(context)
+    no_gym = (context.get("constraints") or {}).get("noGymToday") is True
+    if mode == "performance_training" and today and not no_gym and not context.get("splitAdvice"):
+        rows = [row for row in rows if row["stat"] != "STR"] + split_quests(today, band, day, mode)
+        header = str(today.get("name") or header)
+    elif mode == "performance_training" and context.get("splitAdvice"):
+        rows = [row for row in rows if row["stat"] != "STR"]
+    if mode == "performance_training" and no_gym:
         rows = no_gym_quests(rows, day, mode)
-    required = [quest for quest in rows if quest["kind"] != "optional"][:5]
+    required = [quest for quest in rows if quest["kind"] != "optional"][:8]
     optional = [quest for quest in rows if quest["kind"] == "optional"][:1]
     bundle = {
         "schemaVersion": 1,
         "dayKey": day,
         "mode": mode,
-        "headerLine": header_for(mode),
+        "headerLine": header,
         "narrative": narrative_for(mode, band),
-        "quests": (required + optional)[:8],
+        "quests": (required + optional)[:9],
         "warnings": ["Failure to complete\nthe daily quest will result\nin a penalty."],
         "generatedBy": "template",
     }
@@ -516,6 +596,28 @@ def mode_quests(mode: str, band: str, day: str) -> list[dict[str, Any]]:
         return [run, push]
     bench = quest(day, "bench", "Bench Press", "daily", "STR", "hevy_sets", {"exercise": "Bench Press", "sets": 4}, 40, "normal", 4, "sets", mode)
     return [run, bench]
+
+
+def split_quests(today: dict[str, Any], band: str, day: str, mode: str) -> list[dict[str, Any]]:
+    """Today's split exercises without loads, like the app's offline day. Yellow and red take a set off the main lift."""
+    rows = []
+    for item in today["exercises"]:
+        sets = int(item.get("sets") or 3)
+        if item.get("role") == "main" and band != "green":
+            sets = max(1, sets - 1)
+        name = str(item.get("exercise") or "Lift")
+        slug = name.lower().replace(" ", "_") + ("_light" if item.get("role") == "light" else "")
+        seconds = item.get("secondsPerSet")
+        if isinstance(seconds, (int, float)) and seconds > 0:
+            params = {"exercise": name, "sets": sets, "minDurationSec": seconds * sets}
+            rows.append(quest(day, slug, f"{name} {sets}x{int(seconds)}s", "daily", "STR", "hevy_sets", params, 15, "normal", seconds * sets / 60, "min", mode))
+            continue
+        low, high = int(item.get("minReps") or 1), int(item.get("maxReps") or 1)
+        reps = f"{low}" if low == high else f"{low}-{high}"
+        main = item.get("role") == "main"
+        params = {"exercise": name, "sets": sets, "minReps": low}
+        rows.append(quest(day, slug, f"{name} {sets}x{reps}", "daily", "STR", "hevy_sets", params, 25 if main else 15, "hard" if main else "normal", sets, "sets", mode))
+    return rows
 
 
 def no_gym_quests(rows: list[dict[str, Any]], day: str, mode: str) -> list[dict[str, Any]]:
@@ -562,9 +664,21 @@ def sample_request(mode: str = "performance_training", band: str = "green") -> d
         "player": {"timezone": "America/Los_Angeles", "localDate": "2026-10-01", "level": 42, "xp": 1, "penaltyTier": 0},
         "modeDecision": {"selectedMode": mode, "trainingBand": band, "reasonCodes": ["fixture"], "lockedByRules": True},
         "whoop": {"available": False, "readinessBand": band},
-        "constraints": {"maxRequiredQuests": 5, "maxOptionalQuests": 1},
+        "constraints": {"maxRequiredQuests": 8, "maxOptionalQuests": 1},
     }
     return body
+
+
+SAMPLE_SPLIT_DAY = {
+    "id": "squat",
+    "name": "Squat Day",
+    "lowerBody": True,
+    "exercises": [
+        {"exercise": "Squat", "aliases": ["squat"], "role": "main", "sets": 4, "minReps": 1, "maxReps": 5},
+        {"exercise": "Bulgarian Split Squat", "aliases": ["bulgarian split squat"], "role": "accessory", "sets": 6, "minReps": 8, "maxReps": 12},
+        {"exercise": "Dead Hang", "aliases": ["dead hang", "hang"], "role": "accessory", "sets": 3, "minReps": 0, "maxReps": 0, "secondsPerSet": 60},
+    ],
+}
 
 
 @app.get("/v1/oauth/whoop/start")
@@ -823,7 +937,52 @@ def self_check() -> None:
         pass
     if os.environ.get("XAI_MODEL", "").strip() == "" and xai_model() != DEFAULT_MODEL:
         raise SystemExit("default model should be grok-4.6")
+    split_checks()
     print("ok")
+
+
+def split_checks() -> None:
+    body = sample_request()
+    body["split"] = {"name": "4-day upper/lower", "rotation": ["Bench Day", "Squat Day"], "today": SAMPLE_SPLIT_DAY, "lastDone": {}}
+    body["trainingHistory"] = {"lifts": {}, "strengthSessions": []}
+    day = template_bundle(body)
+    titles = [row["title"] for row in day["quests"]]
+    if day["headerLine"] != "Squat Day" or titles != ["10K Run", "Squat 4x1-5", "Bulgarian Split Squat 6x8-12", "Dead Hang 3x60s"]:
+        raise SystemExit(f"the template should follow today's split day, got {day['headerLine']} {titles}")
+    if validate_bundle(sanitize(day, body), body):
+        raise SystemExit(f"the split template should pass, got {validate_bundle(sanitize(day, body), body)}")
+    if day["quests"][3]["verification"]["params"]["minDurationSec"] != 180:
+        raise SystemExit("a timed split exercise should check total seconds")
+    renamed = json.loads(json.dumps(day))
+    renamed["headerLine"] = "Leg Day"
+    if not any("headerLine" in problem for problem in validate_bundle(renamed, body)):
+        raise SystemExit("a split day must keep its name")
+    other = json.loads(json.dumps(day))
+    other["quests"][1]["verification"]["params"]["exercise"] = "Bench Press"
+    if not any("not part of Squat Day" in problem for problem in validate_bundle(other, body)):
+        raise SystemExit("a lift from another split day should be rejected")
+    logged = json.loads(json.dumps(day))
+    logged["quests"][3]["verification"]["params"]["exercise"] = "Hang"
+    if validate_bundle(logged, body):
+        raise SystemExit("an alias of a split exercise should pass")
+    tired = dict(body, trainingHistory={"lifts": {}, "strengthSessions": [], "fatigue": {"deloadRecommended": True}})
+    if not any("deload" in problem for problem in validate_bundle(day, tired)):
+        raise SystemExit("a full-volume day should be rejected when a deload is due")
+    halved = json.loads(json.dumps(day))
+    for row in halved["quests"][1:]:
+        row["verification"]["params"]["sets"] = -(-row["verification"]["params"]["sets"] // 2)
+    if any("deload" in problem for problem in validate_bundle(halved, tired)):
+        raise SystemExit("half the sets should pass on a deload day")
+    run_only = json.loads(json.dumps(day))
+    run_only["quests"] = run_only["quests"][:1]
+    run_only["headerLine"] = "Training"
+    if validate_bundle(run_only, body):
+        raise SystemExit("a run-only day may leave the split for the day")
+    # A heavy leg day yesterday: the split asks for a run-only day, and the template gives one.
+    blocked = dict(body, trainingHistory={"lifts": {}, "strengthSessions": [{"daysAgo": 1, "heavyLower": True}]})
+    blocked = {**blocked, "splitAdvice": split_advice(blocked)}
+    if "run-only" not in blocked["splitAdvice"] or any(row["stat"] == "STR" for row in template_bundle(blocked)["quests"]):
+        raise SystemExit(f"a blocked leg day should become run-only, got {blocked['splitAdvice']}")
 
 
 if __name__ == "__main__":

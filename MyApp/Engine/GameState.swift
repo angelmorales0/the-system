@@ -82,6 +82,7 @@ struct GameSnapshot: Codable, Equatable {
             mode: bundle.mode,
             trainingBand: trainingBand,
             noGym: noGymDayKey == bundle.dayKey,
+            splitDay: GymSplit.day(named: bundle.headerLine)?.id,
             generatedBy: bundle.generatedBy,
             missedRequired: missesRequiredSet,
             quests: bundle.quests.map { quest in
@@ -367,12 +368,15 @@ struct GameSnapshot: Codable, Equatable {
             bundle = finished(allowed.strippingModelCompletion(assignedAt: now), catalog: catalog, now: now)
             return
         }
-        bundle = finished(catalog.makeBundle(
+        let catalogDay = catalog.makeBundle(
             mode: decision.selectedMode,
             band: decision.trainingBand,
             dayKey: dayKey,
             now: now
-        ), catalog: catalog, now: now)
+        )
+        // Offline, the day still follows the split: its exercises without loads.
+        let split = GymSplit.apply(GymSplit.today(history: questHistory, dayKey: dayKey), to: catalogDay, band: decision.trainingBand, now: now)
+        bundle = finished(split, catalog: catalog, now: now)
     }
 
     /// Adds the fixed rows every day gets: Stretching, then any open penalty.
