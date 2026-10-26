@@ -16,14 +16,19 @@ user a change is done, and do not ask them to build in Xcode, until it passes.
 
 Run it with a 600000 ms timeout. It takes a few minutes.
 
-The script does 4 steps and stops at the first failure:
+The script does 5 steps and stops at the first failure:
 
 | Step | What it checks | Exit code on failure |
 |---|---|---|
-| 1 | `xcodebuild` for the iOS Simulator (scheme `MyApp`, Debug) | 1 |
+| 1 | `xcodebuild` for the iOS Simulator (scheme `MyApp`, Debug, `CLOUDKIT_SYNC=NO`) | 1 |
 | 2 | `xcodebuild` for a real iPhone, without signing | 2 |
-| 3 | Boot a Simulator and install the app (fresh data) | 3 |
-| 4 | Launch the app twice (first launch, then relaunch). Each launch must stay alive for `RUN_SECONDS` (15) with no crash, no `precondition`/`fatalError`, and no crash report | 4 |
+| 3 | `xcodebuild` for the Mac tracker (scheme `FocusTracker`, macOS), without signing | 5 |
+| 4 | Boot a Simulator and install the app (fresh data) | 3 |
+| 5 | Launch the app twice (first launch, then relaunch). Each launch must stay alive for `RUN_SECONDS` (15) with no crash, no `precondition`/`fatalError`, and no crash report | 4 |
+
+Unsigned builds have no iCloud entitlement, and CloudKit stops an app without it.
+So the Simulator build that runs turns CloudKit off. Steps 2 and 3 keep it on, so
+the CloudKit code still compiles.
 
 Logs and screenshots go to `$TMPDIR/system-verify/`.
 
@@ -33,7 +38,7 @@ Logs and screenshots go to `$TMPDIR/system-verify/`.
    with the Read tool. Make sure the screen shows the feature that you changed and
    no error or blank screen. If the change is on a screen that the app does not
    show at launch, say that you could not see it in the screenshot.
-2. **Exit 1 or 2:** Fix the compile errors that the script printed. Read the full
+2. **Exit 1, 2, or 5:** Fix the compile errors that the script printed. Read the full
    log only if the printed errors are not enough. Then run the script again.
 3. **Exit 3:** This is an environment problem (no Simulator, boot failure). Try
    `SIM_UDID=<id>` with another device from `xcrun simctl list devices available`.

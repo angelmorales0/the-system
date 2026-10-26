@@ -34,13 +34,13 @@ final class GameStore: ObservableObject {
     private var evaluatingEmergency = false
     private var lastStretchRefresh = Date.distantPast
     /// The last live stat inputs, so a target change can recalculate without a new fetch. Nil until the first refresh.
-    private var statInputs: (codeforces: CodeforcesReading, financeMonths: [FinanceMonth], bodyMass: BodyMassReading?)?
+    private var statInputs: (codeforces: CodeforcesReading, financeMonths: [FinanceMonth], bodyMass: BodyMassReading?, focusDays: [FocusDay])?
 
     init(persistence: GamePersistence = .standard) {
         #if DEBUG
         let problems = VerificationFixtures.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check() + RecoveryLevel.check()
             + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
-            + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check()
+            + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check()
             + HiddenQuestRules.check()
             + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures()
             + NoGymDayRules.check()
@@ -82,6 +82,9 @@ final class GameStore: ObservableObject {
         enforcePenalty()
         if persistence == .standard {
             EmergencyEnforcement.syncMonitoring(emergencySettings)
+            #if os(iOS)
+            FocusTracking.syncMonitoring()
+            #endif
             observeStepUpdates()
             evaluateEmergencies(now: .now)
         }
@@ -134,6 +137,7 @@ final class GameStore: ObservableObject {
             codeforces: statInputs.codeforces,
             financeMonths: statInputs.financeMonths,
             bodyMass: statInputs.bodyMass.map { [$0] } ?? [],
+            focusDays: statInputs.focusDays,
             targets: statTargets,
             now: now
         )
@@ -425,6 +429,7 @@ final class GameStore: ObservableObject {
             let health = await HealthKitBridge.summary(on: now)
             let bodyMass = await HealthKitBridge.latestBodyMass(days: EnduranceLevel.bodyWeightWindowDays, now: now)
             let remote = await IntegrationClient.load(dayKey: dayKey)
+            let focusDays = await FocusTracking.loadDaysWithMac(todayKey: dayKey)
             guard let self else { return }
             self.refreshingIntegrations = false
             var next = self.snapshot
@@ -438,7 +443,7 @@ final class GameStore: ObservableObject {
                 mercury: remote.mercury,
                 hevy: remote.hevy
             )
-            self.statInputs = (remote.codeforces, remote.financeMonths, bodyMass)
+            self.statInputs = (remote.codeforces, remote.financeMonths, bodyMass, focusDays)
             self.recomputeStatLevels(now: now)
             if rebuilt {
                 self.runningTimersRemoveMissing()

@@ -65,6 +65,7 @@
 		F30000000000000000000001 /* PenaltyShieldConfig.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PenaltyShieldConfig.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F40000000000000000000001 /* PenaltyShieldAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PenaltyShieldAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F50000000000000000000001 /* PenaltyActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PenaltyActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F60000000000000000000001 /* FocusTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FocusTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -136,6 +137,16 @@
 			path = PenaltyActivity;
 			sourceTree = "<group>";
 		};
+		G60000000000000000000001 /* FocusTracker */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = FocusTracker;
+			sourceTree = "<group>";
+		};
+		G70000000000000000000001 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -164,6 +175,11 @@
 			files = (
 			);
 		};
+		R60000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -175,6 +191,8 @@
 				G30000000000000000000001 /* PenaltyShieldConfig */,
 				G40000000000000000000001 /* PenaltyShieldAction */,
 				G50000000000000000000001 /* PenaltyActivity */,
+				G60000000000000000000001 /* FocusTracker */,
+				G70000000000000000000001 /* Shared */,
 				000000000000000000000020 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -187,6 +205,7 @@
 				F30000000000000000000001 /* PenaltyShieldConfig.appex */,
 				F40000000000000000000001 /* PenaltyShieldAction.appex */,
 				F50000000000000000000001 /* PenaltyActivity.appex */,
+				F60000000000000000000001 /* FocusTracker.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -213,6 +232,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				000000000000000000000010 /* MyApp */,
+				G70000000000000000000001 /* Shared */,
 			);
 			name = MyApp;
 			productName = MyApp;
@@ -291,6 +311,25 @@
 			productReference = F50000000000000000000001 /* PenaltyActivity.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		000000000000000600000000 /* FocusTracker */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = L60000000000000000000001 /* Build configuration list for PBXNativeTarget "FocusTracker" */;
+			buildPhases = (
+				S60000000000000000000001 /* Sources */,
+				R60000000000000000000001 /* Frameworks */,
+				E60000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			fileSystemSynchronizedGroups = (
+				G60000000000000000000001 /* FocusTracker */,
+				G70000000000000000000001 /* Shared */,
+			);
+			name = FocusTracker;
+			productName = FocusTracker;
+			productReference = F60000000000000000000001 /* FocusTracker.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -316,6 +355,9 @@
 					000000000000000500000000 = {
 						CreatedOnToolsVersion = 26.3;
 					};
+					000000000000000600000000 = {
+						CreatedOnToolsVersion = 26.3;
+					};
 				};
 			};
 			buildConfigurationList = 000000000000000010000000 /* Build configuration list for PBXProject "system" */;
@@ -337,6 +379,7 @@
 				000000000000000300000000 /* PenaltyShieldConfig */,
 				000000000000000400000000 /* PenaltyShieldAction */,
 				000000000000000500000000 /* PenaltyActivity */,
+				000000000000000600000000 /* FocusTracker */,
 			);
 		};
 /* End PBXProject section */
@@ -367,6 +410,11 @@
 			files = (
 			);
 		};
+		E60000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -391,6 +439,11 @@
 			);
 		};
 		S50000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
+		S60000000000000000000001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
 			);
@@ -481,6 +534,8 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				CLOUDKIT_CONDITION_NO = "";
+				CLOUDKIT_CONDITION_YES = CLOUDKIT_SYNC;
 				PROJECT_UNIQUE_VALUE = HDDJMVMX;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
@@ -544,6 +599,8 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.6.2;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				CLOUDKIT_CONDITION_NO = "";
+				CLOUDKIT_CONDITION_YES = CLOUDKIT_SYNC;
 				PROJECT_UNIQUE_VALUE = HDDJMVMX;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -559,6 +616,9 @@
 				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = AppIconFull;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CLOUDKIT_SYNC = NO;
+				"CLOUDKIT_SYNC[sdk=iphoneos*]" = YES;
+				"CLOUDKIT_SYNC[sdk=iphonesimulator*]" = YES;
 				CODE_SIGN_ENTITLEMENTS = MyApp.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "MyApp-iOS.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "MyApp-iOS.entitlements";
@@ -593,6 +653,7 @@
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(CLOUDKIT_CONDITION_$(CLOUDKIT_SYNC))";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -608,6 +669,9 @@
 				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = AppIconFull;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CLOUDKIT_SYNC = NO;
+				"CLOUDKIT_SYNC[sdk=iphoneos*]" = YES;
+				"CLOUDKIT_SYNC[sdk=iphonesimulator*]" = YES;
 				CODE_SIGN_ENTITLEMENTS = MyApp.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "MyApp-iOS.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "MyApp-iOS.entitlements";
@@ -642,6 +706,7 @@
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(CLOUDKIT_CONDITION_$(CLOUDKIT_SYNC))";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -875,6 +940,64 @@
 			};
 			name = Release;
 		};
+		6000000000000000000000D1 /* Debug configuration for PBXNativeTarget "FocusTracker" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLOUDKIT_SYNC = YES;
+				CODE_SIGN_ENTITLEMENTS = FocusTracker/FocusTracker.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = FocusTracker;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "FocusTracker reads the front tab's web address to count time on social sites. Only daily minute totals leave this Mac.";
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).FocusTracker";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(CLOUDKIT_CONDITION_$(CLOUDKIT_SYNC))";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		6000000000000000000000D2 /* Release configuration for PBXNativeTarget "FocusTracker" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLOUDKIT_SYNC = YES;
+				CODE_SIGN_ENTITLEMENTS = FocusTracker/FocusTracker.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = FocusTracker;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "FocusTracker reads the front tab's web address to count time on social sites. Only daily minute totals leave this Mac.";
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).FocusTracker";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(CLOUDKIT_CONDITION_$(CLOUDKIT_SYNC))";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -923,6 +1046,14 @@
 			buildConfigurations = (
 				5000000000000000000000D1 /* Debug configuration for PBXNativeTarget "PenaltyActivity" */,
 				5000000000000000000000D2 /* Release configuration for PBXNativeTarget "PenaltyActivity" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		L60000000000000000000001 /* Build configuration list for PBXNativeTarget "FocusTracker" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6000000000000000000000D1 /* Debug configuration for PBXNativeTarget "FocusTracker" */,
+				6000000000000000000000D2 /* Release configuration for PBXNativeTarget "FocusTracker" */,
 			);
 			defaultConfigurationName = Release;
 		};

@@ -13,6 +13,27 @@ struct FocusDay: Codable, Equatable {
     var socialMinutesReached: Int?
     /// True after `intervalDidEnd` for the day. Today in progress is not complete and does not count.
     var complete: Bool
+    /// Active Mac minutes from FocusTracker, summed over every Mac. `nil` means no Mac data that day.
+    var macScreenMinutes: Int?
+    /// Mac minutes in social apps and on social sites.
+    var macSocialMinutes: Int?
+
+    /// iPhone plus Mac. The iPhone decides whether the day is logged: Mac minutes alone cannot show phone use.
+    var totalScreenMinutes: Int? { screenMinutesReached.map { $0 + (macScreenMinutes ?? 0) } }
+    var totalSocialMinutes: Int? { socialMinutesReached.map { $0 + (macSocialMinutes ?? 0) } }
+
+    /// Adds each complete Mac day to the iPhone day with the same key. Several Macs on one day add up.
+    /// A Mac day with no iPhone day is dropped.
+    static func merging(_ phoneDays: [FocusDay], mac: [MacScreenDay]) -> [FocusDay] {
+        let byDay = Dictionary(grouping: mac.filter(\.complete), by: \.dayKey)
+        return phoneDays.map { day in
+            guard let macDays = byDay[day.dayKey] else { return day }
+            var merged = day
+            merged.macScreenMinutes = Int((macDays.reduce(0) { $0 + $1.screenSeconds } / 60).rounded(.down))
+            merged.macSocialMinutes = Int((macDays.reduce(0) { $0 + $1.socialSeconds } / 60).rounded(.down))
+            return merged
+        }
+    }
 }
 
 /// Deterministic FOC (focus) level 0...350.
@@ -55,7 +76,7 @@ enum FocusLevel {
     /// Strict rule: 90% of logged days under 2 h, with at least 27 logged days.
     /// Progress: the per-day band from 480 to 90 minutes, averaged over logged days, × coverage.
     private static func screenTime(_ window: [FocusDay]) -> StatRequirement {
-        let values = window.compactMap(\.screenMinutesReached)
+        let values = window.compactMap(\.totalScreenMinutes)
         let passes = values.filter { $0 < screenLimitMinutes }.count
         let share = values.isEmpty ? 0 : Double(passes) / Double(values.count)
         return StatRequirement(
@@ -63,21 +84,21 @@ enum FocusLevel {
             passed: values.count >= minimumLoggedDays && share >= screenPassShare - 1e-9,
             progress: averageProgress(values, band: screenBand) * coverage(values.count),
             weight: Weight.screenTime,
-            detail: logged(values.count, of: window.count) + "\(passes) of \(values.count) days under 2 h; avg reached \(average(values)) min"
+            detail: logged(values.count, of: window.count) + "\(passes) of \(values.count) days under 2 h; avg reached \(average(values)) min" + macNote(window.compactMap(\.macScreenMinutes))
         )
     }
 
     /// Strict rule: every logged day at 0 minutes (the 1-minute threshold never fired), with at least 27 logged days.
     /// Progress: the per-day band from 180 to 0 minutes, averaged over logged days, × coverage.
     private static func socialMedia(_ window: [FocusDay]) -> StatRequirement {
-        let values = window.compactMap(\.socialMinutesReached)
+        let values = window.compactMap(\.totalSocialMinutes)
         let passes = values.filter { $0 == 0 }.count
         return StatRequirement(
             category: "Social media",
             passed: values.count >= minimumLoggedDays && passes == values.count,
             progress: averageProgress(values, band: socialBand) * coverage(values.count),
             weight: Weight.socialMedia,
-            detail: logged(values.count, of: window.count) + "\(passes) of \(values.count) days at 0 min; avg reached \(average(values)) min"
+            detail: logged(values.count, of: window.count) + "\(passes) of \(values.count) days at 0 min; avg reached \(average(values)) min" + macNote(window.compactMap(\.macSocialMinutes))
         )
     }
 
@@ -92,6 +113,11 @@ enum FocusLevel {
     /// Scales progress down when fewer than 27 days are logged, so missing days cannot raise the level.
     private static func coverage(_ loggedDays: Int) -> Double {
         min(1, Double(loggedDays) / Double(minimumLoggedDays))
+    }
+
+    /// The Mac's share, shown only when FocusTracker sent data for a day in the window.
+    private static func macNote(_ macMinutes: [Int]) -> String {
+        macMinutes.isEmpty ? "" : "; incl. Mac avg \(average(macMinutes)) min on \(macMinutes.count) days"
     }
 
     private static func logged(_ count: Int, of total: Int) -> String {
@@ -228,6 +254,36 @@ enum FocusLevel {
         let midRow = evaluate(days: mid).requirements.first { $0.category == "Daily screen time" }
         if abs((midRow?.progress ?? 0) - 300.0 / 390.0) > 0.0001 || midRow?.detail != "0 of 30 days under 2 h; avg reached 180 min" {
             errors.append("180 min every day should give progress \(300.0 / 390.0), got \(String(describing: midRow))")
+        }
+
+        // Mac minutes add to the iPhone. 60 + 20 stays under 2 h; 60 + 70 does not.
+        func mac(_ dayKey: String, screen: Double, social: Double = 0, device: String = "a") -> MacScreenDay {
+            MacScreenDay(dayKey: dayKey, screenSeconds: screen * 60, socialSeconds: social * 60, complete: true, deviceID: device, deviceName: "Mac")
+        }
+        let light = FocusDay.merging(perfect, mac: perfect.map { mac($0.dayKey, screen: 20) })
+        if !evaluate(days: light).isMaxLevel || light.first?.totalScreenMinutes != 80 {
+            errors.append("60 iPhone + 20 Mac minutes should pass, got \(String(describing: light.first?.totalScreenMinutes))")
+        }
+        let heavy = FocusDay.merging(perfect, mac: perfect.map { mac($0.dayKey, screen: 70) })
+        let heavyRow = evaluate(days: heavy).requirements.first { $0.category == "Daily screen time" }
+        if heavyRow?.passed != false || heavyRow?.detail != "0 of 30 days under 2 h; avg reached 130 min; incl. Mac avg 70 min on 30 days" {
+            errors.append("60 iPhone + 70 Mac minutes should fail with a Mac note, got \(String(describing: heavyRow))")
+        }
+        // Mac social minutes break the 0-minute social rule.
+        failsOnly("Social media") { days in days = FocusDay.merging(days, mac: [mac(days[5].dayKey, screen: 10, social: 3)]) }
+        // Two Macs on one day add up; a Mac day with no iPhone day and an incomplete Mac day are dropped.
+        let twoMacs = FocusDay.merging(perfect, mac: [mac(perfect[0].dayKey, screen: 10.5), mac(perfect[0].dayKey, screen: 10.5, device: "b"), mac("2030-01-01", screen: 300)])
+        var partial = mac(perfect[1].dayKey, screen: 300)
+        partial.complete = false
+        if twoMacs.first?.macScreenMinutes != 21 || twoMacs.count != perfect.count
+            || FocusDay.merging(perfect, mac: [partial])[1].macScreenMinutes != nil {
+            errors.append("two Macs should add to 21 min and extra or incomplete Mac days should drop, got \(String(describing: twoMacs.first?.macScreenMinutes))")
+        }
+        // A day the iPhone did not log stays unlogged, even with Mac data.
+        var unlogged = perfect
+        unlogged[0].screenMinutesReached = nil
+        if FocusDay.merging(unlogged, mac: [mac(perfect[0].dayKey, screen: 30)])[0].totalScreenMinutes != nil {
+            errors.append("Mac minutes alone should not log a day")
         }
         return errors
     }

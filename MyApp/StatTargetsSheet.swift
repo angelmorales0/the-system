@@ -26,6 +26,20 @@ struct StatTargetsSheet: View {
                         .font(.title3.weight(.semibold))
                         .tracking(1.1)
                     note("\(active.count) of \(report.requirements.count) targets count. Meet every target that counts to reach \(StatLevel.maxLevel). A removed target's weight goes to the others.")
+                    if stat == .FOC {
+                        NavigationLink {
+                            FocusTrackingView()
+                        } label: {
+                            Text(FocusTracking.isTracking ? "TRACKING SETTINGS" : "SET UP TRACKING")
+                                .font(.caption2.weight(.semibold))
+                                .tracking(0.8)
+                                .frame(maxWidth: .infinity, minHeight: 34)
+                                .overlay { Rectangle().stroke(QuestLight.ink.opacity(0.6), lineWidth: 0.8) }
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 6)
+                    }
                 }
 
                 QuestSectionTitle(text: "Targets")

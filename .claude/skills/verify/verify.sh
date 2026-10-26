@@ -1,8 +1,13 @@
 #!/bin/bash
-# Verifies the iOS app: Simulator build, device build, then launches in the
-# Simulator twice (fresh install + relaunch) and checks for crashes.
+# Verifies the iOS app: Simulator build, device build, the Mac FocusTracker build, then launches
+# the iOS app in the Simulator twice (fresh install + relaunch) and checks for crashes.
 # Exit codes: 0 pass, 1 Simulator build failed, 2 device build failed,
-#             3 Simulator setup failed, 4 app crashed or did not stay running.
+#             3 Simulator setup failed, 4 app crashed or did not stay running,
+#             5 FocusTracker (macOS) build failed.
+#
+# Unsigned builds have no iCloud entitlement, and CloudKit stops an app without it. So the
+# Simulator build that runs sets CLOUDKIT_SYNC=NO. The device and Mac builds keep it on, so
+# the CloudKit code still compiles.
 #
 # Env overrides:
 #   SIM_UDID     Simulator to use (default: first available iPhone)
@@ -27,10 +32,10 @@ show_build_errors() {
 }
 
 # 1. Simulator build
-echo "== [1/4] Build for iOS Simulator"
+echo "== [1/5] Build for iOS Simulator"
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
     -destination 'generic/platform=iOS Simulator' -derivedDataPath "$DD" \
-    CODE_SIGNING_ALLOWED=NO build > "$OUT/build-sim.log" 2>&1
+    CODE_SIGNING_ALLOWED=NO CLOUDKIT_SYNC=NO build > "$OUT/build-sim.log" 2>&1
 if ! grep -q 'BUILD SUCCEEDED' "$OUT/build-sim.log"; then
     show_build_errors "$OUT/build-sim.log"
     fail "Simulator build. Full log: $OUT/build-sim.log" 1
@@ -39,7 +44,7 @@ WARNINGS=$(grep -E '^/.*: warning:' "$OUT/build-sim.log" | sort -u | wc -l | tr 
 echo "   ok ($WARNINGS warnings in files compiled this run)"
 
 # 2. Device build (no signing: signing needs the user's Apple account in Xcode)
-echo "== [2/4] Build for iOS device (unsigned)"
+echo "== [2/5] Build for iOS device (unsigned)"
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
     -destination 'generic/platform=iOS' -derivedDataPath "$DD" \
     CODE_SIGNING_ALLOWED=NO build > "$OUT/build-device.log" 2>&1
@@ -49,8 +54,19 @@ if ! grep -q 'BUILD SUCCEEDED' "$OUT/build-device.log"; then
 fi
 echo "   ok"
 
-# 3. Simulator setup
-echo "== [3/4] Prepare Simulator"
+# 3. Mac tracker build
+echo "== [3/5] Build FocusTracker for macOS (unsigned)"
+xcodebuild -project "$PROJECT" -scheme FocusTracker -configuration Debug \
+    -destination 'generic/platform=macOS' -derivedDataPath "$DD" \
+    CODE_SIGNING_ALLOWED=NO build > "$OUT/build-mac.log" 2>&1
+if ! grep -q 'BUILD SUCCEEDED' "$OUT/build-mac.log"; then
+    show_build_errors "$OUT/build-mac.log"
+    fail "FocusTracker build. Full log: $OUT/build-mac.log" 5
+fi
+echo "   ok"
+
+# 4. Simulator setup
+echo "== [4/5] Prepare Simulator"
 UDID="${SIM_UDID:-$(xcrun simctl list devices available | grep -E '^\s+iPhone' | head -1 | grep -oE '[0-9A-F-]{36}')}"
 [ -n "$UDID" ] || fail "No available iPhone Simulator" 3
 xcrun simctl boot "$UDID" 2>/dev/null
@@ -61,7 +77,7 @@ BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.pli
 xcrun simctl install "$UDID" "$APP" || fail "Install failed" 3
 echo "   $UDID  $BUNDLE_ID"
 
-# 4. Launch twice: first launch (fresh state) and relaunch (saved state)
+# 5. Launch twice: first launch (fresh state) and relaunch (saved state)
 CRASH_DIR="$HOME/Library/Logs/DiagnosticReports"
 MARKER="$OUT/.launch-marker"
 run_once() {
@@ -95,7 +111,7 @@ run_once() {
     fi
     echo "   $label launch ok (${RUN_SECONDS}s) screenshot: $OUT/screen-$label.png"
 }
-echo "== [4/4] Run in Simulator"
+echo "== [5/5] Run in Simulator"
 run_once first
 run_once relaunch
 

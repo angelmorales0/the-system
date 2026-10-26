@@ -46,12 +46,14 @@ struct StatLevelSet: Equatable {
     }
 
     /// Inputs the phone can read today. The empty lists are the data still to be wired
-    /// (Hevy history, run and swim efforts, VO₂ max, zone 2, agility tests, Screen Time days, recovery days).
+    /// (Hevy history, run and swim efforts, VO₂ max, zone 2, agility tests, recovery days).
     /// `bodyMass` is the newest Apple Health weigh-in, for the END body weight target.
+    /// `focusDays` are the Screen Time days, with Mac minutes added when iCloud has them.
     static func compute(
         codeforces: CodeforcesReading,
         financeMonths: [FinanceMonth],
         bodyMass: [BodyMassReading] = [],
+        focusDays: [FocusDay] = [],
         targets: StatTargets = StatTargets(),
         now: Date
     ) -> StatLevelSet {
@@ -60,7 +62,7 @@ struct StatLevelSet: Equatable {
             .END: EnduranceLevel.evaluate(efforts: [], swims: [], vo2: [], zoneTwo: [], bodyMass: bodyMass, now: now),
             .INT: IntelligenceLevel.evaluate(codeforces),
             .AGI: AgilityLevel.evaluate(measurements: [], now: now),
-            .FOC: FocusLevel.evaluate(days: []),
+            .FOC: FocusLevel.evaluate(days: focusDays),
             .REC: RecoveryLevel.evaluate(days: []).statReport,
             .FIN: FinanceLevel.evaluate(months: financeMonths),
         ]
