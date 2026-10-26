@@ -129,10 +129,6 @@ enum PenaltyRules {
         if normal.kind == .penalty || GameSnapshot.xpGrant(for: normal) != normal.xp {
             errors.append("a normal row on a penalty day should keep full XP")
         }
-        cleared.undoQuest(id: quest.id)
-        if cleared.player.penaltyTier != 1 {
-            errors.append("undoing a penalty clear should restore the tier")
-        }
 
         var optionalOnly = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
         // Every row, including the fixed Stretching row, so the day has nothing required.
@@ -149,10 +145,6 @@ enum PenaltyRules {
         _ = capped.apply(.completed(evidence: evidence("cap")), questId: run.id, now: dayOne)
         if capped.player.stats[run.stat] != StatValues.maximum {
             errors.append("a quest must not raise a stat above \(StatValues.maximum), got \(capped.player.stats[run.stat])")
-        }
-        capped.undoQuest(id: run.id)
-        if capped.player.stats[run.stat] != StatValues.maximum - 1 {
-            errors.append("undo should remove only the capped grant, got \(capped.player.stats[run.stat])")
         }
         if StatValues.starter.capped() != StatValues.starter {
             errors.append("starter stats must be at or under the cap")

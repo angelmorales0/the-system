@@ -311,17 +311,8 @@ final class GameStore: ObservableObject {
 
     func handleQuestTap(id: String, now: Date = .now) {
         guard let quest = snapshot.bundle.quests.first(where: { $0.id == id }) else { return }
-        if quest.status == .completed {
-            var next = snapshot
-            next.undoQuest(id: id)
-            snapshot = next
-            verificationNote = nil
-            clock = now
-            persist()
-            ensureTicker()
-            enforcePenalty()
-            return
-        }
+        // A completed quest stays completed. There is no undo.
+        guard quest.status != .completed else { return }
 
         switch quest.verification.method {
         case .timerSession:

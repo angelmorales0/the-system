@@ -130,6 +130,7 @@ struct SystemView: View {
 }
 
 private func questRowHint(_ quest: Quest) -> String {
+    if quest.status == .completed { return "" }
     switch quest.verification.method {
     case .timerSession:
         return "Starts the in-app timer"

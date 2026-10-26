@@ -33,8 +33,6 @@ struct GameSnapshot: Codable, Equatable {
     var fullRecoveryDayKey: String?
     /// Token spent after today's quests already started. Applied on the next rollover.
     var queuedFullRecoveryDayKey: String?
-    /// Tier restored if a cleared penalty quest is undone the same day.
-    var heldPenaltyTier: Int = 0
     /// True after a FamilyActivityPicker save. Tokens themselves stay in the App Group.
     var hasDistractorSelection: Bool = false
     /// Hidden quests the player unlocked, oldest first. One Beyond the Limit per quest day.
@@ -206,19 +204,6 @@ struct GameSnapshot: Codable, Equatable {
         return apply(.completed(evidence: evidence), questId: questId, now: now)
     }
 
-    mutating func undoQuest(id: String) {
-        guard let index = bundle.quests.firstIndex(where: { $0.id == id }) else { return }
-        guard bundle.quests[index].status == .completed else { return }
-        undoCompletion(at: index)
-        restorePenaltyIfNeeded()
-        // Manual confirms stay in the log so undo cannot refund the 3-per-day cap.
-        evidenceLog.removeAll { $0.questId == id && $0.evidence.source != ManualConfirmVerifier.source }
-        runningTimers.removeAll { $0.questId == id }
-        var quest = bundle.quests[index]
-        quest.evidence = []
-        bundle.quests[index] = quest
-    }
-
     static func xpGrant(for quest: Quest) -> Int {
         var amount = quest.xp
         if quest.kind == .penalty {
@@ -367,7 +352,7 @@ struct GameSnapshot: Codable, Equatable {
         var quest = bundle.quests[index]
         guard quest.status != .completed else { return }
         let xpGain = Self.xpGrant(for: quest)
-        // Only the points under the cap are granted, so undo removes exactly what was added.
+        // Only the points under the cap are granted.
         let statGain = min(quest.difficulty.statWeight, player.stats.room(for: quest.stat))
         player.addXP(xpGain)
         player.stats[quest.stat] += statGain
@@ -387,30 +372,7 @@ struct GameSnapshot: Codable, Equatable {
     /// Every penalty row is done. Tier drops to 0. The 0.9× XP tax already applied at grant time.
     private mutating func liftPenaltyIfCleared() {
         guard PenaltyQuests.isCleared(in: bundle), player.penaltyTier > 0 else { return }
-        heldPenaltyTier = player.penaltyTier
         player.penaltyTier = 0
-    }
-
-    private mutating func restorePenaltyIfNeeded() {
-        let rows = PenaltyQuests.rows(in: bundle)
-        guard player.penaltyTier == 0, rows.contains(where: { $0.status != .completed }) else { return }
-        player.penaltyTier = min(3, max(1, heldPenaltyTier))
-    }
-
-    private mutating func undoCompletion(at index: Int) {
-        var quest = bundle.quests[index]
-        guard quest.status == .completed else { return }
-        player.removeXP(quest.grantedXP)
-        player.stats[quest.stat] = max(0, player.stats[quest.stat] - quest.grantedStatPoints)
-        if quest.grantedRecoveryToken {
-            player.withdrawRecoveryToken()
-        }
-        quest.grantedXP = 0
-        quest.grantedStatPoints = 0
-        quest.grantedRecoveryToken = false
-        quest.status = .pending
-        quest.progress.current = 0
-        bundle.quests[index] = quest
     }
 
     private static func encoder() -> JSONEncoder {
@@ -431,7 +393,7 @@ extension GameSnapshot {
         case version, player, signals, bundle, evidenceLog, runningTimers
         case recentQuestTitles, generationAttemptDayKey, generatedBundle, readiness, recoveryComposite
         case finance, appliedFinProjection
-        case fullRecoveryDayKey, queuedFullRecoveryDayKey, heldPenaltyTier, hasDistractorSelection
+        case fullRecoveryDayKey, queuedFullRecoveryDayKey, hasDistractorSelection
         case hiddenUnlocks
         case emergencyFailedDayKey
     }
@@ -452,7 +414,6 @@ extension GameSnapshot {
         appliedFinProjection = try container.decodeIfPresent(Int.self, forKey: .appliedFinProjection) ?? 0
         fullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .fullRecoveryDayKey)
         queuedFullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .queuedFullRecoveryDayKey)
-        heldPenaltyTier = try container.decodeIfPresent(Int.self, forKey: .heldPenaltyTier) ?? 0
         hasDistractorSelection = try container.decodeIfPresent(Bool.self, forKey: .hasDistractorSelection) ?? false
         hiddenUnlocks = try container.decodeIfPresent([HiddenQuestUnlock].self, forKey: .hiddenUnlocks) ?? []
         emergencyFailedDayKey = try container.decodeIfPresent(String.self, forKey: .emergencyFailedDayKey)
@@ -475,7 +436,6 @@ extension GameSnapshot {
         try container.encode(appliedFinProjection, forKey: .appliedFinProjection)
         try container.encodeIfPresent(fullRecoveryDayKey, forKey: .fullRecoveryDayKey)
         try container.encodeIfPresent(queuedFullRecoveryDayKey, forKey: .queuedFullRecoveryDayKey)
-        try container.encode(heldPenaltyTier, forKey: .heldPenaltyTier)
         try container.encode(hasDistractorSelection, forKey: .hasDistractorSelection)
         try container.encode(hiddenUnlocks, forKey: .hiddenUnlocks)
         try container.encodeIfPresent(emergencyFailedDayKey, forKey: .emergencyFailedDayKey)

@@ -188,7 +188,7 @@ struct Quest: Identifiable, Codable, Equatable {
     var progress: QuestProgress
     var reward: QuestReward?
     var status: QuestStatus
-    /// Points actually applied, so a checkbox toggle can reverse the same grant.
+    /// Points actually applied when the quest completed.
     var grantedXP: Int
     var grantedStatPoints: Int
     var grantedRecoveryToken: Bool
@@ -435,17 +435,6 @@ struct PlayerState: Codable, Equatable {
             xp -= step
             level += 1
         }
-    }
-
-    mutating func removeXP(_ amount: Int) {
-        guard amount > 0 else { return }
-        xp -= amount
-        let step = max(xpToNext, 1)
-        while xp < 0 && level > 1 {
-            level -= 1
-            xp += step
-        }
-        if xp < 0 { xp = 0 }
     }
 
     @discardableResult
