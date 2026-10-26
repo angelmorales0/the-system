@@ -79,7 +79,7 @@ struct EmergencySettingsSheet: View {
         let wake = Self.timeString(settings.wakeTime)
         var text = "From \(start) to \(wake), \(settings.bedtimeGraceMinutes) min on your distractor apps locks every app for \(settings.lockdownMinutes) min. Calls and emergency SOS stay open."
         if !store.snapshot.hasDistractorSelection {
-            text += " Choose your distractor apps first (Status → Distractor shields). To watch all phone use, select every category there."
+            text += " Choose your distractor apps first (Status → Penalty Zone). To watch all phone use, select every category there."
         }
         return text
     }

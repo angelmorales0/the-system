@@ -71,7 +71,7 @@ struct StatusView: View {
                         Button {
                             showShields = true
                         } label: {
-                            Text("DISTRACTOR SHIELDS")
+                            Text("PENALTY ZONE")
                                 .font(.caption2.weight(.semibold))
                                 .tracking(1.1)
                                 .foregroundStyle(SystemTheme.muted)

@@ -11,14 +11,14 @@ struct PenaltyTargetsSheet: View {
     #if os(iOS)
     @State private var selection = PenaltySelectionStore.load()
     #endif
-    @State private var message = "Choose the distractor apps, categories, and sites to shield on a penalty day. This is not a full phone lock."
+    @State private var message = "Choose the distractor apps, categories, and sites that lock while a penalty is open. This is not a full phone lock."
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 SystemPanel {
                     VStack(alignment: .leading, spacing: 14) {
-                        QuestInfoHeader(title: "DISTRACTOR SHIELDS")
+                        QuestInfoHeader(title: "PENALTY ZONE")
                         Text(message)
                             .font(.footnote)
                             .foregroundStyle(SystemTheme.muted)
@@ -65,7 +65,7 @@ struct PenaltyTargetsSheet: View {
         do {
             try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
         } catch {
-            message = "Family Controls was not granted. Shields stay off until it is."
+            message = "Family Controls was not granted. The Penalty Zone stays off until it is."
         }
         #endif
     }
