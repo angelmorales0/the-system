@@ -144,12 +144,6 @@ Run once per local day at first open after `questDayKey` change (or BG refresh ~
     "dayStrainYesterday": 14.2,
     "readinessBand": "yellow"
   },
-  "calendar": {
-    "busyMinutes": 210,
-    "focusBlocks": [{ "start": "09:00", "end": "11:00", "title": "Deep work" }],
-    "eventsHint": ["interview_loop", "gym_blocked_evening"],
-    "wakeWindow": "06:30-07:30"
-  },
   "activeTarget": {
     "id": "tgt_interview_2026_09",
     "title": "Interview Prep",
@@ -218,8 +212,6 @@ elif activeTarget and whoop.readinessBand != red:
     mode = hybrid  # or interview_prep if Target.kind forces
 elif whoop.readinessBand == red or sleepPerformance < 60:
     mode = recovery
-elif calendar.busyMinutes > 360:
-    mode = focus_deepwork | nutrition_focus  # lighter physical
 else:
     mode = performance_training
 ```
