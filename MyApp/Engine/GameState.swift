@@ -25,6 +25,8 @@ struct GameSnapshot: Codable, Equatable {
     var appliedFinProjection: Int = 0
     /// Titles from the previous quest day. Sent as summaries, never as evidence.
     var recentQuestTitles: [String] = []
+    /// Past quest days as they ended, newest first, at most 30. The generator reads them.
+    var questHistory: [QuestDayRecord] = []
     /// Local day that already spent its one generation attempt, including a failed one.
     var generationAttemptDayKey: String?
     /// Last accepted generated bundle for that day, before the player’s progress.
@@ -59,6 +61,7 @@ struct GameSnapshot: Codable, Equatable {
         let key = QuestDay.key(for: now)
         // Flying west across midnight moves the local date back. Keep the later day, so it is not judged twice.
         guard key > bundle.dayKey else { return }
+        recordQuestDay()
         recordMissedDayIfNeeded()
         let previousTitles = bundle.quests.map(\.title)
         if !previousTitles.isEmpty {
@@ -69,6 +72,35 @@ struct GameSnapshot: Codable, Equatable {
         assignQueuedRecovery(on: key)
         rebuildBundle(catalog: catalog, now: now)
         runningTimers.removeAll()
+    }
+
+    /// Saves the day that is ending, with each quest's status, and keeps the newest 30 days.
+    mutating func recordQuestDay() {
+        guard !bundle.quests.isEmpty else { return }
+        let record = QuestDayRecord(
+            dayKey: bundle.dayKey,
+            mode: bundle.mode,
+            trainingBand: trainingBand,
+            noGym: noGymDayKey == bundle.dayKey,
+            generatedBy: bundle.generatedBy,
+            missedRequired: missesRequiredSet,
+            quests: bundle.quests.map { quest in
+                QuestRecord(
+                    title: quest.title,
+                    kind: quest.kind,
+                    stat: quest.stat,
+                    method: quest.verification.method,
+                    params: quest.verification.params,
+                    target: quest.progress.target,
+                    done: quest.progress.current,
+                    unit: quest.progress.unit,
+                    status: quest.status
+                )
+            }
+        )
+        questHistory.removeAll { $0.dayKey == record.dayKey }
+        questHistory.insert(record, at: 0)
+        questHistory = Array(questHistory.prefix(QuestDayRecord.keepDays))
     }
 
     /// Incomplete required quests escalate the penalty. A Full Recovery day does not.
@@ -404,6 +436,7 @@ extension GameSnapshot {
         case fullRecoveryDayKey, queuedFullRecoveryDayKey, hasDistractorSelection
         case hiddenUnlocks
         case emergencyFailedDayKey, noGymDayKey
+        case questHistory
     }
 
     init(from decoder: Decoder) throws {
@@ -428,6 +461,7 @@ extension GameSnapshot {
         noGymDayKey = try container.decodeIfPresent(String.self, forKey: .noGymDayKey)
         generationAttemptDayKey = try container.decodeIfPresent(String.self, forKey: .generationAttemptDayKey)
         generatedBundle = try container.decodeIfPresent(QuestBundle.self, forKey: .generatedBundle)
+        questHistory = try container.decodeIfPresent([QuestDayRecord].self, forKey: .questHistory) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -449,6 +483,7 @@ extension GameSnapshot {
         try container.encode(hiddenUnlocks, forKey: .hiddenUnlocks)
         try container.encodeIfPresent(emergencyFailedDayKey, forKey: .emergencyFailedDayKey)
         try container.encodeIfPresent(noGymDayKey, forKey: .noGymDayKey)
+        try container.encode(questHistory, forKey: .questHistory)
         try container.encodeIfPresent(generationAttemptDayKey, forKey: .generationAttemptDayKey)
         try container.encodeIfPresent(generatedBundle, forKey: .generatedBundle)
     }

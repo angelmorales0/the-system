@@ -75,7 +75,6 @@ final class GameStore: ObservableObject {
         }
         advanceTimers(now: .now)
         evaluateConnectedVerifiers(now: .now)
-        requestGenerationIfNeeded(now: .now)
         persist()
         ensureTicker()
         observeHealthUpdates()
@@ -402,7 +401,6 @@ final class GameStore: ObservableObject {
         dayClock = DayClock.resolve(current: dayClock, now: now)
         advanceTimers(now: now)
         evaluateConnectedVerifiers(now: now)
-        requestGenerationIfNeeded(now: now)
         persist()
         ensureTicker()
         refreshIntegrations(now: now)
@@ -446,6 +444,8 @@ final class GameStore: ObservableObject {
                 self.runningTimersRemoveMissing()
             }
             self.evaluateConnectedVerifiers(now: now)
+            // After today's readiness, sleep, and weight are in, so the generator plans from today's data.
+            self.requestGenerationIfNeeded(now: now)
             self.persist()
             self.enforcePenalty()
         }
@@ -482,7 +482,7 @@ final class GameStore: ObservableObject {
             return
         }
         persist()
-        let context = ContextBuilder.make(snapshot: snapshot, now: now)
+        let context = ContextBuilder.make(snapshot: snapshot, now: now, targets: statTargets, bodyMass: statInputs?.bodyMass)
         Task { [weak self] in
             await self?.runGeneration(context: context, dayKey: dayKey)
         }

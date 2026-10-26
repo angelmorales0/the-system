@@ -111,6 +111,67 @@ struct MorningConstraints: Codable, Equatable {
     )
 }
 
+/// One assigned quest on a past day, and how far it got.
+struct QuestRecord: Codable, Equatable {
+    var title: String
+    var kind: QuestKind
+    var stat: Stat
+    var method: VerificationMethod
+    var params: [String: JSONValue]
+    var target: Double
+    var done: Double
+    var unit: String
+    var status: QuestStatus
+}
+
+/// One past quest day as it ended: the plan the app assigned and what was done.
+/// Saved in the snapshot for 30 days so the generator can see what it planned before.
+struct QuestDayRecord: Codable, Equatable {
+    static let keepDays = 30
+
+    var dayKey: String
+    var mode: QuestMode
+    var trainingBand: ReadinessBand
+    var noGym: Bool
+    var generatedBy: String
+    /// A required quest was still open at the end of the day, so the penalty tier rose.
+    var missedRequired: Bool
+    var quests: [QuestRecord]
+}
+
+/// One STR target the player kept, so the generator plans toward the real goals.
+struct MorningStrengthTarget: Codable, Equatable {
+    var category: String
+    var goal: String
+    /// Hevy exercise names (without equipment) that count toward this target.
+    var aliases: [String]
+    var targetLb: Double?
+    var targetReps: Int?
+    var unit: String
+}
+
+/// One END target the player kept, in words.
+struct MorningTarget: Codable, Equatable {
+    var category: String
+    var goal: String
+}
+
+struct MorningBodyWeight: Codable, Equatable {
+    var targetLb: Double
+    var toleranceLb: Double
+    var latestLb: Double?
+    var measuredOn: String?
+    var source: String?
+}
+
+/// The player's goals. The backend adds the 30-day training history that measures them.
+struct MorningGoals: Codable, Equatable {
+    var weeklyTenKs: Int
+    var strength: [MorningStrengthTarget]
+    var endurance: [MorningTarget]
+    var bodyWeight: MorningBodyWeight
+}
+
 /// Redacted morning summary. Mercury is category totals only, and only after a backend snapshot.
 struct MorningContext: Codable, Equatable {
     var schemaVersion: Int
@@ -124,4 +185,7 @@ struct MorningContext: Codable, Equatable {
     var integrationsFreshness: MorningFreshness
     var recentQuestTitles: [String]
     var constraints: MorningConstraints
+    /// Up to 30 past quest days, newest first.
+    var recentDays: [QuestDayRecord] = []
+    var goals: MorningGoals? = nil
 }

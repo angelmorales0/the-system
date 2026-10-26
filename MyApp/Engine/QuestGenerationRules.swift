@@ -77,6 +77,7 @@ enum QuestGenerationRules {
         }
 
         errors.append(contentsOf: legacyTargetSaveLoads(catalog: catalog, now: now))
+        errors.append(contentsOf: historyChecks(catalog: catalog, now: now))
 
         let yellow = sampleContext(mode: .performanceTraining, band: .yellow, dayKey: dayKey)
         var longRun = sampleBundle(mode: .performanceTraining, dayKey: dayKey, now: now)
@@ -236,6 +237,57 @@ enum QuestGenerationRules {
         }
         if loaded.bundle.mode != .performanceTraining {
             errors.append("legacy Hybrid mode should read as Performance Training")
+        }
+        return errors
+    }
+
+    /// The 30-day quest log and the real goals reach the generator.
+    private static func historyChecks(catalog: FallbackCatalog, now: Date) -> [String] {
+        var errors: [String] = []
+        var snapshot = GameSnapshot.fresh(catalog: catalog, now: now)
+        let first = snapshot.bundle.quests[0]
+        let evidence = Evidence.make(source: "manual_confirm", externalId: "history", payload: "history", timestamp: now)
+        _ = snapshot.apply(.completed(evidence: evidence), questId: first.id, now: now)
+        let nextDay = now.addingTimeInterval(86_400)
+        snapshot.refreshIfNeeded(catalog: catalog, now: nextDay)
+        guard let day = snapshot.questHistory.first else {
+            return ["a finished quest day should be saved to the history"]
+        }
+        if day.dayKey != QuestDay.key(for: now) || day.quests.count < 2 || day.quests.first?.status != .completed
+            || day.quests.last?.status != .pending || !day.missedRequired || day.mode != .performanceTraining {
+            errors.append("the saved day should keep each quest's status and the miss, got \(day)")
+        }
+        var later = snapshot
+        for offset in 2...40 {
+            later.refreshIfNeeded(catalog: catalog, now: now.addingTimeInterval(Double(offset) * 86_400))
+        }
+        if later.questHistory.count != QuestDayRecord.keepDays || later.questHistory.first?.dayKey != QuestDay.key(for: now.addingTimeInterval(39 * 86_400)) {
+            errors.append("the history should keep the newest \(QuestDayRecord.keepDays) days, newest first, got \(later.questHistory.count)")
+        }
+        if let data = try? snapshot.encoded(), (try? GameSnapshot.decoded(data))?.questHistory != snapshot.questHistory {
+            errors.append("the quest history should survive a save")
+        }
+
+        var targets = StatTargets()
+        targets.toggle("Deadlift", in: .STR)
+        targets.toggle("1-mile swim", in: .END)
+        let mass = BodyMassReading(kg: 70, date: now, source: "MacroFactor")
+        let context = ContextBuilder.make(snapshot: snapshot, now: nextDay, targets: targets, bodyMass: mass)
+        let categories = context.goals?.strength.map(\.category) ?? []
+        if context.recentDays.first?.dayKey != day.dayKey || context.goals?.weeklyTenKs != 5
+            || !categories.contains("Squat") || categories.contains("Deadlift")
+            || context.goals?.strength.first(where: { $0.category == "Squat" })?.targetLb != 315 {
+            errors.append("the context should carry the quest history and the kept STR targets, got \(categories)")
+        }
+        let endurance = context.goals?.endurance.map(\.category) ?? []
+        if endurance.contains("1-mile swim") || !endurance.contains("10K easy run") || endurance.contains("Body weight") {
+            errors.append("END goals should drop removed targets and list body weight on its own, got \(endurance)")
+        }
+        if context.goals?.bodyWeight.targetLb != 145 || context.goals?.bodyWeight.latestLb != 154.3 || context.goals?.bodyWeight.source != "MacroFactor" {
+            errors.append("body weight should carry the 145 lb target and the newest weigh-in, got \(String(describing: context.goals?.bodyWeight))")
+        }
+        if !context.goalsBias.isEmpty {
+            errors.append("placeholder goals with made-up progress must not reach the model")
         }
         return errors
     }

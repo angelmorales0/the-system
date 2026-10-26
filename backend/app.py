@@ -18,6 +18,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 
+import history
 import integrations
 import mercury
 
@@ -54,26 +55,50 @@ SECRET_KEYS = {
 UNSAFE = ("starve", "all-nighter", "all nighter", "ignore injury", "max debt")
 XAI_URL = "https://api.x.ai/v1/chat/completions"
 DEFAULT_MODEL = "grok-4.6"
+# The context holds 30 days of training, so the model needs time to read it. The phone waits longer than this.
+GROK_SECONDS = 60.0
 
-SYSTEM_PROMPT = """You are The System. Generate today's quests as JSON matching QuestBundle.
-Rules:
+SYSTEM_PROMPT = """You are The System, a strength and running coach. Write today's quests as JSON matching QuestBundle.
+
+Goals, in order:
+1. Reach the strength targets in trainingHistory.strengthTargets (goal, bestE1rmLb, gapLb). Spend the most work on the biggest gaps that were not trained recently.
+2. Run at least goals.weeklyTenKs 10Ks every Monday-to-Sunday week. trainingHistory.week says how many are done and how many are still needed.
+3. Reach the body weight target in goals.bodyWeight. Do not write nutrition quests for it; it only informs how hard to push.
+
+Read the context before you plan:
+- trainingHistory.strengthSessions and trainingHistory.lifts hold 30 days of Hevy sets (weight, reps, RPE), newest first.
+- trainingHistory.runs holds 30 days of Strava activities with distance, pace, and heart rate.
+- trainingHistory.recovery holds 30 days of WHOOP recovery, HRV, resting heart rate, sleep, and strain. whoop holds today's values.
+- recentDays holds the quests the app assigned on each past day, and whether each was completed. Do not repeat a plan that was missed; adjust it.
+- trainingHistory.sources says which feeds were unavailable. With no data, start conservatively.
+
+Progression (pick loads from the logged sets, never guess):
+- Main lifts (squat, deadlift, bench press, overhead press, barbell row, pull-ups, dips): one top set at RPE 8, then 2-3 back-off sets at about 90% of the top set. If the last session's top set reached its reps at RPE 8 or lower, add 2.5 kg for upper-body lifts and 5 kg for squat and deadlift. At RPE 9, repeat the weight. At RPE 10 or a missed rep, drop 5%.
+- Accessories (lateral raise, curls, Bulgarian split squat, and other lifts): double progression in an 8-12 rep range. Add reps until every set reaches 12, then add the smallest weight step and go back to 8.
+- Train each main lift about twice a week, and never two days in a row.
+- Write exact loads. Title: "Squat 3x5 @ 265 lb". Params: exercise (the Hevy name without equipment, e.g. "Squat"), sets, minReps, minWeightKg (the working weight in kg, rounded down to 2.5 kg). Unit "sets".
+
+Running with lifting:
+- Heavy lower-body work interferes with running. Obey trainingHistory.limits: at most heavyLowerMaxPer7Days heavy squat or deadlift days in 7, at least heavyLowerMinDaysApart days apart, and no heavy squats or deadlifts on a two-10K day. The backend rejects any plan that breaks these.
+- Put upper-body and light lower-body work on days next to heavy leg days.
+- If trainingHistory.week.tenKsStillNeeded is equal to or more than daysLeftIncludingToday, today must have a 10K; if it is more, today needs two 10Ks. Never more than maxTenKsPerDay 10Ks.
+- Run easy: a 10K is aerobic work, not a race, unless the week has room.
+
+Readiness:
+- modeDecision.trainingBand is WHOOP readiness, one step lower after sleep performance under 60%. Green: full plan. Yellow and red: same exercises, one fewer back-off set and top sets at RPE 7. Every band still gets the run and strength work.
+- If constraints.noGymToday is true, the player has no gym today: write no strength quests and give two 10K runs instead.
+
+App rules:
 - Obey modeDecision.selectedMode. Do not change it. lockedByRules is authoritative.
-- Do not invent medical diagnoses or extreme deficits.
-- Use only the verification methods already defined for this app.
-- hevy_sets reads Hevy. Strength: params exercise (Hevy title without the equipment, e.g. "Bench Press") and sets, optional minReps and minWeightKg; unit "sets".
-- performance_training is strength and 5K or 10K runs only. Lifts use hevy_sets or healthkit_workout with activityType traditionalStrengthTraining. A run is always a 5K or a 10K: strava_activity with types ["Run"] and minDistanceMeters 5000 or 10000, progress target 5 or 10, unit "km". Prefer the 10K. Two 10Ks on one day are two separate quests. No walks, intervals, sprints, other run distances, protein, nutrition, spending, or stretch quests. The app adds its own Stretching quest.
+- performance_training is strength and 5K or 10K runs only. Lifts use hevy_sets, or healthkit_workout with activityType traditionalStrengthTraining. A run is always a 5K or a 10K: strava_activity with types ["Run"] and minDistanceMeters 5000 or 10000, progress target 5 or 10, unit "km". Prefer the 10K. Two 10Ks on one day are two separate quests. No walks, intervals, sprints, other run distances, protein, nutrition, spending, or stretch quests. The app adds its own Stretching quest.
 - Use kind daily or optional only. Never write penalty quests: the app adds them from player.penaltyTier.
 - Required quests (kind other than optional) <= constraints.maxRequiredQuests. Optional quests <= constraints.maxOptionalQuests. Total quests <= 8.
-- Titles are short and actionable. Narrative is at most 280 characters.
-- Scale physical load from modeDecision.trainingBand (WHOOP readiness, one step lower after sleep performance under 60%): green full, yellow and red moderate. Every band still gets a 10K and strength work.
-- If constraints.noGymToday is true, the player has no gym today: write no strength quests and give two 10K runs instead.
-- Protein targets stay between 80 and 250 grams.
+- Titles are at most 48 characters. The narrative, at most 280 characters, says why today looks the way it does.
 - No run longer than 90 minutes when trainingBand is yellow.
-- Do not suggest calories under 1500.
-- Mercury discretionary cap must be between 0 and 2000 USD.
+- Do not invent medical diagnoses or extreme deficits. Do not suggest calories under 1500.
 - Never use the phrases starve, all-nighter, ignore injury, or max debt.
 - Do not include completed, status, evidence, grantedXP, or assignedAt.
-- Output ONLY valid JSON with schemaVersion, dayKey, mode, quests, and narrative.
+- Output ONLY valid JSON with schemaVersion, dayKey, mode, headerLine, quests, and narrative.
 """
 
 
@@ -104,12 +129,22 @@ def generate(body: dict[str, Any]) -> dict[str, Any]:
     problems = validate_request(body)
     if problems:
         raise HTTPException(status_code=400, detail={"error": "invalid_request", "reasons": problems})
-    bundle = grok_or_none(body) or template_bundle(body)
-    bundle = sanitize(bundle, body)
-    problems = validate_bundle(bundle, body)
+    context = with_history(body)
+    bundle = grok_or_none(context) or template_bundle(context)
+    bundle = sanitize(bundle, context)
+    problems = validate_bundle(bundle, context)
     if problems:
         raise HTTPException(status_code=422, detail={"error": "unsafe", "reasons": problems})
     return bundle
+
+
+def with_history(body: dict[str, Any]) -> dict[str, Any]:
+    """The phone's context plus 30 days of Hevy, Strava, and WHOOP. A failed feed never blocks generation."""
+    try:
+        training = history.build(body)
+    except Exception as error:  # noqa: BLE001 - a broken feed must fall back, not 500
+        training = {"sources": {"error": type(error).__name__}}
+    return {**body, "trainingHistory": training}
 
 
 def validate_request(body: dict[str, Any]) -> list[str]:
@@ -151,12 +186,13 @@ def find_secret_keys(value: Any) -> bool:
 def grok_or_none(context: dict[str, Any]) -> dict[str, Any] | None:
     if not xai_api_key():
         return None
-    deadline = time.monotonic() + 6.5
+    deadline = time.monotonic() + GROK_SECONDS
+    feedback: list[str] = []
     for _ in range(3):
         remaining = deadline - time.monotonic()
         if remaining < 0.5:
             break
-        status, raw = call_grok(context, timeout=remaining)
+        status, raw = call_grok(context, timeout=remaining, feedback=feedback)
         if status == "transport":
             break
         if not isinstance(raw, dict):
@@ -169,21 +205,26 @@ def grok_or_none(context: dict[str, Any]) -> dict[str, Any] | None:
             continue
         raw["generatedBy"] = "llm"
         candidate = sanitize(raw, context)
-        if not validate_bundle(candidate, context):
+        feedback = validate_bundle(candidate, context)
+        if not feedback:
             return candidate
     return None
 
 
-def call_grok(context: dict[str, Any], timeout: float) -> tuple[str, dict[str, Any] | None]:
+def call_grok(context: dict[str, Any], timeout: float, feedback: list[str] | None = None) -> tuple[str, dict[str, Any] | None]:
     key = xai_api_key()
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": json.dumps(redact_strings(context))},
+    ]
+    if feedback:
+        # The last plan broke a rule. Say which, so the retry fixes it instead of guessing again.
+        messages.append({"role": "user", "content": "Your last plan was rejected: " + "; ".join(sorted(set(feedback))) + ". Write a new plan that fixes this."})
     payload = {
         "model": xai_model(),
         "temperature": 0.4,
         "response_format": {"type": "json_object"},
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": json.dumps(redact_strings(context))},
-        ],
+        "messages": messages,
     }
     request = urllib.request.Request(
         XAI_URL,
@@ -312,6 +353,7 @@ def validate_bundle(bundle: dict[str, Any], context: dict[str, Any]) -> list[str
         params = (quest.get("verification") or {}).get("params") or {}
         if isinstance(params, dict):
             texts.extend(str(value) for value in params.values() if isinstance(value, str))
+    problems.extend(history.limit_problems(bundle, context.get("trainingHistory")))
     haystack = "\n".join(texts).lower()
     if any(phrase in haystack for phrase in UNSAFE):
         problems.append("unsafe phrasing")
@@ -686,6 +728,7 @@ def require_day(day: str) -> None:
 def self_check() -> None:
     integrations.self_check()
     mercury.self_check()
+    history.self_check()
     source = open(__file__, encoding="utf-8").read()
     if "api." + "openai.com" in source:
         raise SystemExit("openai endpoint is not the quest author")

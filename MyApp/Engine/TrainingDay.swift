@@ -10,6 +10,8 @@ enum TrainingDay {
     static let tenKMeters = 10_000.0
     /// The only run distances the app assigns, on Training days and in penalties. Two 10Ks on one day are two rows.
     static let runMeters: Set<Double> = [fiveKMeters, tenKMeters]
+    /// 10Ks to run every Monday-to-Sunday week. The generator plans toward it.
+    static let weeklyTenKs = 5
 
     /// Nil when nothing would be left, so the caller keeps its catalog bundle instead.
     static func exerciseOnly(_ bundle: QuestBundle) -> QuestBundle? {

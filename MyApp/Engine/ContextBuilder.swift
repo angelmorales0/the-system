@@ -4,7 +4,8 @@ import Foundation
 enum ContextBuilder {
     private static let secretMarkers = ["sk-", "xai-", "bearer ", "api_key", "api-key", "apikey", "secret-token"]
 
-    static func make(snapshot: GameSnapshot, now: Date = .now) -> MorningContext {
+    /// `targets` are the stat targets the player kept. `bodyMass` is the newest Apple Health weigh-in.
+    static func make(snapshot: GameSnapshot, now: Date = .now, targets: StatTargets = StatTargets(), bodyMass: BodyMassReading? = nil) -> MorningContext {
         let dayKey = QuestDay.key(for: now)
         let decision = ModePicker.decide(snapshot.modeInput(now: now))
         let player = snapshot.player
@@ -34,7 +35,7 @@ enum ContextBuilder {
                 dayStrainYesterday: nil,
                 readinessBand: snapshot.signals.readinessBand
             ),
-            goalsBias: goalMocks,
+            goalsBias: [],
             nutrition: MorningNutrition(
                 source: "placeholder",
                 available: false,
@@ -66,7 +67,58 @@ enum ContextBuilder {
                 screenTime: "unavailable"
             ),
             recentQuestTitles: snapshot.recentQuestTitles.prefix(8).map { redact($0) },
-            constraints: constraints(noGym: snapshot.noGymDayKey == dayKey)
+            constraints: constraints(noGym: snapshot.noGymDayKey == dayKey),
+            recentDays: snapshot.questHistory.prefix(QuestDayRecord.keepDays).map { redacted($0) },
+            goals: goals(targets: targets, bodyMass: bodyMass)
+        )
+    }
+
+    private static func redacted(_ day: QuestDayRecord) -> QuestDayRecord {
+        var copy = day
+        copy.quests = day.quests.map { quest in
+            var quest = quest
+            quest.title = redact(quest.title)
+            return quest
+        }
+        return copy
+    }
+
+    /// The real goals: every STR and END target the player kept, the weekly 10K count, and body weight.
+    static func goals(targets: StatTargets, bodyMass: BodyMassReading?) -> MorningGoals {
+        func goal(_ category: String) -> String { StatTargets.goals[category] ?? category }
+        var strength = StrengthLevel.lifts.map { lift in
+            MorningStrengthTarget(
+                category: lift.category,
+                goal: goal(lift.category),
+                aliases: lift.aliases,
+                targetLb: lift.targetLb,
+                targetReps: lift.targetReps,
+                unit: lift.addedWeight ? "lb added" : lift.category == StrengthLevel.bulgarianSplitSquat.category ? "lb per hand" : "lb"
+            )
+        }
+        strength += [StrengthLevel.pullUps, StrengthLevel.handstandPushUps, StrengthLevel.toesToBar].map { rule in
+            MorningStrengthTarget(category: rule.category, goal: goal(rule.category), aliases: rule.aliases, targetLb: nil, targetReps: rule.targetReps, unit: "reps")
+        }
+        strength += [
+            MorningStrengthTarget(category: "Pistol squats", goal: goal("Pistol squats"), aliases: StrengthLevel.pistolAliases, targetLb: nil, targetReps: Int(StrengthLevel.pistolBand.target), unit: "reps per leg"),
+            MorningStrengthTarget(category: "Farmer's carry", goal: goal("Farmer's carry"), aliases: StrengthLevel.farmerAliases, targetLb: nil, targetReps: nil, unit: "lb per hand for time"),
+            MorningStrengthTarget(category: "Dead hang", goal: goal("Dead hang"), aliases: StrengthLevel.hangAliases, targetLb: nil, targetReps: nil, unit: "seconds"),
+        ]
+        let endurance = EnduranceLevel.evaluate(efforts: [], swims: [], vo2: [], zoneTwo: [], now: .now).requirements
+            .map(\.category)
+            .filter { !targets.isRemoved($0, from: .END) && $0 != "Body weight" }
+            .map { MorningTarget(category: $0, goal: goal($0)) }
+        return MorningGoals(
+            weeklyTenKs: TrainingDay.weeklyTenKs,
+            strength: strength.filter { !targets.isRemoved($0.category, from: .STR) },
+            endurance: endurance,
+            bodyWeight: MorningBodyWeight(
+                targetLb: EnduranceLevel.bodyWeightTargetLb,
+                toleranceLb: EnduranceLevel.bodyWeightToleranceLb,
+                latestLb: bodyMass.map { ($0.pounds * 10).rounded() / 10 },
+                measuredOn: bodyMass.map { QuestDay.key(for: $0.date) },
+                source: bodyMass?.source
+            )
         )
     }
 
@@ -87,15 +139,9 @@ enum ContextBuilder {
         return formatter.string(from: date)
     }
 
-    /// Same two cards Goals already shows. They are not loaded from an account.
     private static func constraints(noGym: Bool) -> MorningConstraints {
         var constraints = MorningConstraints.standard
         constraints.noGymToday = noGym
         return constraints
     }
-
-    private static let goalMocks: [MorningGoalBias] = [
-        MorningGoalBias(id: "goal_mile", title: "5:30 Mile", statHint: "END", progress: 0.68),
-        MorningGoalBias(id: "goal_bw", title: "145 lb", statHint: "END", progress: 0.36),
-    ]
 }
