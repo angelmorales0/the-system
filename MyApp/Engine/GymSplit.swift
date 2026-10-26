@@ -118,8 +118,9 @@ enum GymSplit {
 
     static let arms = Day(id: "arms", name: "Arms Day", focus: "Pull-ups first while fresh, then side delts, biceps, grip, and core. No pressing", lowerBody: false, exercises: [
         lift("Pull Up", .accessory, 4, 3...20, target: "Pull-ups", aliases: StrengthLevel.pullUps.aliases, note: pullUpMax),
-        lift("Lateral Raise", .accessory, 5, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
-        lift("Bicep Curl", .accessory, 5, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
+        lift("Lateral Raise", .accessory, 4, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
+        // 3 sets: the pull-ups already train the biceps hard, and the elbows carry all of it.
+        lift("Bicep Curl", .accessory, 3, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
         lift("Toes To Bar", .accessory, 3, 5...10, target: "Toes-to-bar", aliases: StrengthLevel.toesToBar.aliases),
         hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
         support("Face Pull", 3, 12...15, muscle: "Rear delts", aliases: ["face pull"],
