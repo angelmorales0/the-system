@@ -7,6 +7,8 @@ struct StatLevelSet: Equatable {
     static let overallMaxLevel = 146
 
     var levels: [Stat: Int]
+    /// Every target of each stat, removed ones included, before the weights are scaled. Empty for a reading loaded from history.
+    var reports: [Stat: StatLevelReport] = [:]
 
     subscript(stat: Stat) -> Int { levels[stat] ?? 0 }
 
@@ -48,17 +50,22 @@ struct StatLevelSet: Equatable {
     static func compute(
         codeforces: CodeforcesReading,
         financeMonths: [FinanceMonth],
+        targets: StatTargets = StatTargets(),
         now: Date
     ) -> StatLevelSet {
-        StatLevelSet(levels: [
-            .STR: StrengthLevel.evaluate(workouts: [], now: now).level,
-            .END: EnduranceLevel.evaluate(efforts: [], swims: [], vo2: [], zoneTwo: [], now: now).level,
-            .INT: IntelligenceLevel.evaluate(codeforces).level,
-            .AGI: AgilityLevel.evaluate(measurements: [], now: now).level,
-            .FOC: FocusLevel.evaluate(days: []).level,
-            .REC: RecoveryLevel.evaluate(days: []).level,
-            .FIN: FinanceLevel.evaluate(months: financeMonths).level,
-        ])
+        let reports: [Stat: StatLevelReport] = [
+            .STR: StrengthLevel.evaluate(workouts: [], now: now),
+            .END: EnduranceLevel.evaluate(efforts: [], swims: [], vo2: [], zoneTwo: [], now: now),
+            .INT: IntelligenceLevel.evaluate(codeforces),
+            .AGI: AgilityLevel.evaluate(measurements: [], now: now),
+            .FOC: FocusLevel.evaluate(days: []),
+            .REC: RecoveryLevel.evaluate(days: []).statReport,
+            .FIN: FinanceLevel.evaluate(months: financeMonths),
+        ]
+        return StatLevelSet(
+            levels: reports.mapValues { $0.removing(targets.removed(for: $0.stat)).level },
+            reports: reports
+        )
     }
 
     static let empty = compute(

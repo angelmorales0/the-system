@@ -18,6 +18,8 @@ final class GameStore: ObservableObject {
     @Published private(set) var statLevels: StatLevelSet = .empty
     /// One saved reading per day for the stat history charts.
     @Published private(set) var statHistory = StatLevelHistory()
+    /// Targets the player removed from each stat's score.
+    @Published private(set) var statTargets = StatTargets()
     /// The emergency quest on screen. While it is active, it covers every page.
     @Published private(set) var emergency: EmergencyQuest?
     @Published private(set) var emergencySettings: EmergencySettings = .standard
@@ -31,12 +33,14 @@ final class GameStore: ObservableObject {
     private var emergencyTicker: Timer?
     private var evaluatingEmergency = false
     private var lastStretchRefresh = Date.distantPast
+    /// The last live stat inputs, so a target change can recalculate without a new fetch. Nil until the first refresh.
+    private var statInputs: (codeforces: CodeforcesReading, financeMonths: [FinanceMonth])?
 
     init(persistence: GamePersistence = .standard) {
         #if DEBUG
         let problems = VerificationFixtures.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check() + RecoveryLevel.check()
             + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
-            + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check()
+            + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check()
             + HiddenQuestRules.check()
             + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
@@ -63,6 +67,7 @@ final class GameStore: ObservableObject {
         }
         if persistence == .standard {
             statHistory = StatLevelHistory.load()
+            statTargets = StatTargets.load()
             statLevels = statHistory.latest ?? .empty
             emergencySettings = EmergencyStore.loadSettings()
             emergency = EmergencyStore.loadQuest()
@@ -103,6 +108,21 @@ final class GameStore: ObservableObject {
     }
 
     // MARK: - Emergency quests
+
+    /// Adds a removed target back to a stat, or removes an active one, then recalculates the stat level.
+    func toggleStatTarget(_ category: String, in stat: Stat) {
+        statTargets.toggle(category, in: stat)
+        if persistence == .standard { statTargets.save() }
+        recomputeStatLevels(now: .now)
+        persist()
+    }
+
+    /// Before the first refresh there are no live inputs; the next refresh applies the new targets.
+    private func recomputeStatLevels(now: Date) {
+        guard let statInputs else { return }
+        statLevels = StatLevelSet.compute(codeforces: statInputs.codeforces, financeMonths: statInputs.financeMonths, targets: statTargets, now: now)
+        statHistory.record(statLevels, on: QuestDay.key(for: now))
+    }
 
     func updateEmergencySettings(_ settings: EmergencySettings) {
         let turnedOn = (settings.bedtimeEnabled && !emergencySettings.bedtimeEnabled)
@@ -402,8 +422,8 @@ final class GameStore: ObservableObject {
                 mercury: remote.mercury,
                 hevy: remote.hevy
             )
-            self.statLevels = StatLevelSet.compute(codeforces: remote.codeforces, financeMonths: remote.financeMonths, now: now)
-            self.statHistory.record(self.statLevels, on: dayKey)
+            self.statInputs = (remote.codeforces, remote.financeMonths)
+            self.recomputeStatLevels(now: now)
             if rebuilt {
                 self.runningTimersRemoveMissing()
             }

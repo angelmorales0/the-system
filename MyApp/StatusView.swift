@@ -6,6 +6,7 @@ struct StatusView: View {
     @State private var showShields = false
     @State private var showAppIcon = false
     @State private var showEmergency = false
+    @State private var selectedStat: Stat?
 
     /// Overall level 146 = all seven stats at 350.
     private var overallLabel: String {
@@ -42,7 +43,7 @@ struct StatusView: View {
                         SystemProgressBar(progress: store.statLevels.overallProgress, label: overallLabel)
                         SystemDivider()
 
-                        RadarChart(stats: stats)
+                        RadarChart(stats: stats) { selectedStat = Stat(rawValue: $0) }
                             .frame(height: 270)
                             .padding(.vertical, 6)
 
@@ -115,6 +116,9 @@ struct StatusView: View {
                 .sheet(isPresented: $showEmergency) {
                     EmergencySettingsSheet()
                 }
+                .sheet(item: $selectedStat) { stat in
+                    StatTargetsSheet(stat: stat)
+                }
                 .padding(.horizontal, 22)
 
                 Spacer(minLength: 24)
@@ -131,6 +135,8 @@ private struct RadarStat: Identifiable {
 
 private struct RadarChart: View {
     let stats: [RadarStat]
+    /// Tapping a stat's label opens its targets.
+    var onSelect: (String) -> Void = { _ in }
     private let maximum = Double(StatLevel.maxLevel)
 
     var body: some View {
@@ -174,10 +180,18 @@ private struct RadarChart: View {
 
                 ForEach(Array(stats.enumerated()), id: \.element.id) { index, stat in
                     let position = point(for: index, total: stats.count, center: center, radius: radius + 38)
-                    VStack(spacing: 2) {
-                        Text(stat.label).font(.caption.weight(.bold)).foregroundStyle(SystemTheme.muted)
-                        Text("\(Int(stat.value))").font(.caption.monospacedDigit().weight(.medium)).foregroundStyle(.white)
+                    Button {
+                        onSelect(stat.label)
+                    } label: {
+                        VStack(spacing: 2) {
+                            Text(stat.label).font(.caption.weight(.bold)).foregroundStyle(SystemTheme.muted)
+                            Text("\(Int(stat.value))").font(.caption.monospacedDigit().weight(.medium)).foregroundStyle(.white)
+                        }
+                        .padding(8)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(stat.label) \(Int(stat.value)), show targets")
                     .fixedSize()
                     .position(position)
                 }
