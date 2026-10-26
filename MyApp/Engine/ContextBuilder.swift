@@ -66,7 +66,7 @@ enum ContextBuilder {
                 screenTime: "unavailable"
             ),
             recentQuestTitles: snapshot.recentQuestTitles.prefix(8).map { redact($0) },
-            constraints: .standard
+            constraints: constraints(noGym: snapshot.noGymDayKey == dayKey)
         )
     }
 
@@ -88,6 +88,12 @@ enum ContextBuilder {
     }
 
     /// Same two cards Goals already shows. They are not loaded from an account.
+    private static func constraints(noGym: Bool) -> MorningConstraints {
+        var constraints = MorningConstraints.standard
+        constraints.noGymToday = noGym
+        return constraints
+    }
+
     private static let goalMocks: [MorningGoalBias] = [
         MorningGoalBias(id: "goal_mile", title: "5:30 Mile", statHint: "END", progress: 0.68),
         MorningGoalBias(id: "goal_bw", title: "145 lb", statHint: "END", progress: 0.36),

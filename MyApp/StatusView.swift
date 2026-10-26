@@ -69,6 +69,22 @@ struct StatusView: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        Toggle(isOn: Binding(
+                            get: { store.snapshot.noGymToday },
+                            set: { store.setNoGym($0) }
+                        )) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("NO GYM TODAY")
+                                    .font(.caption.weight(.semibold))
+                                    .tracking(1.1)
+                                    .foregroundStyle(SystemTheme.muted)
+                                Text("Swap today's lifts for a second 10K")
+                                    .font(.caption2)
+                                    .foregroundStyle(SystemTheme.muted.opacity(0.8))
+                            }
+                        }
+                        .tint(SystemTheme.cyan)
+                        .disabled(store.snapshot.bundle.mode != .performanceTraining)
                         Button {
                             showShields = true
                         } label: {

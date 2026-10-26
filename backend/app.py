@@ -66,6 +66,7 @@ Rules:
 - Required quests (kind other than optional) <= constraints.maxRequiredQuests. Optional quests <= constraints.maxOptionalQuests. Total quests <= 8.
 - Titles are short and actionable. Narrative is at most 280 characters.
 - Scale physical load from modeDecision.trainingBand (WHOOP readiness, one step lower after sleep performance under 60%): green full, yellow and red moderate. Every band still gets a 10K and strength work.
+- If constraints.noGymToday is true, the player has no gym today: write no strength quests and give two 10K runs instead.
 - Protein targets stay between 80 and 250 grams.
 - No run longer than 90 minutes when trainingBand is yellow.
 - Do not suggest calories under 1500.
@@ -444,6 +445,8 @@ def template_bundle(context: dict[str, Any]) -> dict[str, Any]:
     mode = decision["selectedMode"]
     band = training_band(context)
     rows = mode_quests(mode, band, day)
+    if mode == "performance_training" and (context.get("constraints") or {}).get("noGymToday") is True:
+        rows = no_gym_quests(rows, day, mode)
     required = [quest for quest in rows if quest["kind"] != "optional"][:5]
     optional = [quest for quest in rows if quest["kind"] == "optional"][:1]
     bundle = {
@@ -469,6 +472,13 @@ def mode_quests(mode: str, band: str, day: str) -> list[dict[str, Any]]:
         return [run, push]
     bench = quest(day, "bench", "Bench Press", "daily", "STR", "hevy_sets", {"exercise": "Bench Press", "sets": 4}, 40, "normal", 4, "sets", mode)
     return [run, bench]
+
+
+def no_gym_quests(rows: list[dict[str, Any]], day: str, mode: str) -> list[dict[str, Any]]:
+    """No gym today: the lifts give way to a second 10K."""
+    runs = [row for row in rows if row["stat"] != "STR"]
+    second = quest(day, "run_10k_2", "Second 10K", "daily", "END", "strava_activity", {"types": ["Run"], "minDistanceMeters": TEN_K_METERS}, 40, "normal", 10, "km", mode)
+    return runs + [second]
 
 
 def quest(day: str, slug: str, title: str, kind: str, stat: str, method: str, params: dict[str, Any], xp: int, difficulty: str, target: float, unit: str, mode: str) -> dict[str, Any]:
@@ -742,6 +752,11 @@ def self_check() -> None:
     short_sleep["modeDecision"]["trainingBand"] = "yellow"
     if template_bundle(short_sleep)["quests"][1]["title"] != "Push Session":
         raise SystemExit("the template should size Training by modeDecision.trainingBand")
+    no_gym = sample_request()
+    no_gym["constraints"]["noGymToday"] = True
+    cardio = sanitize(template_bundle(no_gym), no_gym)
+    if [row["title"] for row in cardio["quests"]] != ["10K Run", "Second 10K"] or validate_bundle(cardio, no_gym):
+        raise SystemExit("no gym should give two 10K runs and no lifts")
     penalty = json.loads(json.dumps(base))
     penalty["quests"][0]["kind"] = "penalty"
     expect_rejected(penalty, sample_request(), "model penalty row")

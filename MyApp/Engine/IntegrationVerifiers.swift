@@ -286,18 +286,21 @@ private func proteinResult(quest: Quest, context: VerificationContext, minimum: 
     )
 }
 
+/// The longest matching workout that no other quest used today, so two 10K rows need two runs.
 private func workoutResult(_ matches: [CanonicalWorkout], quest: Quest, context: VerificationContext, source: String) -> VerificationResult {
-    guard let workout = matches.max(by: { $0.movingTimeSec < $1.movingTimeSec }) else { return .unchanged }
-    let evidence = Evidence.make(
-        source: source,
-        externalId: "workout:\(workout.id)",
-        payload: "\(source)|\(workout.id)|\(context.dayKey)|\(Int(workout.movingTimeSec))",
-        timestamp: workout.end
-    )
-    if context.claimedKeys.contains(evidence.reuseKey) {
-        return .failed(reason: "That workout was already used for another quest today.")
+    guard !matches.isEmpty else { return .unchanged }
+    for workout in matches.sorted(by: { $0.movingTimeSec > $1.movingTimeSec }) {
+        let evidence = Evidence.make(
+            source: source,
+            externalId: "workout:\(workout.id)",
+            payload: "\(source)|\(workout.id)|\(context.dayKey)|\(Int(workout.movingTimeSec))",
+            timestamp: workout.end
+        )
+        if !context.claimedKeys.contains(evidence.reuseKey) {
+            return .completed(evidence: evidence)
+        }
     }
-    return .completed(evidence: evidence)
+    return .failed(reason: "That workout was already used for another quest today.")
 }
 
 private func scalarResult(

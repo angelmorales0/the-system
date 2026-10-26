@@ -43,6 +43,7 @@ final class GameStore: ObservableObject {
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check()
             + HiddenQuestRules.check()
             + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures()
+            + NoGymDayRules.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -90,6 +91,16 @@ final class GameStore: ObservableObject {
     func spendFullRecovery(now: Date = .now) {
         var next = snapshot
         let message = next.spendFullRecovery(catalog: catalog, now: now)
+        snapshot = next
+        verificationNote = message
+        clock = now
+        persist()
+        enforcePenalty()
+    }
+
+    func setNoGym(_ on: Bool, now: Date = .now) {
+        var next = snapshot
+        let message = next.setNoGym(on, catalog: catalog, now: now)
         snapshot = next
         verificationNote = message
         clock = now

@@ -100,6 +100,8 @@ struct MorningConstraints: Codable, Equatable {
     var maxOptionalQuests: Int
     var preferAutoVerify: Bool
     var disallowUnsafeAdvice: Bool
+    /// The player has no gym today: no strength quests, two 10K runs instead.
+    var noGymToday = false
 
     static let standard = MorningConstraints(
         maxRequiredQuests: 5,

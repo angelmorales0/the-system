@@ -39,6 +39,8 @@ struct GameSnapshot: Codable, Equatable {
     var hiddenUnlocks: [HiddenQuestUnlock] = []
     /// A real emergency quest failed on this day. Ending the day then opens a penalty.
     var emergencyFailedDayKey: String?
+    /// Quest day the player marked "No gym today". Lifts become a second 10K on that day only.
+    var noGymDayKey: String?
 
     static func fresh(
         catalog: FallbackCatalog,
@@ -342,9 +344,11 @@ struct GameSnapshot: Codable, Equatable {
     }
 
     /// Adds the fixed rows every day gets: Stretching, then any open penalty.
+    /// On a "No gym today" day, the lifts first give way to a second 10K.
     func finished(_ bundle: QuestBundle, catalog: FallbackCatalog, now: Date) -> QuestBundle {
-        PenaltyQuests.ensure(
-            in: DailyStretch.ensure(in: bundle, now: now),
+        let day = noGymDayKey == bundle.dayKey ? NoGymDay.cardioOnly(bundle, now: now) : bundle
+        return PenaltyQuests.ensure(
+            in: DailyStretch.ensure(in: day, now: now),
             tier: player.penaltyTier,
             band: trainingBand,
             catalog: catalog,
@@ -399,7 +403,7 @@ extension GameSnapshot {
         case finance, appliedFinProjection
         case fullRecoveryDayKey, queuedFullRecoveryDayKey, hasDistractorSelection
         case hiddenUnlocks
-        case emergencyFailedDayKey
+        case emergencyFailedDayKey, noGymDayKey
     }
 
     init(from decoder: Decoder) throws {
@@ -421,6 +425,7 @@ extension GameSnapshot {
         hasDistractorSelection = try container.decodeIfPresent(Bool.self, forKey: .hasDistractorSelection) ?? false
         hiddenUnlocks = try container.decodeIfPresent([HiddenQuestUnlock].self, forKey: .hiddenUnlocks) ?? []
         emergencyFailedDayKey = try container.decodeIfPresent(String.self, forKey: .emergencyFailedDayKey)
+        noGymDayKey = try container.decodeIfPresent(String.self, forKey: .noGymDayKey)
         generationAttemptDayKey = try container.decodeIfPresent(String.self, forKey: .generationAttemptDayKey)
         generatedBundle = try container.decodeIfPresent(QuestBundle.self, forKey: .generatedBundle)
     }
@@ -443,6 +448,7 @@ extension GameSnapshot {
         try container.encode(hasDistractorSelection, forKey: .hasDistractorSelection)
         try container.encode(hiddenUnlocks, forKey: .hiddenUnlocks)
         try container.encodeIfPresent(emergencyFailedDayKey, forKey: .emergencyFailedDayKey)
+        try container.encodeIfPresent(noGymDayKey, forKey: .noGymDayKey)
         try container.encodeIfPresent(generationAttemptDayKey, forKey: .generationAttemptDayKey)
         try container.encodeIfPresent(generatedBundle, forKey: .generatedBundle)
     }
