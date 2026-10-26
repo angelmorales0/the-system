@@ -1,21 +1,21 @@
 """Local quest generator.
 
 Secrets come from the process environment only. This file has no API key.
-Without XAI_API_KEY the handler returns a deterministic template.
-With that variable set, it calls xAI Grok and keeps the reply only if it
+Without ANTHROPIC_API_KEY the handler returns a deterministic template.
+With that variable set, it calls Claude Opus 5.5 and keeps the reply only if it
 passes the safety checks; otherwise it returns the template.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
-import urllib.error
-import urllib.request
 from typing import Any
 
+import anthropic
 from fastapi import FastAPI, HTTPException, Request
 
 import history
@@ -50,13 +50,18 @@ SECRET_KEYS = {
     "secret",
     "token",
     "xai_api_key",
+    "anthropic_api_key",
     "openai_api_key",
 }
 UNSAFE = ("starve", "all-nighter", "all nighter", "ignore injury", "max debt")
-XAI_URL = "https://api.x.ai/v1/chat/completions"
-DEFAULT_MODEL = "grok-4.6"
-# The context holds 30 days of training, so the model needs time to read it. The phone waits longer than this.
-GROK_SECONDS = 60.0
+DEFAULT_MODEL = "claude-opus-5-5"
+# Planning a day from 30 days of training is reasoning-heavy, so the model thinks at high effort.
+EFFORT = "high"
+# The context holds 30 days of training and the model thinks first, so allow time for a retry. The phone waits longer.
+MODEL_SECONDS = 100.0
+# A declined request is re-run server-side on the model Anthropic picks for that refusal category.
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
+logger = logging.getLogger("quests")
 
 SYSTEM_PROMPT = """You are The System, a strength and running coach. Write today's quests as JSON matching QuestBundle.
 
@@ -117,20 +122,20 @@ App rules:
 """
 
 
-def xai_api_key() -> str:
-    return os.environ.get("XAI_API_KEY", "").strip()
+def anthropic_api_key() -> str:
+    return os.environ.get("ANTHROPIC_API_KEY", "").strip()
 
 
-def xai_model() -> str:
-    return os.environ.get("XAI_MODEL", "").strip() or DEFAULT_MODEL
+def claude_model() -> str:
+    return os.environ.get("CLAUDE_MODEL", "").strip() or DEFAULT_MODEL
 
 
 @app.get("/health")
 def health() -> dict[str, Any]:
     return {
         "ok": "true",
-        "author": "grok" if xai_api_key() else "template",
-        "model": xai_model(),
+        "author": "claude" if anthropic_api_key() else "template",
+        "model": claude_model(),
         "whoop": "configured" if integrations.configured("whoop") else "missing",
         "strava": "configured" if integrations.configured("strava") else "missing",
         "hevy": "configured" if integrations.hevy_api_key() else "missing",
@@ -145,7 +150,7 @@ def generate(body: dict[str, Any]) -> dict[str, Any]:
     if problems:
         raise HTTPException(status_code=400, detail={"error": "invalid_request", "reasons": problems})
     context = with_history(body)
-    bundle = grok_or_none(context) or template_bundle(context)
+    bundle = claude_or_none(context) or template_bundle(context)
     bundle = sanitize(bundle, context)
     problems = validate_bundle(bundle, context)
     if problems:
@@ -273,25 +278,27 @@ def find_secret_keys(value: Any) -> bool:
     return False
 
 
-def grok_or_none(context: dict[str, Any]) -> dict[str, Any] | None:
-    if not xai_api_key():
+def claude_or_none(context: dict[str, Any]) -> dict[str, Any] | None:
+    if not anthropic_api_key():
         return None
-    deadline = time.monotonic() + GROK_SECONDS
+    deadline = time.monotonic() + MODEL_SECONDS
     feedback: list[str] = []
     for _ in range(3):
         remaining = deadline - time.monotonic()
         if remaining < 0.5:
             break
-        status, raw = call_grok(context, timeout=remaining, feedback=feedback)
+        status, raw = call_claude(context, timeout=remaining, feedback=feedback)
         if status == "transport":
             break
         if not isinstance(raw, dict):
             continue
         locked = (context.get("modeDecision") or {}).get("selectedMode")
         if raw.get("mode") != locked:
+            feedback = [f"mode must be {locked}"]
             continue
         local_date = (context.get("player") or {}).get("localDate")
         if raw.get("dayKey") not in (None, local_date):
+            feedback = [f"dayKey must be {local_date}"]
             continue
         raw["generatedBy"] = "llm"
         candidate = sanitize(raw, context)
@@ -301,37 +308,57 @@ def grok_or_none(context: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def call_grok(context: dict[str, Any], timeout: float, feedback: list[str] | None = None) -> tuple[str, dict[str, Any] | None]:
-    key = xai_api_key()
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": json.dumps(redact_strings(context))},
+def claude_request(context: dict[str, Any], feedback: list[str] | None = None) -> dict[str, Any]:
+    """The Messages request. The system prompt and the context form a cached prefix, so a retry
+    rereads them at the cache price. Feedback comes after the breakpoint and never changes the prefix."""
+    content: list[dict[str, Any]] = [
+        {
+            "type": "text",
+            # Sorted keys keep the bytes the same on every retry, so the cache prefix matches.
+            "text": json.dumps(redact_strings(context), sort_keys=True),
+            "cache_control": {"type": "ephemeral"},
+        }
     ]
     if feedback:
         # The last plan broke a rule. Say which, so the retry fixes it instead of guessing again.
-        messages.append({"role": "user", "content": "Your last plan was rejected: " + "; ".join(sorted(set(feedback))) + ". Write a new plan that fixes this."})
-    payload = {
-        "model": xai_model(),
-        "temperature": 0.4,
-        "response_format": {"type": "json_object"},
-        "messages": messages,
+        content.append({"type": "text", "text": "Your last plan was rejected: " + "; ".join(sorted(set(feedback))) + ". Write a new plan that fixes this."})
+    return {
+        "model": claude_model(),
+        "max_tokens": 16000,
+        "system": SYSTEM_PROMPT,
+        "thinking": {"type": "adaptive"},
+        "output_config": {"effort": EFFORT},
+        "betas": [FALLBACK_BETA],
+        "fallbacks": "default",
+        "messages": [{"role": "user", "content": content}],
     }
-    request = urllib.request.Request(
-        XAI_URL,
-        data=json.dumps(payload).encode(),
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        method="POST",
-    )
+
+
+def call_claude(context: dict[str, Any], timeout: float, feedback: list[str] | None = None) -> tuple[str, dict[str, Any] | None]:
+    client = anthropic.Anthropic(api_key=anthropic_api_key(), timeout=timeout, max_retries=1)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            parsed = json.loads(response.read().decode())
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+        response = client.beta.messages.create(**claude_request(context, feedback))
+    except anthropic.APIConnectionError:
+        # Includes timeouts. Another try would not fit the deadline.
         return ("transport", None)
-    content = ""
-    choices = parsed.get("choices") or []
-    if choices:
-        content = ((choices[0].get("message") or {}).get("content")) or ""
-    parsed_bundle = parse_json_object(content)
+    except anthropic.APIStatusError as error:
+        # The SDK already retried 429 and 5xx. Auth, permission, and request errors will not fix themselves.
+        logger.warning("Claude request failed: %s %s", error.status_code, error.message)
+        return ("transport", None)
+    usage = response.usage
+    logger.info(
+        "Claude %s: input %s, cache read %s, cache write %s, output %s",
+        response.stop_reason,
+        usage.input_tokens,
+        usage.cache_read_input_tokens,
+        usage.cache_creation_input_tokens,
+        usage.output_tokens,
+    )
+    # A refusal that every fallback also declined, or a reply cut off at max_tokens, has no usable plan.
+    if response.stop_reason in ("refusal", "max_tokens"):
+        return ("bad", None)
+    text = "".join(block.text for block in response.content if block.type == "text")
+    parsed_bundle = parse_json_object(text)
     if parsed_bundle is None:
         return ("bad", None)
     return ("ok", parsed_bundle)
@@ -888,7 +915,7 @@ def self_check() -> None:
     source = open(__file__, encoding="utf-8").read()
     if "api." + "openai.com" in source:
         raise SystemExit("openai endpoint is not the quest author")
-    if re.search(r"XAI_API_KEY\s*=\s*['\"][^'\"]+['\"]", source):
+    if re.search(r"(ANTHROPIC|XAI)_API_KEY\s*=\s*['\"][^'\"]+['\"]", source):
         raise SystemExit("a key was written into the source")
     for name in (".env.example", "README.md"):
         path = os.path.join(os.path.dirname(__file__), name)
@@ -975,10 +1002,9 @@ def self_check() -> None:
     cleaned = sanitize(dirty, sample_request())
     if "completed" in cleaned["quests"][0] or "status" in cleaned["quests"][0]:
         raise SystemExit("sanitize left a completion field")
-    if xai_model() != DEFAULT_MODEL and os.environ.get("XAI_MODEL", "").strip():
-        pass
-    if os.environ.get("XAI_MODEL", "").strip() == "" and xai_model() != DEFAULT_MODEL:
-        raise SystemExit("default model should be grok-4.6")
+    if os.environ.get("CLAUDE_MODEL", "").strip() == "" and claude_model() != "claude-opus-5-5":
+        raise SystemExit("default model should be claude-opus-5-5")
+    claude_checks()
     split_checks()
     fresh = sample_request()
     fresh["trainingHistory"] = {"lifts": {}}
@@ -1004,6 +1030,69 @@ def self_check() -> None:
     if sanitize(paced, sample_request())["quests"][0]["title"] != "10K Run":
         raise SystemExit("a run title should be only 10K Run")
     print("ok")
+
+
+def claude_checks() -> None:
+    """The request shape, cache prefix, retry feedback, and reply handling, against a stand-in client."""
+    body = sample_request()
+    first = claude_request(body)
+    retry = claude_request(body, ["Bench Press is declining; do not add weight above the last top set"])
+    if first["model"] != "claude-opus-5-5" or first["thinking"] != {"type": "adaptive"} or first["output_config"] != {"effort": "high"}:
+        raise SystemExit(f"the request should use Opus 5.5 with adaptive thinking at high effort, got {first}")
+    if first["fallbacks"] != "default" or first["betas"] != ["server-side-fallback-2026-07-01"] or "temperature" in first:
+        raise SystemExit("the request should opt into default fallbacks and send no sampling settings")
+    cached = first["messages"][0]["content"]
+    if len(cached) != 1 or cached[0].get("cache_control") != {"type": "ephemeral"}:
+        raise SystemExit("the context block should carry the cache breakpoint")
+    if retry["messages"][0]["content"][0] != cached[0] or retry["system"] != first["system"]:
+        raise SystemExit("a retry must keep the cached prefix byte for byte")
+    if "declining" not in retry["messages"][0]["content"][1]["text"] or "cache_control" in retry["messages"][0]["content"][1]:
+        raise SystemExit("retry feedback should follow the cached prefix")
+
+    class Block:
+        def __init__(self, kind: str, text: str = "") -> None:
+            self.type, self.text = kind, text
+
+    class Usage:
+        input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens = 100, 0, 0, 50
+
+    class Reply:
+        def __init__(self, stop: str, text: str) -> None:
+            self.stop_reason, self.usage = stop, Usage()
+            self.content = [Block("thinking"), Block("text", text)]
+
+    plan = json.dumps(template_bundle(body))
+    replies: list[Reply] = []
+    sent: list[dict[str, Any]] = []
+
+    class StandIn:
+        def __init__(self, **_: Any) -> None:
+            self.beta = self
+            self.messages = self
+
+        def create(self, **request: Any) -> Reply:
+            sent.append(request)
+            return replies.pop(0)
+
+    real, saved_key = anthropic.Anthropic, os.environ.get("ANTHROPIC_API_KEY")
+    anthropic.Anthropic = StandIn  # type: ignore[misc]
+    os.environ["ANTHROPIC_API_KEY"] = "test-key-not-real"
+    try:
+        # A refusal and a bad plan are retried; the third reply is a valid plan.
+        bad = json.loads(plan)
+        bad["quests"][0]["verification"]["params"]["minDistanceMeters"] = 8000
+        replies.extend([Reply("refusal", ""), Reply("end_turn", json.dumps(bad)), Reply("end_turn", plan)])
+        result = claude_or_none(body)
+        if not result or result["generatedBy"] != "llm" or len(sent) != 3:
+            raise SystemExit(f"the third reply should be accepted after two retries, got {result} after {len(sent)} calls")
+        if len(sent[2]["messages"][0]["content"]) != 2 or "5K or 10K" not in sent[2]["messages"][0]["content"][1]["text"]:
+            raise SystemExit("the retry after a rejected plan should say why it was rejected")
+    finally:
+        anthropic.Anthropic = real  # type: ignore[misc]
+        if saved_key is None:
+            os.environ.pop("ANTHROPIC_API_KEY", None)
+        else:
+            os.environ["ANTHROPIC_API_KEY"] = saved_key
 
 
 def split_checks() -> None:

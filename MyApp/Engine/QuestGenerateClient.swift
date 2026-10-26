@@ -14,9 +14,9 @@ enum QuestGenerateError: Error {
 enum QuestGenerateClient {
     static let defaultsKey = "com.angelmorales.thesystem.questGenerateBaseURL"
     static let environmentKey = "QUEST_GENERATE_BASE_URL"
-    /// The backend reads 30 days of Hevy, Strava, and WHOOP and the model reads all of it, so this is long.
-    /// The catalog quests stay on screen while it runs.
-    static let timeout: TimeInterval = 90
+    /// The backend reads 30 days of Hevy, Strava, and WHOOP, and Claude thinks at high effort over all of it,
+    /// with up to 100 seconds for retries. The catalog quests stay on screen while it runs.
+    static let timeout: TimeInterval = 150
 
     static func make(catalog: FallbackCatalog) -> any QuestGenerating {
         let base = resolvedBase(

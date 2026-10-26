@@ -1,6 +1,8 @@
 # Quest generation stub
 
-Local stand-in for `POST /v1/quests/generate`. It checks the morning-context shape, then returns a quest bundle from templates. If `XAI_API_KEY` is set in the environment, it asks xAI Grok (`grok-4.6` unless `XAI_MODEL` overrides it) and keeps the reply only when that reply passes the same safety checks. Otherwise it serves the template.
+Local stand-in for `POST /v1/quests/generate`. It checks the morning-context shape, then returns a quest bundle from templates. Before it plans, it reads 30 days of Hevy, Strava, and WHOOP data (`history.py`). If `ANTHROPIC_API_KEY` is set in the environment, it asks Claude Opus 5.5 (`claude-opus-5-5` unless `CLAUDE_MODEL` overrides it) and keeps the reply only when that reply passes the same safety checks and training limits. Otherwise it serves the template.
+
+The request uses adaptive thinking at `high` effort and opts into server-side refusal fallbacks (`fallbacks: "default"`). The system prompt and the morning context are a cached prefix, so a retry after a rejected plan rereads them at the cache price. Each call logs its token usage, including cache reads.
 
 The app does not read a secrets file. Nothing in this directory should contain a live key.
 
@@ -17,15 +19,14 @@ python app.py
 
 The server listens on `http://127.0.0.1:8787`.
 
-To use Grok, export the key in the shell (or source a gitignored `.env` you created from `.env.example`) and start the process in that same shell:
+To use Claude, export the key in the shell (or source a gitignored `.env` you created from `.env.example`) and start the process in that same shell:
 
 ```bash
-export XAI_API_KEY
-export XAI_MODEL=grok-4.6
+export ANTHROPIC_API_KEY
 python app.py
 ```
 
-`GET /health` reports whether the process will call Grok or stay on templates. It does not print the key.
+`GET /health` reports whether the process will call Claude or stay on templates. It does not print the key.
 
 ## iOS
 
