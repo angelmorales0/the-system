@@ -274,7 +274,7 @@ enum QuestGenerationRules {
         let mass = BodyMassReading(kg: 70, date: now, source: "MacroFactor")
         let context = ContextBuilder.make(snapshot: snapshot, now: nextDay, targets: targets, bodyMass: mass)
         let categories = context.goals?.strength.map(\.category) ?? []
-        if context.recentDays.first?.dayKey != day.dayKey || context.goals?.weeklyTenKs != 5
+        if context.recentDays.first?.dayKey != day.dayKey || context.goals?.runKmPer7Days != 50
             || !categories.contains("Squat") || categories.contains("Deadlift")
             || context.goals?.strength.first(where: { $0.category == "Squat" })?.targetLb != 315 {
             errors.append("the context should carry the quest history and the kept STR targets, got \(categories)")

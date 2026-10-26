@@ -5,7 +5,7 @@ import Foundation
 /// Penalty rows are not changed. The setting lasts for one quest day.
 enum NoGymDay {
     static let secondTenKSlug = "run_10k_2"
-    static let secondTenKTitle = "Second 10K"
+    static let secondTenKTitle = TrainingDay.tenKTitle
     /// Runs the day should have: its own 5K or 10K, plus 10Ks up to this count.
     static let runCount = 2
 

@@ -178,7 +178,8 @@ struct MorningSplit: Codable, Equatable {
 
 /// The player's goals. The backend adds the 30-day training history that measures them.
 struct MorningGoals: Codable, Equatable {
-    var weeklyTenKs: Int
+    /// Running km to keep in every 7-day window, today included.
+    var runKmPer7Days: Int
     /// STR targets to put first right now.
     var focus: [String] = []
     var strength: [MorningStrengthTarget]

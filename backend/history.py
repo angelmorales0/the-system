@@ -40,6 +40,10 @@ HEAVY_REPS_MAX = 6
 HEAVY_LOWER_MAX_PER_7_DAYS = 2
 HEAVY_LOWER_MIN_DAYS_APART = 2
 MAX_TEN_KS_PER_DAY = 2
+# Running goal: this many km in every 7-day window, today included. Runs come in 5 km steps, at most 20 km a day.
+RUN_KM_PER_7_DAYS = 50
+RUN_STEP_KM = 5
+MAX_RUN_KM_PER_DAY = 20
 
 # Fatigue: a lift is declining when its newest session scores under 97% of the better of the two before it.
 DECLINE_SHARE = 0.97
@@ -192,7 +196,8 @@ def summarize(
         "strengthTargets": strength_targets(goals.get("strength") or [], lifts),
         "runs": runs,
         "recovery": recovery,
-        "week": week_summary(today, runs, sessions, quest_days, int(goals.get("weeklyTenKs") or 5)),
+        "week": week_summary(today, runs, sessions, quest_days),
+        "runWindow": run_window(runs, int(goals.get("runKmPer7Days") or RUN_KM_PER_7_DAYS)),
         "fatigue": fatigue_summary(lifts, recovery),
         "limits": {
             "heavyLowerMaxPer7Days": HEAVY_LOWER_MAX_PER_7_DAYS,
@@ -303,7 +308,7 @@ def fatigue_summary(lifts: dict[str, dict[str, Any]], recovery: list[dict[str, A
         "decliningLifts": falling,
         "hrv7DayVs30Day": round((sum(recent) / len(recent)) / (sum(hrv) / len(hrv)), 2) if recent else None,
         "deloadRecommended": deload,
-        "advice": "Deload today: every lift at half its sets and 60-70% of its last top set. Runs stay easy." if deload else "",
+        "advice": "Deload today: every lift at half its sets and 60-70% of its last top set." if deload else "",
     }
 
 
@@ -469,26 +474,40 @@ def strength_targets(targets: list[dict[str, Any]], lifts: dict[str, dict[str, A
     return rows
 
 
-def week_summary(today: date, runs: list[dict[str, Any]], sessions: list[dict[str, Any]], quest_days: list[dict[str, Any]], weekly_ten_ks: int) -> dict[str, Any]:
-    """This Monday-to-Sunday week and the last 7 days, so the plan can meet the weekly 10K count."""
-    monday = today - timedelta(days=today.weekday())
-    in_week = [run for run in runs if run["date"] >= monday.isoformat()]
-    last7 = [run for run in runs if run["daysAgo"] <= 6]
-    ten_ks = sum(1 for run in in_week if run.get("counts") == "10K")
-    days_left = 7 - today.weekday()
-    needed = max(0, weekly_ten_ks - ten_ks)
+def run_km(runs: list[dict[str, Any]], days: range) -> float:
+    return round(sum(run["km"] for run in runs if run.get("counts") and run["daysAgo"] in days), 2)
+
+
+def runs_for(km: int) -> list[str]:
+    """Quests that cover `km` in 5 km steps: 20 → two 10Ks, 15 → a 10K and a 5K."""
+    return ["10K"] * (km // 10) + ["5K"] * ((km % 10) // RUN_STEP_KM)
+
+
+def run_window(runs: list[dict[str, Any]], goal_km: int) -> dict[str, Any]:
+    """What today must run so the 7 days ending today hold `goal_km`. The last 6 days count; today's runs fill the rest."""
+    prior = run_km(runs, range(1, 7))
+    needed = max(0.0, goal_km - prior)
+    planned = min(MAX_RUN_KM_PER_DAY, -(-int(needed * 100) // (RUN_STEP_KM * 100)) * RUN_STEP_KM)
     return {
-        "weekStart": monday.isoformat(),
-        "daysLeftIncludingToday": days_left,
-        "tenKGoal": weekly_ten_ks,
-        "tenKsDone": ten_ks,
-        "tenKsStillNeeded": needed,
-        "tenKsNeededPerDayLeft": round(needed / days_left, 2) if days_left else 0,
-        "runKmThisWeek": round(sum(run["km"] for run in in_week if run.get("counts")), 1),
-        "strengthSessionsThisWeek": sum(1 for item in sessions if item["date"] >= monday.isoformat()),
+        "goalKm": goal_km,
+        "kmLast6Days": prior,
+        "kmRunToday": run_km(runs, range(0, 1)),
+        "kmNeededToday": round(needed, 2),
+        "plannedKmToday": planned,
+        "runsToday": runs_for(planned),
+        "shortfallKm": round(max(0.0, needed - planned), 2),
+        # Tomorrow these km leave the window, so tomorrow needs about this much again.
+        "kmLeavingTomorrow": run_km(runs, range(6, 7)),
+    }
+
+
+def week_summary(today: date, runs: list[dict[str, Any]], sessions: list[dict[str, Any]], quest_days: list[dict[str, Any]]) -> dict[str, Any]:
+    """The last 7 days at a glance, and days where a required quest was missed."""
+    last7 = [run for run in runs if run["daysAgo"] <= 6]
+    return {
         "last7Days": {
             "tenKs": sum(1 for run in last7 if run.get("counts") == "10K"),
-            "runKm": round(sum(run["km"] for run in last7 if run.get("counts")), 1),
+            "runKm": run_km(runs, range(0, 7)),
             "strengthSessions": sum(1 for item in sessions if item["daysAgo"] <= 6),
             "heavyLowerSessions": sum(1 for item in sessions if item["daysAgo"] <= 6 and item["heavyLower"]),
         },
@@ -522,6 +541,15 @@ def is_ten_k(quest: dict[str, Any]) -> bool:
     return isinstance(params, dict) and params.get("minDistanceMeters") == 10_000
 
 
+def planned_run_km(quests: list[dict[str, Any]]) -> int:
+    total = 0
+    for quest in quests:
+        params = (quest.get("verification") or {}).get("params") or {}
+        if quest.get("kind") != "penalty" and isinstance(params, dict) and params.get("minDistanceMeters") in (5_000, 10_000):
+            total += int(params["minDistanceMeters"]) // 1000
+    return total
+
+
 def limit_problems(bundle: dict[str, Any], history: dict[str, Any] | None) -> list[str]:
     """Hard limits the model cannot talk its way past. Runs on every generated Training bundle."""
     if bundle.get("mode") != "performance_training":
@@ -542,6 +570,12 @@ def limit_problems(bundle: dict[str, Any], history: dict[str, Any] | None) -> li
     ten_ks = sum(1 for quest in quests if is_ten_k(quest))
     if ten_ks > MAX_TEN_KS_PER_DAY:
         problems.append(f"more than {MAX_TEN_KS_PER_DAY} 10Ks in one day")
+    window = (history or {}).get("runWindow") or {}
+    km = planned_run_km(quests)
+    if km > MAX_RUN_KM_PER_DAY:
+        problems.append(f"more than {MAX_RUN_KM_PER_DAY} km of runs in one day")
+    if isinstance(window.get("plannedKmToday"), int) and km < window["plannedKmToday"]:
+        problems.append(f"today needs {window['plannedKmToday']} km of runs to keep {window.get('goalKm')} km in 7 days, the plan has {km}")
     lifts = (history or {}).get("lifts") or {}
     heavy_today = any(quest_is_heavy_lower(quest, lifts) for quest in quests)
     if not heavy_today:
@@ -594,7 +628,7 @@ def self_check() -> None:
         "recoveries": [{"cycle_id": 7, "score": {"recovery_score": 71, "hrv_rmssd_milli": 62.44, "resting_heart_rate": 51}}],
         "sleeps": [{"cycle_id": 7, "nap": False, "score": {"sleep_performance_percentage": 88, "stage_summary": {"total_in_bed_time_milli": 28_800_000, "total_awake_time_milli": 1_800_000}}}],
     }
-    goals = {"weeklyTenKs": 5, "strength": [{"category": "Squat", "goal": "315 lb × 1", "aliases": ["squat"], "targetLb": 315, "targetReps": 1}]}
+    goals = {"runKmPer7Days": 50, "strength": [{"category": "Squat", "goal": "315 lb × 1", "aliases": ["squat"], "targetLb": 315, "targetReps": 1}]}
     history = summarize(today, zone, workouts, activities, whoop, goals, [{"dayKey": "2026-10-20", "missedRequired": True}])
 
     squat = history["lifts"].get("squat")
@@ -606,8 +640,18 @@ def self_check() -> None:
     if heavy != ["2026-10-20"]:
         raise SystemExit(f"only the 5-rep squat day should be heavy, got {heavy}")
     week = history["week"]
-    if week["weekStart"] != "2026-10-19" or week["tenKsDone"] != 2 or week["tenKsStillNeeded"] != 3 or week["daysLeftIncludingToday"] != 4:
-        raise SystemExit(f"week should start Monday with 2 of 5 10Ks done and 4 days left, got {week}")
+    window = history["runWindow"]
+    # 25.03 km in the last 6 days: today needs 24.97 km, more than one day allows, so two 10Ks and 4.97 km short.
+    if window["kmLast6Days"] != 25.03 or window["plannedKmToday"] != 20 or window["runsToday"] != ["10K", "10K"] or window["shortfallKm"] != 4.97:
+        raise SystemExit(f"run window wrong: {window}")
+    if [run_window([{"km": km, "daysAgo": days, "counts": "10K"} for days, km in ((1, 10), (2, 10), (3, 10), (5, 10.0))], 50)[key] for key in ("plannedKmToday", "runsToday")] != [10, ["10K"]]:
+        raise SystemExit("40 km in the last 6 days should need one 10K today")
+    if run_window([{"km": 12.2, "daysAgo": 2, "counts": "10K"}] * 3, 50)["runsToday"] != ["10K", "5K"]:
+        raise SystemExit("13.4 km to go should round up to a 10K and a 5K")
+    if run_window([], 50)["runsToday"] != ["10K", "10K"]:
+        raise SystemExit("starting from zero should give the most one day allows")
+    if week["last7Days"]["runKm"] != 25.03 or week["missedQuestDays"] != ["2026-10-20"]:
+        raise SystemExit(f"last 7 days wrong: {week}")
     if [run["counts"] for run in history["runs"]] != ["5K", "10K", "10K", "5K"] or history["runs"][1]["pacePerKm"] != "5:10":
         raise SystemExit(f"runs should be labeled and paced, got {history['runs']}")
     if "private" in str(history):
@@ -617,8 +661,9 @@ def self_check() -> None:
     target = history["strengthTargets"][0]
     if target.get("bestE1rmLb") != 309 or target.get("gapLb") != 6 or target.get("lastTrained") != "2026-10-20":
         raise SystemExit(f"squat target should show a 6 lb gap, got {target}")
-    if week["missedQuestDays"] != ["2026-10-20"]:
-        raise SystemExit("missed quest days should carry through")
+
+    # The lift limits below are checked without the run window; the window has its own check at the end.
+    history = {key: value for key, value in history.items() if key != "runWindow"}
 
     # Trends: 3 rising sessions improve; a 5% drop declines; two drops in a row is dropping; no new best in 3 stalls.
     def sessions(*scores: float) -> list[dict[str, Any]]:
@@ -666,5 +711,7 @@ def self_check() -> None:
         raise SystemExit("three 10Ks in a day should be rejected")
     if limit_problems(bundle(ten_k, ten_k, hevy("Bench Press", minReps=5)), history):
         raise SystemExit("two 10Ks and bench press should pass")
+    if not any("km of runs" in problem for problem in limit_problems(bundle(ten_k, hevy("Bench Press", minReps=5)), dict(history, runWindow=window))):
+        raise SystemExit("one 10K should be rejected when the window needs 20 km today")
     if limit_problems({"mode": "full_recovery", "quests": [ten_k, ten_k, ten_k]}, history):
         raise SystemExit("limits apply only to Training days")

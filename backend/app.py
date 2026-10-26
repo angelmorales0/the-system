@@ -62,7 +62,7 @@ SYSTEM_PROMPT = """You are The System, a strength and running coach. Write today
 
 Goals, in order:
 1. Reach the strength targets in trainingHistory.strengthTargets (goal, bestE1rmLb, gapLb). Spend the most work on the biggest gaps that were not trained recently.
-2. Run at least goals.weeklyTenKs 10Ks every Monday-to-Sunday week. trainingHistory.week says how many are done and how many are still needed.
+2. Keep at least goals.runKmPer7Days km of running in every 7-day window, today included. trainingHistory.runWindow says what today needs: runsToday lists the runs to write (5K and 10K quests).
    goals.focus lists the targets to put first right now (lateral raises and biceps). The split trains them 3 times a rotation with the most sets: never drop them for time or readiness, and progress them first.
 3. Reach the body weight target in goals.bodyWeight. Do not write nutrition quests for it; it only informs how hard to push.
 
@@ -77,7 +77,8 @@ Progression (pick loads from the logged sets, never guess):
 - Main lifts (squat, deadlift, bench press, overhead press, barbell row, pull-ups, dips): one top set at RPE 8, then 2-3 back-off sets at about 90% of the top set. If the last session's top set reached its reps at RPE 8 or lower, add 2.5 kg for upper-body lifts and 5 kg for squat and deadlift. At RPE 9, repeat the weight. At RPE 10 or a missed rep, drop 5%.
 - Accessories (lateral raise, curls, Bulgarian split squat, and other lifts): double progression in an 8-12 rep range. Add reps until every set reaches 12, then add the smallest weight step and go back to 8.
 - The split trains bench press, rows, and squats twice a rotation, lateral raises and curls three times, and deadlift and overhead press once.
-- Write exact loads. Title: "Squat 3x5 @ 265 lb". Params: exercise (the Hevy name without equipment, e.g. "Squat"), sets, minReps, minWeightKg (the working weight in kg, rounded down to 2.5 kg). Unit "sets".
+- No data yet: if trainingHistory.lifts has no entry for an exercise, write only sets and minReps, with no minWeightKg and no weight in the title (e.g. "Squat 4x3-5"). The player picks the weight and logs it in Hevy. In the narrative, say to pick a weight that leaves about 2 reps in reserve at the top of the range. From the first logged session on, set loads from the log.
+- Write exact loads once an exercise has history. Title: "Squat 3x5 @ 265 lb". Params: exercise (the Hevy name without equipment, e.g. "Squat"), sets, minReps, minWeightKg (the working weight in kg, rounded down to 2.5 kg). Unit "sets".
 
 Gym split (split in the context):
 - Follow split.today: write its exercises, in order, with headerLine exactly split.today.name. The split rotates in the order of split.rotation; the app picks today's day.
@@ -89,14 +90,14 @@ Gym split (split in the context):
 Fatigue (adjust instead of pushing through):
 - Each entry in trainingHistory.lifts has a trend and advice from its newest sessions: improving, steady, stalled, declining, or dropping. Follow the advice for that lift.
 - declining: cut that lift's sets by a third and use 5-10% less weight than its last top set. dropping: half the sets at 60-70%. stalled: repeat the weight and add a rep, or drop 5% and build back. Never add weight to a declining or dropping lift; the backend rejects it.
-- If trainingHistory.fatigue.deloadRecommended is true, deload the whole day: every lift at half its split sets (rounded up) and 60-70% of its last top set, runs easy. The backend rejects more sets than that.
+- If trainingHistory.fatigue.deloadRecommended is true, deload the whole day: every lift at half its split sets (rounded up) and 60-70% of its last top set. The backend rejects more sets than that.
 - Falling reps or loads on the focus lifts mean too much volume, not too little: cut sets before adding any.
 
 Running with lifting:
 - Heavy lower-body work interferes with running. Obey trainingHistory.limits: at most heavyLowerMaxPer7Days heavy squat or deadlift days in 7, at least heavyLowerMinDaysApart days apart, and no heavy squats or deadlifts on a two-10K day. The backend rejects any plan that breaks these.
 - Put upper-body and light lower-body work on days next to heavy leg days.
-- If trainingHistory.week.tenKsStillNeeded is equal to or more than daysLeftIncludingToday, today must have a 10K; if it is more, today needs two 10Ks. Never more than maxTenKsPerDay 10Ks.
-- Run easy: a 10K is aerobic work, not a race, unless the week has room.
+- Write at least trainingHistory.runWindow.runsToday as run quests. You may add runs when the window has room for recovery, but never more than 20 km or maxTenKsPerDay 10Ks in a day. The backend rejects a day with fewer km than plannedKmToday. If runsToday is empty, the window is already full: a 10K is still the default.
+- A run quest's title is exactly "10K Run" or "5K Run". Give no pace, speed, heart rate, or effort for runs, in titles or the narrative: the player sets the pace.
 
 Readiness:
 - modeDecision.trainingBand is WHOOP readiness, one step lower after sleep performance under 60%. Green: full plan. Yellow and red: same exercises, one fewer back-off set and top sets at RPE 7. Every band still gets the run and strength work.
@@ -163,6 +164,24 @@ def with_history(body: dict[str, Any]) -> dict[str, Any]:
     if advice:
         context["splitAdvice"] = advice
     return context
+
+
+def unlogged_weight_problems(bundle: dict[str, Any], context: dict[str, Any]) -> list[str]:
+    """A load needs a logged session to come from. Without one, the quest is sets and reps, and the player picks the weight."""
+    training = context.get("trainingHistory")
+    if not isinstance(training, dict) or "lifts" not in training:
+        return []
+    lifts = training.get("lifts") or {}
+    problems = []
+    for quest in bundle.get("quests") or []:
+        verification = quest.get("verification") or {} if isinstance(quest, dict) else {}
+        params = verification.get("params") or {}
+        if verification.get("method") != "hevy_sets" or not isinstance(params, dict) or params.get("minWeightKg") is None:
+            continue
+        name = history.base_name(str(params.get("exercise") or ""))
+        if not (lifts.get(name) or {}).get("bestE1rmKg"):
+            problems.append(f"{params.get('exercise')} has no logged weight yet; give sets and reps only")
+    return problems
 
 
 def split_today(context: dict[str, Any]) -> dict[str, Any] | None:
@@ -369,6 +388,10 @@ def sanitize(bundle: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
             row["xp"] = int(xp)
         if mode in MODES:
             row["mode"] = mode
+        # A run reads only its distance; the player sets the pace.
+        params = (row.get("verification") or {}).get("params") or {}
+        if is_training_row(row) and isinstance(params, dict) and params.get("minDistanceMeters") in RUN_METERS and row.get("kind") != "penalty":
+            row["title"] = "10K Run" if params["minDistanceMeters"] == TEN_K_METERS else "5K Run"
         progress = row.get("progress")
         if isinstance(progress, dict):
             progress = dict(progress)
@@ -426,6 +449,7 @@ def validate_bundle(bundle: dict[str, Any], context: dict[str, Any]) -> list[str
             texts.extend(str(value) for value in params.values() if isinstance(value, str))
     problems.extend(history.limit_problems(bundle, context.get("trainingHistory")))
     problems.extend(split_problems(bundle, context))
+    problems.extend(unlogged_weight_problems(bundle, context))
     haystack = "\n".join(texts).lower()
     if any(phrase in haystack for phrase in UNSAFE):
         problems.append("unsafe phrasing")
@@ -561,6 +585,8 @@ def template_bundle(context: dict[str, Any]) -> dict[str, Any]:
     mode = decision["selectedMode"]
     band = training_band(context)
     rows = mode_quests(mode, band, day)
+    if mode == "performance_training":
+        rows = window_runs(rows, context, day, mode)
     header = header_for(mode)
     today = split_today(context)
     no_gym = (context.get("constraints") or {}).get("noGymToday") is True
@@ -598,6 +624,19 @@ def mode_quests(mode: str, band: str, day: str) -> list[dict[str, Any]]:
     return [run, bench]
 
 
+def window_runs(rows: list[dict[str, Any]], context: dict[str, Any], day: str, mode: str) -> list[dict[str, Any]]:
+    """Today's runs from the 50 km window: two 10Ks, a 10K and a 5K, or the default 10K."""
+    planned = ((context.get("trainingHistory") or {}).get("runWindow") or {}).get("runsToday")
+    if not planned:
+        return rows
+    lifts = [row for row in rows if row["stat"] != "END"]
+    runs = []
+    for index, label in enumerate(planned):
+        meters = TEN_K_METERS if label == "10K" else FIVE_K_METERS
+        runs.append(quest(day, f"run_{label.lower()}_{index + 1}", f"{label} Run", "daily", "END", "strava_activity", {"types": ["Run"], "minDistanceMeters": meters}, 40 if label == "10K" else 25, "normal", meters // 1000, "km", mode))
+    return runs + lifts
+
+
 def split_quests(today: dict[str, Any], band: str, day: str, mode: str) -> list[dict[str, Any]]:
     """Today's split exercises without loads, like the app's offline day. Yellow and red take a set off the main lift."""
     rows = []
@@ -621,10 +660,13 @@ def split_quests(today: dict[str, Any], band: str, day: str, mode: str) -> list[
 
 
 def no_gym_quests(rows: list[dict[str, Any]], day: str, mode: str) -> list[dict[str, Any]]:
-    """No gym today: the lifts give way to a second 10K."""
+    """No gym today: the lifts give way to 10Ks, up to two runs, like the app."""
     runs = [row for row in rows if row["stat"] != "STR"]
-    second = quest(day, "run_10k_2", "Second 10K", "daily", "END", "strava_activity", {"types": ["Run"], "minDistanceMeters": TEN_K_METERS}, 40, "normal", 10, "km", mode)
-    return runs + [second]
+    taken = {row["id"] for row in runs}
+    for index in range(len(runs), 2):
+        identifier = next(slug for slug in (f"run_10k_{index + 1}", f"run_10k_extra_{index + 1}") if f"q_{day}_{slug}" not in taken)
+        runs.append(quest(day, identifier, "10K Run", "daily", "END", "strava_activity", {"types": ["Run"], "minDistanceMeters": TEN_K_METERS}, 40, "normal", 10, "km", mode))
+    return runs
 
 
 def quest(day: str, slug: str, title: str, kind: str, stat: str, method: str, params: dict[str, Any], xp: int, difficulty: str, target: float, unit: str, mode: str) -> dict[str, Any]:
@@ -654,7 +696,7 @@ def header_for(mode: str) -> str:
 
 def narrative_for(mode: str, band: str) -> str:
     if band in ("yellow", "red"):
-        return "Moderate day. Run the 10K easy and keep the lifting moderate."
+        return "Moderate day. Keep the lifting moderate."
     return "The daily quest is waiting."
 
 
@@ -918,7 +960,7 @@ def self_check() -> None:
     no_gym = sample_request()
     no_gym["constraints"]["noGymToday"] = True
     cardio = sanitize(template_bundle(no_gym), no_gym)
-    if [row["title"] for row in cardio["quests"]] != ["10K Run", "Second 10K"] or validate_bundle(cardio, no_gym):
+    if [row["title"] for row in cardio["quests"]] != ["10K Run", "10K Run"] or validate_bundle(cardio, no_gym):
         raise SystemExit("no gym should give two 10K runs and no lifts")
     penalty = json.loads(json.dumps(base))
     penalty["quests"][0]["kind"] = "penalty"
@@ -938,6 +980,29 @@ def self_check() -> None:
     if os.environ.get("XAI_MODEL", "").strip() == "" and xai_model() != DEFAULT_MODEL:
         raise SystemExit("default model should be grok-4.6")
     split_checks()
+    fresh = sample_request()
+    fresh["trainingHistory"] = {"lifts": {}}
+    weighted = template_bundle(fresh)
+    weighted["quests"][1]["verification"]["params"]["minWeightKg"] = 60
+    if not any("no logged weight" in problem for problem in validate_bundle(weighted, fresh)):
+        raise SystemExit("a load for a lift with no history should be rejected")
+    fresh["trainingHistory"] = {"lifts": {"bench press": {"bestE1rmKg": 80}}}
+    if any("no logged weight" in problem for problem in validate_bundle(weighted, fresh)):
+        raise SystemExit("a load for a logged lift should pass")
+    window = sample_request()
+    window["trainingHistory"] = {"runWindow": {"plannedKmToday": 15, "runsToday": ["10K", "5K"]}}
+    rows = template_bundle(window)["quests"]
+    if [row["title"] for row in rows[:2]] != ["10K Run", "5K Run"] or validate_bundle(sanitize(template_bundle(window), window), window):
+        raise SystemExit(f"the template should run what the window needs, got {[row['title'] for row in rows]}")
+    full_window = dict(window, trainingHistory={"runWindow": {"plannedKmToday": 20, "runsToday": ["10K", "10K"]}})
+    full_window["constraints"] = dict(window["constraints"], noGymToday=True)
+    if [row["title"] for row in template_bundle(full_window)["quests"]] != ["10K Run", "10K Run"]:
+        raise SystemExit("a no-gym day with two 10Ks planned should not add a third")
+    paced = template_bundle(sample_request())
+    paced["quests"][0]["title"] = "Easy 10K @ 5:30/km"
+    paced["narrative"] = "Run it easy."
+    if sanitize(paced, sample_request())["quests"][0]["title"] != "10K Run":
+        raise SystemExit("a run title should be only 10K Run")
     print("ok")
 
 

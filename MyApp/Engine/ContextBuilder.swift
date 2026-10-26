@@ -89,7 +89,7 @@ enum ContextBuilder {
         return copy
     }
 
-    /// The real goals: every STR and END target the player kept, the weekly 10K count, and body weight.
+    /// The real goals: every STR and END target the player kept, the 7-day running km, and body weight.
     static func goals(targets: StatTargets, bodyMass: BodyMassReading?) -> MorningGoals {
         func goal(_ category: String) -> String { StatTargets.goals[category] ?? category }
         var strength = StrengthLevel.lifts.map { lift in
@@ -115,7 +115,7 @@ enum ContextBuilder {
             .filter { !targets.isRemoved($0, from: .END) && $0 != "Body weight" }
             .map { MorningTarget(category: $0, goal: goal($0)) }
         return MorningGoals(
-            weeklyTenKs: TrainingDay.weeklyTenKs,
+            runKmPer7Days: TrainingDay.runKmPer7Days,
             focus: GymSplit.focusTargets.filter { !targets.isRemoved($0, from: .STR) },
             strength: strength.filter { !targets.isRemoved($0.category, from: .STR) },
             endurance: endurance,
