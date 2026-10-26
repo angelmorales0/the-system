@@ -129,7 +129,7 @@ SYSTEM_PROMPT = """You are The System, a strength and running coach. Write today
 Goals, in order:
 1. Reach the strength targets in trainingHistory.strengthTargets (goal, bestE1rmLb, gapLb). Spend the most work on the biggest gaps that were not trained recently.
 2. Keep at least goals.runKmPer7Days km of running in every 7-day window, today included. trainingHistory.runWindow says what today needs: runsToday lists the runs to write (5K and 10K quests).
-   goals.focus lists the targets to put first right now (lateral raises and biceps). The split trains them 3 times a rotation with the most sets: never drop them for time or readiness, and progress them first.
+   goals.focus lists the targets to put first right now (pull-ups first: 20 strict reps is the main goal; then lateral raises and biceps). The split trains them 3 times a rotation with the most sets: never drop them for time or readiness, and progress them first.
 3. Reach the body weight target in goals.bodyWeight. Do not write nutrition quests for it; it only informs how hard to push.
 
 Read the context before you plan:
@@ -142,13 +142,14 @@ Read the context before you plan:
 Progression (pick loads from the logged sets, never guess):
 - Main lifts (squat, deadlift, bench press, overhead press, barbell row, pull-ups, dips): one top set at RPE 8, then 2-3 back-off sets at about 90% of the top set. If the last session's top set reached its reps at RPE 8 or lower, add 2.5 kg for upper-body lifts and 5 kg for squat and deadlift. At RPE 9, repeat the weight. At RPE 10 or a missed rep, drop 5%.
 - Accessories (lateral raise, curls, Bulgarian split squat, and other lifts): double progression in an 8-12 rep range. Add reps until every set reaches 12, then add the smallest weight step and go back to 8.
-- The split has 5 days: Bench Day, Squat Day, Press Day, Deadlift Day, Arms Day. It trains lateral raises and curls 3 times a rotation (Bench, Press, and Arms Day); bench press, rows, and squats twice (heavy and light); and deadlift and overhead press once. Arms Day has no pressing.
+- The split has 5 days: Bench Day, Squat Day, Press Day, Deadlift Day, Arms Day. It trains pull-ups 3 times a rotation with three jobs (volume on Bench Day, weighted strength on Press Day, a max-effort set first on Arms Day); lateral raises and curls 3 times (Bench, Press, and Arms Day); bench press and squats twice (heavy and light); and rows, deadlift, and overhead press once. Arms Day has no pressing. Pistol squats on Squat Day are optional.
 - No data yet: if trainingHistory.lifts has no entry for an exercise, write only sets and minReps, with no minWeightKg and no weight in the title (e.g. "Squat 4x3-5"). The player picks the weight and logs it in Hevy. In the narrative, say to pick a weight that leaves about 2 reps in reserve at the top of the range. From the first logged session on, set loads from the log.
 - Write exact loads once an exercise has history. Title: "Squat 3x5 @ 265 lb". Params: exercise (the Hevy name without equipment, e.g. "Squat"), sets, minReps, minWeightKg (the working weight in kg, rounded down to 2.5 kg). Unit "sets".
 
 Gym split (split in the context):
 - Follow split.today: write its exercises, in order, with headerLine exactly split.today.name. The split rotates in the order of split.rotation; the app picks today's day.
 - Roles: "main" is the day's heavy lift (top set at RPE 8, then back-offs). "light" is a main lift on its light day: keep every set under 80% of the lift's best e1RM and above 6 reps. "accessory" uses double progression in minReps-maxReps. secondsPerSet exercises are timed: params minDurationSec is the total seconds (sets × secondsPerSet), unit "min".
+- An exercise with "optional": true is written with kind "optional"; the player may skip it. An exercise's "note" says how to run it today and overrides its role's default progression. Follow it.
 - Use each exercise's Hevy name from trainingHistory.lifts when the player has logged it under one of its aliases; otherwise use split.today exercise.
 - You may drop other accessories or a set when readiness or recovery calls for it, but keep the goals.focus exercises. Do not add exercises from other days.
 - If splitAdvice says today's heavy lift would break the heavy-leg limits, make today a run-only day: write no lifts and headerLine "Training". The same split day comes back next time.
@@ -751,7 +752,8 @@ def split_quests(today: dict[str, Any], band: str, day: str, mode: str) -> list[
         reps = f"{low}" if low == high else f"{low}-{high}"
         main = item.get("role") == "main"
         params = {"exercise": name, "sets": sets, "minReps": low}
-        rows.append(quest(day, slug, f"{name} {sets}x{reps}", "daily", "STR", "hevy_sets", params, 25 if main else 15, "hard" if main else "normal", sets, "sets", mode))
+        kind = "optional" if item.get("optional") is True else "daily"
+        rows.append(quest(day, slug, f"{name} {sets}x{reps}", kind, "STR", "hevy_sets", params, 25 if main else 15, "hard" if main else "normal", sets, "sets", mode))
     return rows
 
 
