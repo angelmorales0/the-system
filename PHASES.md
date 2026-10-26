@@ -93,4 +93,4 @@ Remaining: Apple Family Controls (Distribution) approval on each App ID, and a p
 
 ## Later (master plan steps 18–25)
 
-Silent push when a verifier clears a quest, Plaid for non-Mercury accounts, EventKit calendar detail, DeviceActivityReport FOC charts, an on-device model as an offline author, a watchOS companion, a Target pause on Full Recovery, History day-clear cards, and penalty tier 3 polish.
+Silent push when a verifier clears a quest, Plaid for non-Mercury accounts, DeviceActivityReport FOC charts, an on-device model as an offline author, a watchOS companion, a Target pause on Full Recovery, History day-clear cards, and penalty tier 3 polish.

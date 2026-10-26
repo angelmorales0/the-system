@@ -122,7 +122,6 @@ WARNING: Failure to complete…
 | FIN balances / spend / income | Mercury accounts + txns | Mercury REST Read Only token + webhooks | FIN stat; spend-under quests; $500K YTD; overspend alerts |
 | Non-Mercury banks (later) | Plaid / MX | Plaid Link later | Same FIN ledger schema |
 | FOC / distractor adherence | DeviceActivity thresholds + report UI | FamilyControls / DeviceActivity / ManagedSettings | FOC score inference; penalty shields |
-| Calendar busy / focus blocks | EventKit (optional) | EventKit | MorningContext `calendar` |
 | Quest authoring | Cloud LLM (Grok/OpenAI via backend) | `POST /v1/quests/generate` | Daily `QuestBundle` |
 | Manual / timer quests | On-device | In-app timer + confirm | INT Targets, mobility |
 
@@ -197,11 +196,10 @@ elif user_confirmed_spend_full_recovery → full_recovery
 elif Sunday and whoop.readinessBand == red → recovery (+ optional bank quest)
 elif activeTarget and readiness != red → hybrid (or Target.kind-forced)
 elif readiness red or sleepPerformance < 60 → recovery
-elif calendar.busyMinutes > 360 → focus_deepwork | nutrition_focus
 else → performance_training
 ```
 
-3. Build `MorningContext` (player, whoop, calendar, activeTarget, goalsBias, nutrition, mercury, focus, freshness, recentQuestTitles, constraints).  
+3. Build `MorningContext` (player, whoop, activeTarget, goalsBias, nutrition, mercury, focus, freshness, recentQuestTitles, constraints).  
 4. `POST /v1/quests/generate` → LLM returns `QuestBundle`.  
 5. Server JSON Schema + safety filter → client re-validate → persist `DayPlan` → bind `SystemView`.  
 6. Fail/timeout (>8s) → `FallbackCatalog.json` by mode + readinessBand; `generatedBy: "fallback"`.
@@ -441,7 +439,6 @@ Docs: https://developer.apple.com/documentation/ScreenTimeAPIDocumentation · ht
 | # | Item |
 |---|------|
 | 19 | Plaid for non-Mercury accounts into same FIN ledger |
-| 20 | EventKit calendar richness in MorningContext |
 | 21 | DeviceActivityReport FOC charts; multi-threshold FOC estimates |
 | 22 | On-device small model as offline author (same schema) |
 | 23 | watchOS companion / WorkoutKit scheduling |
@@ -471,7 +468,6 @@ Docs: https://developer.apple.com/documentation/ScreenTimeAPIDocumentation · ht
 - [ ] FamilyControls `.individual` auth + pick Penalty Targets (apps/sites) once  
 - [ ] Enable Live Activities for the app  
 - [ ] Set display name / confirm Status identity  
-- [ ] Optional: EventKit calendar access  
 
 ### Ops
 
