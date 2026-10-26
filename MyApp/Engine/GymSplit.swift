@@ -1,16 +1,16 @@
 import Foundation
 
 /// A 5-day split: upper, lower, upper, lower, then an arms day, built around the STR targets and 5 10Ks a week.
-/// Overhead press comes twice (heavy on Press Day, light the next day on Deadlift Day); bench press once, heavy.
+/// Overhead press and bench press come once each, heavy. Chest and triceps get support work on Deadlift Day.
 /// Dead hangs come 3 times (Squat, Press, and Arms Day), never on Deadlift Day, so grip gets a day off between hard pulls.
 /// Lateral raises and curls, the current focus, come 3 times a rotation (Bench, Press, and Arms Day), never on a leg day.
 /// Pull-ups, the main goal (20 strict reps), also come 3 times, each with its own job: volume on Bench Day,
 /// weighted strength on Press Day, and a max-effort set on Arms Day. Squats come twice (heavy and light).
 /// Rows and the deadlift come once: the deadlift is the most tiring lift next to the running.
 /// Pistol squats and handstand push-ups are optional rows, done at home on a good day: one per day at most.
-/// Four support exercises protect the running and the shoulders but score no STR target: Romanian deadlift and
-/// calf raises on Squat Day, a lying leg curl on Deadlift Day, and face pulls on Arms Day. Toes-to-bar moved off
-/// Squat Day to make room.
+/// Six support exercises score no STR target: Romanian deadlift and calf raises on Squat Day for the running;
+/// incline dumbbell press, skull crushers, and a lying leg curl on Deadlift Day for chest, triceps, and hamstrings;
+/// and face pulls on Arms Day for the shoulders. Toes-to-bar comes once, on Arms Day, to make room.
 /// The fifth day is upper body with no pressing, so it does not tire the chest before the next Bench Day.
 /// The two lower days are the only heavy leg days, two days apart, so the split stays inside the heavy-leg limits
 /// next to the running. A third leg day would cost the runs more than it gives the lifts.
@@ -105,15 +105,17 @@ enum GymSplit {
              note: "Optional. Do them at home if you have time. Skipping them never misses the day."),
     ])
 
-    static let deadlift = Day(id: "deadlift", name: "Deadlift Day", focus: "Lower body: deadlift, light squat, and hamstrings, plus light overhead press, grip, and core", lowerBody: true, exercises: [
+    static let deadlift = Day(id: "deadlift", name: "Deadlift Day", focus: "Lower body: deadlift, light squat, and hamstrings, plus chest, triceps, and grip", lowerBody: true, exercises: [
         lift("Deadlift", .main, 3, 1...5, target: "Deadlift", aliases: StrengthLevel.deadlift.aliases),
         lift("Squat", .light, 3, 8...8, target: "Squat", aliases: StrengthLevel.squat.aliases),
-        // The day after the heavy press: practice at a light weight.
-        lift("Overhead Press", .light, 3, 7...8, target: "Overhead press", aliases: StrengthLevel.overheadPress.aliases),
+        // Chest and triceps, three days before the next Bench Day, with Arms Day (no pressing) between.
+        support("Incline Bench Press", 3, 8...12, muscle: "Chest", aliases: ["incline bench press", "incline dumbbell press"],
+                note: "Dumbbells, 30-45° incline. Upper chest, which the flat bench misses. 1-2 reps in reserve."),
+        support("Skullcrusher", 3, 8...12, muscle: "Triceps", aliases: ["skullcrusher", "skull crusher", "lying triceps extension"],
+                note: "Triceps long head, the biggest part of the upper arm. EZ bar or dumbbells, elbows still."),
         support("Lying Leg Curl", 3, 8...12, muscle: "Hamstrings", aliases: ["lying leg curl", "seated leg curl", "leg curl", "nordic hamstring curl", "nordic curl"],
                 note: "Knee-flexion hamstring work, which the hinge lifts miss. Runners need it to protect the hamstrings."),
         hold("Farmers Walk", 3, seconds: 60, target: "Farmer's carry", aliases: StrengthLevel.farmerAliases),
-        lift("Toes To Bar", .accessory, 3, 5...10, target: "Toes-to-bar", aliases: StrengthLevel.toesToBar.aliases),
     ])
 
     static let arms = Day(id: "arms", name: "Arms Day", focus: "Pull-ups first while fresh, then side delts, biceps, grip, and core. No pressing", lowerBody: false, exercises: [
@@ -252,8 +254,8 @@ enum GymSplit {
         }
         // Days a rotation that train each target. The focus targets come 3 times; the hardest lifts once.
         let expectedDays: [String: Int] = [
-            "Lateral raise": 3, "Dumbbell curl": 3, "Toes-to-bar": 2,
-            "Pull-ups": 3, "Dead hang": 3, "Squat": 2, "Overhead press": 2, "Barbell row": 1,
+            "Lateral raise": 3, "Dumbbell curl": 3, "Toes-to-bar": 1,
+            "Pull-ups": 3, "Dead hang": 3, "Squat": 2, "Overhead press": 1, "Barbell row": 1,
             "Deadlift": 1, "Bench press": 1, "Weighted dips": 1, "Handstand push-ups": 1,
             "Bulgarian split squat": 1, "Pistol squats": 1, "Farmer's carry": 1,
         ]
@@ -333,8 +335,8 @@ enum GymSplit {
 
         // Support exercises: a hinge and a knee-flexion hamstring lift on different days, face pulls, and calf raises.
         let supportDays = rotation.flatMap { day in day.exercises.filter(\.support).map { "\(day.id): \($0.exercise)" } }
-        if supportDays != ["squat: Romanian Deadlift", "squat: Standing Calf Raise", "deadlift: Lying Leg Curl", "arms: Face Pull"] {
-            errors.append("support exercises should be RDL and calf raises on Squat Day, leg curls on Deadlift Day, face pulls on Arms Day, got \(supportDays)")
+        if supportDays != ["squat: Romanian Deadlift", "squat: Standing Calf Raise", "deadlift: Incline Bench Press", "deadlift: Skullcrusher", "deadlift: Lying Leg Curl", "arms: Face Pull"] {
+            errors.append("support exercises should be RDL and calf raises on Squat Day; incline press, skull crushers, and leg curls on Deadlift Day; face pulls on Arms Day, got \(supportDays)")
         }
         if rotation.flatMap(\.exercises).contains(where: { $0.support && targets.contains($0.target) }) {
             errors.append("a support exercise must not claim an STR target")
