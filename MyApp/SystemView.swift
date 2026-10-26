@@ -59,30 +59,40 @@ struct SystemView: View {
             Spacer(minLength: 23)
             VStack(spacing: 1) {
                 ForEach(store.goalQuests) { quest in
+                    // Open penalty rows sit in the normal list, in red, with a PENALTY tag.
+                    let penalty = quest.kind == .penalty
+                    let ink = penalty ? QuestLight.penalty : QuestLight.ink
                     Button {
                         store.handleQuestTap(id: quest.id)
                     } label: {
                         HStack(spacing: 11) {
-                            Text(quest.title)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            HStack(spacing: 6) {
+                                if penalty {
+                                    Text("PENALTY")
+                                        .font(.caption2.weight(.semibold))
+                                        .tracking(1)
+                                }
+                                Text(quest.title)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             // Blue once this run unlocked Beyond the Limit: [15.2/10km].
                             let beyond = store.snapshot.beyondTheLimitToday?.questId == quest.id
                             Text(store.rowLabel(for: quest))
                                 .monospacedDigit()
                                 .fixedSize(horizontal: true, vertical: false)
-                                .foregroundStyle(beyond ? QuestLight.cyan : QuestLight.ink)
+                                .foregroundStyle(beyond ? QuestLight.cyan : ink)
                                 .shadow(color: beyond ? QuestLight.blue : .clear, radius: 6)
                             QuestCheckbox(checked: quest.status == .completed)
                                 .frame(width: 16, height: 17)
                         }
                         .font(.subheadline)
-                        .foregroundStyle(QuestLight.ink)
-                        .shadow(color: QuestLight.cyan.opacity(0.6), radius: 5)
+                        .foregroundStyle(ink)
+                        .shadow(color: (penalty ? QuestLight.penalty : QuestLight.cyan).opacity(0.6), radius: 5)
                         .frame(minHeight: 44)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(quest.title)
+                    .accessibilityLabel(penalty ? "Penalty: \(quest.title)" : quest.title)
                     .accessibilityValue(store.accessibilityValue(for: quest))
                     .accessibilityHint(questRowHint(quest))
                 }

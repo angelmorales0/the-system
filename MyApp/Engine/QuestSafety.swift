@@ -36,10 +36,6 @@ enum QuestSafety {
         if bundle.quests.isEmpty {
             issues.append("bundle has no quests")
         }
-        // Penalty quests lock the phone. Only `PenaltyQuests` adds them, from the catalog.
-        if bundle.mode != .penalty, bundle.quests.contains(where: { $0.kind == .penalty }) {
-            issues.append("generated bundles must not hold penalty quests")
-        }
         if bundle.quests.count > maxQuests {
             issues.append("too many quests")
         }
@@ -57,6 +53,10 @@ enum QuestSafety {
             }
             if !seen.insert(quest.id).inserted {
                 issues.append("duplicate quest id")
+            }
+            if quest.kind == .penalty || quest.difficulty == .penalty {
+                // Only the app adds penalty rows, from the tier.
+                issues.append("generated penalty quest")
             }
             let title = quest.title.trimmingCharacters(in: .whitespacesAndNewlines)
             if title.count < 3 || title.count > 48 {

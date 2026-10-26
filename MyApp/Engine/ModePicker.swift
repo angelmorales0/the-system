@@ -14,7 +14,7 @@ struct ModeDecision: Equatable {
 }
 
 /// Rules-only day mode. The LLM is not allowed to override this once it exists.
-/// A penalty is not a mode: its quests are added on top of the day's own quests (see `PenaltyQuests`).
+/// An open penalty does not pick a mode; `PenaltyQuests` adds its rows to the day.
 enum ModePicker {
     static func decide(_ input: ModePickerInput) -> ModeDecision {
         if input.spendingFullRecovery {

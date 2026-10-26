@@ -487,17 +487,13 @@
           "reward": null
         }
       ]
-    },
+    }
+  ],
+  "penaltyQuests": [
     {
-      "mode": "penalty",
       "readinessBands": [
         "green"
       ],
-      "headerLine": "Penalty Quest",
-      "narrative": "The phone is locked until the penalty is cleared. Record workouts on a watch: every other app is blocked.",
-      "warnings": [
-        "Failure to complete\nthe penalty quest will extend\nthe penalty."
-      ],
       "quests": [
         {
           "id": "penalty_run",
@@ -540,40 +536,13 @@
             "unit": "min"
           },
           "reward": null
-        },
-        {
-          "id": "penalty_mobility",
-          "title": "Mobility",
-          "kind": "penalty",
-          "stat": "AGI",
-          "verification": {
-            "method": "timer_session",
-            "params": {
-              "minSec": 900,
-              "label": "Mobility"
-            }
-          },
-          "xp": 15,
-          "difficulty": "penalty",
-          "progress": {
-            "current": 0,
-            "target": 15,
-            "unit": "min"
-          },
-          "reward": null
         }
       ]
     },
     {
-      "mode": "penalty",
       "readinessBands": [
         "yellow"
       ],
-      "headerLine": "Penalty Quest",
-      "narrative": "The phone is locked until the penalty is cleared. Record workouts on a watch: every other app is blocked.",
-      "warnings": [
-        "Failure to complete\nthe penalty quest will extend\nthe penalty."
-      ],
       "quests": [
         {
           "id": "penalty_run",
@@ -587,7 +556,7 @@
               "minDurationSec": 1500
             }
           },
-          "xp": 30,
+          "xp": 25,
           "difficulty": "penalty",
           "progress": {
             "current": 0,
@@ -608,7 +577,7 @@
               "minDurationSec": 1500
             }
           },
-          "xp": 30,
+          "xp": 25,
           "difficulty": "penalty",
           "progress": {
             "current": 0,
@@ -616,39 +585,12 @@
             "unit": "min"
           },
           "reward": null
-        },
-        {
-          "id": "penalty_mobility",
-          "title": "Mobility",
-          "kind": "penalty",
-          "stat": "AGI",
-          "verification": {
-            "method": "timer_session",
-            "params": {
-              "minSec": 900,
-              "label": "Mobility"
-            }
-          },
-          "xp": 15,
-          "difficulty": "penalty",
-          "progress": {
-            "current": 0,
-            "target": 15,
-            "unit": "min"
-          },
-          "reward": null
         }
       ]
     },
     {
-      "mode": "penalty",
       "readinessBands": [
         "red"
-      ],
-      "headerLine": "Penalty Quest",
-      "narrative": "The phone is locked until the penalty is cleared. Record workouts on a watch: every other app is blocked.",
-      "warnings": [
-        "Failure to complete\nthe penalty quest will extend\nthe penalty."
       ],
       "quests": [
         {
@@ -668,47 +610,6 @@
           "progress": {
             "current": 0,
             "target": 25,
-            "unit": "min"
-          },
-          "reward": null
-        },
-        {
-          "id": "penalty_mobility",
-          "title": "Mobility",
-          "kind": "penalty",
-          "stat": "AGI",
-          "verification": {
-            "method": "timer_session",
-            "params": {
-              "minSec": 900,
-              "label": "Mobility"
-            }
-          },
-          "xp": 15,
-          "difficulty": "penalty",
-          "progress": {
-            "current": 0,
-            "target": 15,
-            "unit": "min"
-          },
-          "reward": null
-        },
-        {
-          "id": "penalty_focus",
-          "title": "Focus Block",
-          "kind": "penalty",
-          "stat": "FOC",
-          "verification": {
-            "method": "manual_confirm",
-            "params": {
-              "prompt": "Confirm the penalty focus block"
-            }
-          },
-          "xp": 20,
-          "difficulty": "penalty",
-          "progress": {
-            "current": 0,
-            "target": 20,
             "unit": "min"
           },
           "reward": null

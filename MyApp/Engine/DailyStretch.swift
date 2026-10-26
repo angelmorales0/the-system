@@ -1,7 +1,7 @@
 import Foundation
 
 /// A fixed `Stretching [0/10min]` row on every daily quest screen, whether the bundle came from the catalog
-/// or from generation. Penalty days skip it: they already carry Mobility.
+/// or from generation.
 /// It checks itself off from timed Hevy stretches or an Apple Health flexibility workout (see `StretchTime`).
 enum DailyStretch {
     static let questId = "daily_stretching"
@@ -31,7 +31,7 @@ enum DailyStretch {
 
     /// Adds the row once, after the last required quest. An existing row keeps its progress.
     static func ensure(in bundle: QuestBundle, now: Date) -> QuestBundle {
-        guard bundle.mode != .penalty, !bundle.quests.isEmpty,
+        guard !bundle.quests.isEmpty,
               !bundle.quests.contains(where: { $0.id == questId }) else { return bundle }
         var copy = bundle
         let insertAt = copy.quests.lastIndex(where: { $0.kind != .optional }).map { $0 + 1 } ?? copy.quests.count
@@ -99,11 +99,6 @@ enum DailyStretch {
         }
         if ensure(in: added, now: now).quests.count != added.quests.count {
             errors.append("Stretching must be added only once")
-        }
-        var penalty = bundle
-        penalty.mode = .penalty
-        if ensure(in: penalty, now: now).quests.contains(where: { $0.id == questId }) {
-            errors.append("a penalty day must not add Stretching")
         }
         if isDone(in: added) != false || isDone(in: bundle) != nil {
             errors.append("isDone should be false when open and nil when missing")
