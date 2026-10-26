@@ -8,20 +8,6 @@ struct RemoteDayReadings: Equatable {
     var codeforces: CodeforcesReading
     /// Mercury months with real data only, newest last. A disconnected month is left out so it cannot pass the budget rule.
     var financeMonths: [FinanceMonth]
-    /// Work (Mac) screen minutes for the quest day. Nil when the backend has no reading.
-    var workScreen: WorkScreenReading? = nil
-}
-
-/// `GET /v1/integrations/screentime/snapshot?day=&tz=` → `{"available": true, "dayKey": "2026-10-26", "workMinutes": 280}`.
-/// Minutes of active Mac use in that quest day (5:00 to 5:00 local). A reading for another day is ignored.
-nonisolated struct WorkScreenReading: Decodable, Equatable {
-    var available: Bool
-    var dayKey: String
-    var workMinutes: Int?
-
-    func minutes(for dayKey: String) -> Int? {
-        available && self.dayKey == dayKey ? workMinutes.map { max(0, $0) } : nil
-    }
 }
 
 /// `/v1/integrations/mercury/month` adds connection fields around a `FinanceMonth`.
@@ -69,7 +55,6 @@ enum IntegrationClient {
         let months = financeMonthKeys(dayKey: dayKey)
         async let lastMonth = fetch(MercuryMonthResponse.self, base: base, path: "v1/integrations/mercury/month", dayKey: dayKey, query: [URLQueryItem(name: "month", value: months.last)])
         async let thisMonth = fetch(MercuryMonthResponse.self, base: base, path: "v1/integrations/mercury/month", dayKey: dayKey, query: [URLQueryItem(name: "month", value: months.this)])
-        async let workScreen = fetch(WorkScreenReading.self, base: base, path: "v1/integrations/screentime/snapshot", dayKey: dayKey)
         let readings = await (whoop, strava, mercury, hevy, codeforces)
         let financeMonths = await [lastMonth, thisMonth].compactMap { $0?.financeMonth }
         return RemoteDayReadings(
@@ -78,8 +63,7 @@ enum IntegrationClient {
             mercury: readings.2,
             hevy: readings.3,
             codeforces: readings.4,
-            financeMonths: financeMonths,
-            workScreen: await workScreen
+            financeMonths: financeMonths
         )
     }
 

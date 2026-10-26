@@ -107,18 +107,6 @@ enum FocusTracking {
     }
     #endif
 
-    /// The phone's days with each Mac's complete days added. Without iCloud the Mac adds nothing.
-    static func loadDaysWithMac(todayKey: String) async -> [FocusDay] {
-        let phone = loadDays()
-        #if CLOUDKIT_SYNC
-        let mac = (try? await MacScreenTimeCloud.fetchDays(before: todayKey)) ?? []
-        return FocusDay.merging(phone, mac: mac)
-        #else
-        _ = todayKey
-        return phone
-        #endif
-    }
-
     // MARK: - Self-check (runs in DEBUG at launch)
 
     static func check() -> [String] {
@@ -144,6 +132,6 @@ enum FocusTracking {
         if names.compactMap({ parse(event: $0)?.minutes }) != FocusLevel.screenThresholds + FocusLevel.socialThresholds {
             errors.append("every scheduled event name should parse back to its threshold")
         }
-        return errors + MacScreenTime.check()
+        return errors
     }
 }

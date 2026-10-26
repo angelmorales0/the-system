@@ -34,8 +34,7 @@ struct FocusTrackingView: View {
 
             QuestSectionTitle(text: "Mac")
             VStack(alignment: .leading, spacing: 12) {
-                note("Run FocusTracker on your Mac. It counts active Mac time and time on social sites, then saves each finished day to your private iCloud. The app adds those minutes to the iPhone's.")
-                note("A day counts only when the iPhone logged it. A day with no Mac data counts the iPhone alone.")
+                note("FOC counts the iPhone only. Mac time counts as work: FocusTracker sends it to the Work line of the Screen Time quest (Status → Screen Time → Mac tracker).")
             }
         }
         .font(.subheadline)

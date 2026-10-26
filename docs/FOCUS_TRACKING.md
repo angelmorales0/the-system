@@ -1,37 +1,71 @@
-# Focus tracking: iPhone and Mac screen time
+# Screen time: iPhone and Macs
 
-The FOC stat scores daily screen time and social media from two sources:
-
-| Source | How | Where it goes |
+| Source | What it counts | Where it goes |
 |---|---|---|
-| iPhone | The PenaltyMonitor extension gets a `focusDay` schedule (5:00 to 4:59) with an event at each FOC threshold. It saves the highest threshold reached per quest day. | App Group key `focusDays` |
-| Mac | The FocusTracker menu-bar app counts active time every 15 seconds (screen unlocked, input in the last 5 minutes). Social apps and social sites in Safari or Chrome count as social. | Private iCloud database, container `iCloud.com.angelmorales.thesystem` |
+| iPhone (FOC tracking) | Screen time and social media per quest day, from Screen Time thresholds | FOC stat |
+| iPhone (Screen Time quest) | Phone minutes today | The quest's Phone line |
+| Every Mac (FocusTracker) | Active minutes: screen unlocked and input in the last 5 minutes. No apps, windows, or websites. | The quest's **Work** line, through the screen time Worker |
 
-The app adds the Mac minutes to the iPhone minutes for each day. A day counts only when the iPhone logged it.
+All Mac time counts as work. FOC counts the iPhone only, because work hours would break its "under 2 h a day" rule.
 
-## One-time setup
+```
+FocusTracker (each Mac) ──POST minutes every 15 min──▶ Cloudflare Worker ◀──GET today── iPhone app
+```
 
-1. In Xcode, open Settings → Accounts and sign in with your Apple Developer account.
-2. Select the project. For the **MyApp**, **PenaltyMonitor**, **PenaltyShieldConfig**, **PenaltyShieldAction**, **PenaltyActivity**, and **FocusTracker** targets, open Signing & Capabilities and select your team.
-3. In the **MyApp** and **FocusTracker** targets, make sure the iCloud capability shows the container `iCloud.com.angelmorales.thesystem` with a check mark. If Xcode shows it in red, click the refresh button under the container list.
-4. Run **MyApp** on your iPhone. Open Status → FOC → Set up tracking.
-   - **All apps:** select every category.
-   - **Social apps:** select your social apps and sites.
-5. Run **FocusTracker** on your Mac (scheme FocusTracker, destination My Mac). An eye icon shows in the menu bar.
-   - The first time it runs, it adds itself to Login Items. macOS shows "Background item added."
-   - The first time Safari or Chrome is in front, macOS asks to allow FocusTracker to control it. Click Allow.
+## 1. Deploy the Worker (free, about 10 minutes)
 
-## What to expect
+1. Make a free account at dash.cloudflare.com.
+2. **Storage & Databases → KV → Create** a namespace named `screentime`.
+3. **Compute (Workers) → Create → Start with Hello World**. Name it `screentime`, then **Deploy**.
+4. **Edit code**: replace everything with [`screentime-worker/worker.js`](../screentime-worker/worker.js), then **Deploy**.
+5. On the Worker, open **Settings → Bindings → Add → KV namespace**. Variable name `SCREEN`, namespace `screentime`.
+6. **Settings → Variables and Secrets → Add**. Type **Secret**, name `TOKEN`. For the value, make a long random string, for example from Terminal:
+   ```bash
+   openssl rand -hex 24
+   ```
+   Keep it in your password manager. You type it into each Mac and the iPhone.
+7. Note the Worker address, for example `https://screentime.<you>.workers.dev`.
+8. Test it from any Mac, including the work Mac. It must print `{"ok":true}`:
+   ```bash
+   curl https://screentime.<you>.workers.dev/health
+   ```
 
-- The iPhone starts counting at the next 5:00.
-- The Mac sends each finished day to iCloud after 5:00, or when it is next online. The iPhone reads the last 30 days each time it refreshes its stats.
-- The FOC target rows show the Mac share, for example "incl. Mac avg 34 min on 12 days".
+## 2. iPhone
+
+Status → Screen Time → **Set up Mac tracker**. Enter the Worker address and token, then **Save and test**.
+
+## 3. Personal Mac (has Xcode)
+
+1. Xcode → Settings → Accounts: sign in. Select your team on the **FocusTracker** target.
+2. Choose the **FocusTracker** scheme and **My Mac**, then Run (⌘R).
+3. Product → Show Build Folder in Finder → `Products/Debug`. Copy **FocusTracker.app** to Applications, quit the Xcode copy, and open the one in Applications.
+4. Menu-bar eye icon → **Set Up…** → address and token → **Save and Test**.
+
+## 4. Work Mac (no Xcode)
+
+On the personal Mac, once:
+
+```bash
+xcrun notarytool store-credentials the-system-notary --apple-id <you@example.com> --team-id <TEAMID>
+```
+
+Then build the installer:
+
+```bash
+TEAM_ID=<TEAMID> scripts/package-focustracker.sh
+```
+
+Copy `build/FocusTracker.dmg` to the work Mac, open it, and drag FocusTracker to Applications. Open it, then **Set Up…** with the same address and token.
+
+## Checking it works
+
+- Mac menu: "Today: 1 h 12 min" goes up while you use the Mac, and "Sent 10:45 AM" updates every 15 minutes.
+- iPhone: the Screen Time quest's Work line shows the minutes of all Macs together.
+- Worker: Cloudflare dashboard → KV → `screentime` shows one `day:YYYY-MM-DD` key per day.
 
 ## Limits
 
-- iOS reports thresholds (30, 60, 90, 120, ... minutes), not exact minutes. A day at 119 minutes reads as 90.
 - FocusTracker counts only while it runs. If you quit it, that time is not counted.
 - A video with no keyboard or mouse input stops counting after 5 minutes.
-- Only Safari and Chrome sites count as social. Other browsers count as screen time only.
-- The verify script builds with `CLOUDKIT_SYNC=NO` for the Simulator run, because unsigned builds have no iCloud entitlement. Real iCloud sync needs a signed build on your devices.
-- Xcode builds use the CloudKit development environment. A TestFlight or App Store build needs the schema deployed to production in the CloudKit Console first.
+- If the work network blocks the Worker, minutes wait on the Mac and send when it can reach it.
+- Anyone with the token can read and write your Mac minutes. Keep it private; change the `TOKEN` secret to revoke it.

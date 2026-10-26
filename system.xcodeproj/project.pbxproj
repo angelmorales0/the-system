@@ -142,11 +142,6 @@
 			path = FocusTracker;
 			sourceTree = "<group>";
 		};
-		G70000000000000000000001 /* Shared */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Shared;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -192,7 +187,6 @@
 				G40000000000000000000001 /* PenaltyShieldAction */,
 				G50000000000000000000001 /* PenaltyActivity */,
 				G60000000000000000000001 /* FocusTracker */,
-				G70000000000000000000001 /* Shared */,
 				000000000000000000000020 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -232,7 +226,6 @@
 			);
 			fileSystemSynchronizedGroups = (
 				000000000000000000000010 /* MyApp */,
-				G70000000000000000000001 /* Shared */,
 			);
 			name = MyApp;
 			productName = MyApp;
@@ -323,7 +316,6 @@
 			);
 			fileSystemSynchronizedGroups = (
 				G60000000000000000000001 /* FocusTracker */,
-				G70000000000000000000001 /* Shared */,
 			);
 			name = FocusTracker;
 			productName = FocusTracker;
@@ -534,8 +526,6 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				CLOUDKIT_CONDITION_NO = "";
-				CLOUDKIT_CONDITION_YES = CLOUDKIT_SYNC;
 				PROJECT_UNIQUE_VALUE = HDDJMVMX;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
@@ -599,8 +589,6 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.6.2;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				CLOUDKIT_CONDITION_NO = "";
-				CLOUDKIT_CONDITION_YES = CLOUDKIT_SYNC;
 				PROJECT_UNIQUE_VALUE = HDDJMVMX;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -616,9 +604,6 @@
 				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = AppIconFull;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				CLOUDKIT_SYNC = NO;
-				"CLOUDKIT_SYNC[sdk=iphoneos*]" = YES;
-				"CLOUDKIT_SYNC[sdk=iphonesimulator*]" = YES;
 				CODE_SIGN_ENTITLEMENTS = MyApp.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "MyApp-iOS.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "MyApp-iOS.entitlements";
@@ -653,7 +638,6 @@
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(CLOUDKIT_CONDITION_$(CLOUDKIT_SYNC))";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -669,9 +653,6 @@
 				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = AppIconFull;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				CLOUDKIT_SYNC = NO;
-				"CLOUDKIT_SYNC[sdk=iphoneos*]" = YES;
-				"CLOUDKIT_SYNC[sdk=iphonesimulator*]" = YES;
 				CODE_SIGN_ENTITLEMENTS = MyApp.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "MyApp-iOS.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "MyApp-iOS.entitlements";
@@ -706,7 +687,6 @@
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(CLOUDKIT_CONDITION_$(CLOUDKIT_SYNC))";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -943,8 +923,6 @@
 		6000000000000000000000D1 /* Debug configuration for PBXNativeTarget "FocusTracker" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLOUDKIT_SYNC = YES;
-				CODE_SIGN_ENTITLEMENTS = FocusTracker/FocusTracker.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -954,14 +932,12 @@
 				INFOPLIST_KEY_CFBundleDisplayName = FocusTracker;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "FocusTracker reads the front tab's web address to count time on social sites. Only daily minute totals leave this Mac.";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).FocusTracker";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(CLOUDKIT_CONDITION_$(CLOUDKIT_SYNC))";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -972,8 +948,6 @@
 		6000000000000000000000D2 /* Release configuration for PBXNativeTarget "FocusTracker" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLOUDKIT_SYNC = YES;
-				CODE_SIGN_ENTITLEMENTS = FocusTracker/FocusTracker.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -983,14 +957,12 @@
 				INFOPLIST_KEY_CFBundleDisplayName = FocusTracker;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "FocusTracker reads the front tab's web address to count time on social sites. Only daily minute totals leave this Mac.";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).FocusTracker";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(CLOUDKIT_CONDITION_$(CLOUDKIT_SYNC))";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;

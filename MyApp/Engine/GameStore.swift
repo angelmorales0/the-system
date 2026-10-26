@@ -40,7 +40,7 @@ final class GameStore: ObservableObject {
         #if DEBUG
         let problems = VerificationFixtures.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check() + RecoveryLevel.check()
             + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
-            + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check()
+            + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check() + MacScreenClient.check()
             + HiddenQuestRules.check()
             + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
             + NoGymDayRules.check()
@@ -438,14 +438,15 @@ final class GameStore: ObservableObject {
             let health = await HealthKitBridge.summary(on: now)
             let bodyMass = await HealthKitBridge.latestBodyMass(days: EnduranceLevel.bodyWeightWindowDays, now: now)
             let remote = await IntegrationClient.load(dayKey: dayKey)
-            let focusDays = await FocusTracking.loadDaysWithMac(todayKey: dayKey)
+            let focusDays = FocusTracking.loadDays()
+            let macScreen = await MacScreenClient.load(dayKey: dayKey)
             guard let self else { return }
             self.refreshingIntegrations = false
             var next = self.snapshot
             let rebuilt = next.applyWhoopReadiness(remote.whoop, catalog: self.catalog, now: now)
             next.applyScreenTime(
                 phoneMinutes: PhoneScreenGroup.minutes(for: next.bundle.dayKey),
-                workMinutes: remote.workScreen?.minutes(for: next.bundle.dayKey)
+                workMinutes: macScreen?.minutes(for: next.bundle.dayKey)
             )
             next.applyFinance(remote.mercury)
             self.snapshot = next
