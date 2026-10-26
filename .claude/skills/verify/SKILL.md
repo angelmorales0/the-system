@@ -20,15 +20,11 @@ The script does 5 steps and stops at the first failure:
 
 | Step | What it checks | Exit code on failure |
 |---|---|---|
-| 1 | `xcodebuild` for the iOS Simulator (scheme `MyApp`, Debug, `CLOUDKIT_SYNC=NO`) | 1 |
+| 1 | `xcodebuild` for the iOS Simulator (scheme `MyApp`, Debug) | 1 |
 | 2 | `xcodebuild` for a real iPhone, without signing | 2 |
 | 3 | `xcodebuild` for the Mac tracker (scheme `FocusTracker`, macOS), without signing | 5 |
 | 4 | Boot a Simulator and install the app (fresh data) | 3 |
 | 5 | Launch the app twice (first launch, then relaunch). Each launch must stay alive for `RUN_SECONDS` (15) with no crash, no `precondition`/`fatalError`, and no crash report | 4 |
-
-Unsigned builds have no iCloud entitlement, and CloudKit stops an app without it.
-So the Simulator build that runs turns CloudKit off. Steps 2 and 3 keep it on, so
-the CloudKit code still compiles.
 
 Logs and screenshots go to `$TMPDIR/system-verify/`.
 

@@ -1,7 +1,7 @@
 import ServiceManagement
 import SwiftUI
 
-/// Menu-bar only (LSUIElement): no Dock icon and no window. It starts at login so every day is counted.
+/// Menu-bar only (LSUIElement): no Dock icon. It starts at login so every day is counted.
 @main struct FocusTrackerApp: App {
     @State private var tracker = FocusTracker()
 
@@ -19,22 +19,28 @@ import SwiftUI
         } label: {
             Image(systemName: tracker.paused ? "eye.slash" : "eye")
         }
+        Window("FocusTracker Setup", id: SetupView.windowID) {
+            SetupView(tracker: tracker)
+        }
+        .windowResizability(.contentSize)
     }
 }
 
 private struct FocusMenu: View {
     let tracker: FocusTracker
+    @Environment(\.openWindow) private var openWindow
     @State private var startsAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
-        let today = tracker.today
-        Text("Today: \(Self.duration(today.screenMinutes)), social \(Self.duration(today.socialMinutes))")
-        Text(syncLine)
-        if tracker.browserBlocked {
-            Text("Allow Automation for your browser in System Settings → Privacy & Security, or social sites do not count.")
-        }
+        Text("Today: \(Self.duration(tracker.todayMinutes))")
+        Text(statusLine)
         Divider()
-        Button("Sync Now") { tracker.syncNow() }
+        Button("Set Up…") {
+            NSApplication.shared.activate()
+            openWindow(id: SetupView.windowID)
+        }
+        Button("Send Now") { tracker.sendNow() }
+            .disabled(!tracker.isSetUp)
         Toggle("Start at Login", isOn: $startsAtLogin)
             .onChange(of: startsAtLogin) { _, on in
                 if on { try? SMAppService.mainApp.register() } else { try? SMAppService.mainApp.unregister() }
@@ -46,18 +52,54 @@ private struct FocusMenu: View {
         }
     }
 
-    private var syncLine: String {
-        let waiting = tracker.pending.count
-        if let error = tracker.syncError {
-            return "iCloud: \(waiting) day\(waiting == 1 ? "" : "s") waiting (\(error))"
-        }
-        if let last = tracker.lastSync {
-            return "iCloud: synced \(last.formatted(date: .omitted, time: .shortened))"
-        }
-        return waiting == 0 ? "iCloud: up to date" : "iCloud: \(waiting) day\(waiting == 1 ? "" : "s") waiting"
+    private var statusLine: String {
+        if !tracker.isSetUp { return "Not set up: choose Set Up…" }
+        if let error = tracker.sendError { return "Not sent: \(error)" }
+        if let last = tracker.lastSent { return "Sent \(last.formatted(date: .omitted, time: .shortened))" }
+        return "Waiting to send"
     }
 
-    private static func duration(_ minutes: Int) -> String {
+    static func duration(_ minutes: Int) -> String {
         minutes < 60 ? "\(minutes) min" : "\(minutes / 60) h \(minutes % 60) min"
+    }
+}
+
+/// The Worker address and token. "Save and Test" checks the network first, then the token.
+private struct SetupView: View {
+    static let windowID = "setup"
+    let tracker: FocusTracker
+    @State private var endpoint = UserDefaults.standard.string(forKey: TrackerSettings.endpointKey) ?? ""
+    @State private var token = UserDefaults.standard.string(forKey: TrackerSettings.tokenKey) ?? ""
+    @State private var result = ""
+    @State private var testing = false
+
+    var body: some View {
+        Form {
+            TextField("Worker address", text: $endpoint, prompt: Text("https://screentime.<you>.workers.dev"))
+            SecureField("Token", text: $token)
+            HStack {
+                Button("Save and Test") {
+                    let settings = TrackerSettings(endpoint: endpoint, token: token)
+                    settings.save()
+                    testing = true
+                    Task {
+                        result = await TrackerClient.test(settings)
+                        testing = false
+                        tracker.sendNow()
+                    }
+                }
+                .disabled(testing)
+                if testing { ProgressView().controlSize(.small) }
+            }
+            if !result.isEmpty {
+                Text(result).fixedSize(horizontal: false, vertical: true)
+            }
+            Text("Every Mac counts as work. Only the minute total for each day is sent: no app names, windows, or websites.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .formStyle(.grouped)
+        .frame(width: 420)
     }
 }

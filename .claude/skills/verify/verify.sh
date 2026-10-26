@@ -4,10 +4,7 @@
 # Exit codes: 0 pass, 1 Simulator build failed, 2 device build failed,
 #             3 Simulator setup failed, 4 app crashed or did not stay running,
 #             5 FocusTracker (macOS) build failed.
-#
-# Unsigned builds have no iCloud entitlement, and CloudKit stops an app without it. So the
-# Simulator build that runs sets CLOUDKIT_SYNC=NO. The device and Mac builds keep it on, so
-# the CloudKit code still compiles.
+
 #
 # Env overrides:
 #   SIM_UDID     Simulator to use (default: first available iPhone)
@@ -35,7 +32,7 @@ show_build_errors() {
 echo "== [1/5] Build for iOS Simulator"
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
     -destination 'generic/platform=iOS Simulator' -derivedDataPath "$DD" \
-    CODE_SIGNING_ALLOWED=NO CLOUDKIT_SYNC=NO build > "$OUT/build-sim.log" 2>&1
+    CODE_SIGNING_ALLOWED=NO build > "$OUT/build-sim.log" 2>&1
 if ! grep -q 'BUILD SUCCEEDED' "$OUT/build-sim.log"; then
     show_build_errors "$OUT/build-sim.log"
     fail "Simulator build. Full log: $OUT/build-sim.log" 1

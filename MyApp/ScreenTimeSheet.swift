@@ -22,6 +22,17 @@ struct ScreenTimeSheet: View {
                         Text(message)
                             .font(.footnote)
                             .foregroundStyle(SystemTheme.muted)
+                        NavigationLink {
+                            MacTrackerSettingsView()
+                        } label: {
+                            Text(MacScreenSettings.load().baseURL == nil ? "SET UP MAC TRACKER" : "MAC TRACKER")
+                                .font(.caption2.weight(.semibold))
+                                .tracking(0.8)
+                                .frame(maxWidth: .infinity, minHeight: 34)
+                                .overlay { Rectangle().stroke(QuestLight.ink.opacity(0.6), lineWidth: 0.8) }
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 14)

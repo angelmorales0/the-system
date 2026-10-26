@@ -9,3 +9,4 @@ backend/.secrets/
 backend/mercury_categories.json
 __pycache__/
 *.pyc
+build/
