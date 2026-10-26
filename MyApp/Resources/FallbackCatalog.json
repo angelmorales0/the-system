@@ -61,35 +61,35 @@
     {
       "mode": "performance_training",
       "readinessBands": [
-        "yellow"
+        "yellow",
+        "red"
       ],
       "headerLine": "Training",
-      "narrative": "Moderate day. Keep the work inside the yellow band.",
+      "narrative": "Moderate day. Run the 10K easy and keep the lifting moderate.",
       "warnings": [
         "Failure to complete\nthe daily quest will result\nin a penalty."
       ],
       "quests": [
         {
-          "id": "zone2",
-          "title": "Zone 2 Walk/Run",
+          "id": "run_10k",
+          "title": "10K Run",
           "kind": "daily",
           "stat": "END",
           "verification": {
             "method": "strava_activity",
             "params": {
               "types": [
-                "Run",
-                "Walk"
+                "Run"
               ],
-              "minMovingTimeSec": 1200
+              "minDistanceMeters": 10000
             }
           },
-          "xp": 30,
+          "xp": 40,
           "difficulty": "normal",
           "progress": {
             "current": 0,
-            "target": 20,
-            "unit": "min"
+            "target": 10,
+            "unit": "km"
           },
           "reward": null
         },
@@ -110,42 +110,6 @@
           "progress": {
             "current": 0,
             "target": 30,
-            "unit": "min"
-          },
-          "reward": null
-        }
-      ]
-    },
-    {
-      "mode": "performance_training",
-      "readinessBands": [
-        "red"
-      ],
-      "headerLine": "Training",
-      "narrative": "Red readiness. This stub stays light; the picker should already have chosen recovery.",
-      "warnings": [
-        "Failure to complete\nthe daily quest will result\nin a penalty."
-      ],
-      "quests": [
-        {
-          "id": "easy_walk",
-          "title": "Easy Walk",
-          "kind": "daily",
-          "stat": "END",
-          "verification": {
-            "method": "strava_activity",
-            "params": {
-              "types": [
-                "Walk"
-              ],
-              "minMovingTimeSec": 900
-            }
-          },
-          "xp": 15,
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 15,
             "unit": "min"
           },
           "reward": null
@@ -240,7 +204,8 @@
     },
     {
       "readinessBands": [
-        "yellow"
+        "yellow",
+        "red"
       ],
       "quests": [
         {
@@ -273,34 +238,6 @@
             "method": "healthkit_workout",
             "params": {
               "activityType": "traditionalStrengthTraining",
-              "minDurationSec": 1500
-            }
-          },
-          "xp": 25,
-          "difficulty": "penalty",
-          "progress": {
-            "current": 0,
-            "target": 25,
-            "unit": "min"
-          },
-          "reward": null
-        }
-      ]
-    },
-    {
-      "readinessBands": [
-        "red"
-      ],
-      "quests": [
-        {
-          "id": "penalty_walk",
-          "title": "Penalty Walk",
-          "kind": "penalty",
-          "stat": "END",
-          "verification": {
-            "method": "healthkit_workout",
-            "params": {
-              "activityType": "walking",
               "minDurationSec": 1500
             }
           },

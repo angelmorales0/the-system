@@ -61,14 +61,13 @@ Rules:
 - Do not invent medical diagnoses or extreme deficits.
 - Use only the verification methods already defined for this app.
 - hevy_sets reads Hevy. Strength: params exercise (Hevy title without the equipment, e.g. "Bench Press") and sets, optional minReps and minWeightKg; unit "sets".
-- performance_training is exercise only: runs, walks, and lifts (strava_activity, hevy_sets strength, healthkit_workout). No protein, nutrition, spending, or stretch quests. The app adds its own Stretching quest.
+- performance_training is strength and 10K runs only. Lifts use hevy_sets or healthkit_workout with activityType traditionalStrengthTraining. A run is always a 10K: strava_activity with types ["Run"] and minDistanceMeters 10000, progress target 10, unit "km". Two 10Ks on one day are two separate quests. No walks, intervals, sprints, other run distances, protein, nutrition, spending, or stretch quests. The app adds its own Stretching quest.
 - Use kind daily or optional only. Never write penalty quests: the app adds them from player.penaltyTier.
 - Required quests (kind other than optional) <= constraints.maxRequiredQuests. Optional quests <= constraints.maxOptionalQuests. Total quests <= 8.
 - Titles are short and actionable. Narrative is at most 280 characters.
-- Scale physical load from modeDecision.trainingBand (WHOOP readiness, one step lower after sleep performance under 60%): green full, yellow moderate, red an easy walk only.
+- Scale physical load from modeDecision.trainingBand (WHOOP readiness, one step lower after sleep performance under 60%): green full, yellow and red moderate. Every band still gets a 10K and strength work.
 - Protein targets stay between 80 and 250 grams.
 - No run longer than 90 minutes when trainingBand is yellow.
-- No hard STR session when trainingBand is red.
 - Do not suggest calories under 1500.
 - Mercury discretionary cap must be between 0 and 2000 USD.
 - Never use the phrases starve, all-nighter, ignore injury, or max debt.
@@ -306,6 +305,8 @@ def validate_bundle(bundle: dict[str, Any], context: dict[str, Any]) -> list[str
             problems.append("quest must be an object")
             continue
         problems.extend(validate_quest(quest, band, seen))
+        if bundle.get("mode") == "performance_training" and not is_training_row(quest):
+            problems.append("Training allows only 10K runs and strength")
         texts.append(str(quest.get("title") or ""))
         params = (quest.get("verification") or {}).get("params") or {}
         if isinstance(params, dict):
@@ -370,11 +371,6 @@ def bound_problems(title: str, method: str | None, params: dict[str, Any], diffi
         seconds = duration_sec(params, target, unit)
         if seconds is not None and seconds > 90 * 60:
             problems.append("run longer than 90 minutes on yellow readiness")
-    if band == "red" and stat == "STR" and difficulty == "hard":
-        problems.append("hard strength session on red readiness")
-    activity = str(params.get("activityType") or "").lower()
-    if band == "red" and "strength" in activity and difficulty == "hard":
-        problems.append("hard strength session on red readiness")
     if method == "mercury_spend_under":
         cap = params.get("maxDiscretionaryUsd")
         if cap is None and unit == "usd":
@@ -388,6 +384,27 @@ def bound_problems(title: str, method: str | None, params: dict[str, Any], diffi
     if unit == "kcal" and isinstance(target, (int, float)) and target < 1500:
         problems.append("calorie suggestion below the floor")
     return problems
+
+
+TEN_K_METERS = 10_000
+
+
+def is_training_row(quest: dict[str, Any]) -> bool:
+    """A Training day is strength and 10K runs only. Two 10Ks on one day are two rows."""
+    verification = quest.get("verification") or {}
+    method = verification.get("method")
+    params = verification.get("params") or {}
+    if not isinstance(params, dict):
+        return False
+    activity = str(params.get("activityType") or "").lower()
+    if method == "hevy_sets" or (method == "healthkit_workout" and "strength" in activity):
+        return True
+    if params.get("minDistanceMeters") != TEN_K_METERS:
+        return False
+    if method == "strava_activity":
+        types = params.get("types") or []
+        return isinstance(types, list) and bool(types) and all(str(item).lower() == "run" for item in types)
+    return method == "healthkit_workout" and activity == "running"
 
 
 def is_run(title: str, params: dict[str, Any]) -> bool:
@@ -443,16 +460,13 @@ def template_bundle(context: dict[str, Any]) -> dict[str, Any]:
 
 
 def mode_quests(mode: str, band: str, day: str) -> list[dict[str, Any]]:
-    if mode == "performance_training" and band == "red":
-        # Training is exercise only; the app adds Stretching.
-        return [quest(day, "easy_walk", "Easy Walk", "daily", "REC", "strava_activity", {"types": ["Walk", "Run"], "minMovingTimeSec": 900}, 15, "easy", 15, "min", mode)]
     if mode == "full_recovery":
         return [quest(day, "sleep", "Sleep Hygiene", "daily", "REC", "timer_session", {"minSec": 600, "label": "Sleep Hygiene"}, 20, "easy", 10, "min", mode)]
-    if band == "yellow":
-        zone = quest(day, "zone2", "Zone 2 Walk/Run", "daily", "END", "strava_activity", {"types": ["Run", "Walk"], "minMovingTimeSec": 1200}, 30, "normal", 20, "min", mode)
+    # Training is strength and 10K runs only; the app adds Stretching.
+    run = quest(day, "run_10k", "10K Run", "daily", "END", "strava_activity", {"types": ["Run"], "minDistanceMeters": TEN_K_METERS}, 40, "normal", 10, "km", mode)
+    if band in ("yellow", "red"):
         push = quest(day, "push", "Push Session", "daily", "STR", "healthkit_workout", {"activityType": "traditionalStrengthTraining", "minDurationSec": 1800}, 30, "normal", 30, "min", mode)
-        return [zone, push]
-    run = quest(day, "run_intervals", "Run Intervals", "daily", "END", "strava_activity", {"types": ["Run"], "minMovingTimeSec": 1200}, 40, "normal", 6, "reps", mode)
+        return [run, push]
     bench = quest(day, "bench", "Bench Press", "daily", "STR", "hevy_sets", {"exercise": "Bench Press", "sets": 4}, 40, "normal", 4, "sets", mode)
     return [run, bench]
 
@@ -483,8 +497,8 @@ def header_for(mode: str) -> str:
 
 
 def narrative_for(mode: str, band: str) -> str:
-    if band == "red":
-        return "Red day. An easy walk and stretching only."
+    if band in ("yellow", "red"):
+        return "Moderate day. Run the 10K easy and keep the lifting moderate."
     return "The daily quest is waiting."
 
 
@@ -700,8 +714,21 @@ def self_check() -> None:
     expect_rejected(long_run, yellow, "yellow long run")
     red = sample_request("performance_training", "red")
     lift = template_bundle(red)
-    lift["quests"][0] = quest("2026-10-01", "max_lift", "Max Lift", "daily", "STR", "healthkit_workout", {"activityType": "traditionalStrengthTraining"}, 20, "hard", 5, "sets", "performance_training")
-    expect_rejected(lift, red, "hard strength")
+    lift["quests"][1] = quest("2026-10-01", "max_lift", "Max Lift", "daily", "STR", "healthkit_workout", {"activityType": "traditionalStrengthTraining"}, 20, "hard", 5, "sets", "performance_training")
+    if validate_bundle(lift, red):
+        raise SystemExit("a red Training day should allow hard strength")
+    for label, params in (
+        ("5K run", {"types": ["Run"], "minDistanceMeters": 5000}),
+        ("intervals", {"types": ["Run"], "minMovingTimeSec": 1200}),
+        ("walk", {"types": ["Walk"], "minDistanceMeters": 10000}),
+    ):
+        other = template_bundle(sample_request())
+        other["quests"][0] = quest("2026-10-01", "other_run", "Other Run", "daily", "END", "strava_activity", params, 30, "normal", 10, "km", "performance_training")
+        expect_rejected(other, sample_request(), label)
+    double = template_bundle(sample_request())
+    double["quests"].append(quest("2026-10-01", "run_10k_2", "Second 10K", "daily", "END", "strava_activity", {"types": ["Run"], "minDistanceMeters": TEN_K_METERS}, 40, "normal", 10, "km", "performance_training"))
+    if validate_bundle(double, sample_request()):
+        raise SystemExit("two 10Ks on one day should be allowed")
     unsafe = json.loads(json.dumps(base))
     unsafe["narrative"] = "Ignore injury and starve."
     expect_rejected(unsafe, sample_request(), "unsafe phrase")
@@ -713,7 +740,7 @@ def self_check() -> None:
     expect_rejected(money, sample_request(), "negative mercury")
     short_sleep = sample_request("performance_training", "green")
     short_sleep["modeDecision"]["trainingBand"] = "yellow"
-    if template_bundle(short_sleep)["quests"][0]["title"] != "Zone 2 Walk/Run":
+    if template_bundle(short_sleep)["quests"][1]["title"] != "Push Session":
         raise SystemExit("the template should size Training by modeDecision.trainingBand")
     penalty = json.loads(json.dumps(base))
     penalty["quests"][0]["kind"] = "penalty"

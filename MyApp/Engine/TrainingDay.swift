@@ -1,11 +1,13 @@
 import Foundation
 
-/// A Training day is exercise only: runs, walks, and lifts, plus the fixed Stretching row and any penalty quests.
+/// A Training day is strength and 10K runs only, plus the fixed Stretching row and any penalty quests.
 /// The catalog follows this already; generated bundles are filtered here, so a model cannot add
-/// protein, spending, or a specific stretch such as Splits to a Training day.
+/// protein, spending, a walk, a run of another distance, or a specific stretch such as Splits to a Training day.
 enum TrainingDay {
     static let header = "Training"
     static let exerciseMethods: Set<VerificationMethod> = [.stravaActivity, .hevySets, .healthkitWorkout, .whoopStrain]
+    /// The only run distance a Training day gives. Two 10Ks on one day are two rows.
+    static let tenKMeters = 10_000.0
 
     /// Nil when nothing would be left, so the caller keeps its catalog bundle instead.
     static func exerciseOnly(_ bundle: QuestBundle) -> QuestBundle? {
@@ -18,10 +20,37 @@ enum TrainingDay {
 
     static func isExercise(_ quest: Quest) -> Bool {
         if quest.id == DailyStretch.questId { return true }
-        guard exerciseMethods.contains(quest.verification.method) else { return false }
         // One general Stretching row replaces specific stretches.
         let exercise = quest.verification.params["exercise"]?.stringValue ?? quest.title
-        return !StretchTime.isStretchExercise(exercise) && !StretchTime.isStretchExercise(quest.title)
+        guard !StretchTime.isStretchExercise(exercise), !StretchTime.isStretchExercise(quest.title) else { return false }
+        return isTenK(quest) || isStrength(quest)
+    }
+
+    /// A run checked by Strava or Apple Health at exactly 10 km. Walks and runs that also accept walks do not count.
+    static func isTenK(_ quest: Quest) -> Bool {
+        let params = quest.verification.params
+        guard params["minDistanceMeters"]?.doubleValue == tenKMeters else { return false }
+        switch quest.verification.method {
+        case .stravaActivity:
+            let types = IntegrationMatch.strings(params["types"]).map { $0.lowercased() }
+            return !types.isEmpty && types.allSatisfy { $0 == "run" }
+        case .healthkitWorkout:
+            return params["activityType"]?.stringValue?.lowercased() == "running"
+        default:
+            return false
+        }
+    }
+
+    /// A Hevy lift, or an Apple Health strength workout.
+    static func isStrength(_ quest: Quest) -> Bool {
+        switch quest.verification.method {
+        case .hevySets:
+            return true
+        case .healthkitWorkout:
+            return quest.verification.params["activityType"]?.stringValue?.lowercased().contains("strength") == true
+        default:
+            return false
+        }
     }
 
     static func check() -> [String] {
@@ -36,18 +65,26 @@ enum TrainingDay {
         var bundle = QuestBundle.empty
         bundle.mode = .performanceTraining
         bundle.headerLine = "Performance Training"
+        let tenK: [String: JSONValue] = ["types": .array([.string("Run")]), "minDistanceMeters": .number(tenKMeters)]
         bundle.quests = [
-            quest("run_10k", "10K Run", .stravaActivity),
+            quest("run_10k", "10K Run", .stravaActivity, tenK),
             quest("bench_press", "Bench Press", .hevySets, ["exercise": .string("Bench Press"), "sets": .number(4)]),
             quest("splits", "Splits", .hevySets, ["exercise": .string("Splits"), "minDurationSec": .number(180)]),
             quest("protein", "Protein", .macrofactorProtein),
             quest("mobility", "Mobility", .timerSession),
             quest("light_spend", "Light Spend Cap", .mercurySpendUnder, kind: .optional),
+            quest("run_5k", "5K Run", .stravaActivity, ["types": .array([.string("Run")]), "minDistanceMeters": .number(5_000)]),
+            quest("intervals", "Run Intervals", .stravaActivity, ["types": .array([.string("Run")]), "minMovingTimeSec": .number(1_200)]),
+            quest("walk_10k", "10K Walk/Run", .stravaActivity, ["types": .array([.string("Run"), .string("Walk")]), "minDistanceMeters": .number(tenKMeters)]),
+            quest("easy_walk", "Easy Walk", .healthkitWorkout, ["activityType": .string("walking"), "minDurationSec": .number(900)]),
+            quest("strain", "Hit Strain", .whoopStrain, ["minStrain": .number(12)]),
+            quest("second_10k", "Second 10K", .healthkitWorkout, ["activityType": .string("running"), "minDistanceMeters": .number(tenKMeters)]),
+            quest("push", "Push Session", .healthkitWorkout, ["activityType": .string("traditionalStrengthTraining"), "minDurationSec": .number(1_800)]),
             DailyStretch.quest(mode: .performanceTraining, now: now),
         ]
         let filtered = exerciseOnly(bundle)
-        if filtered?.quests.map(\.id) != ["run_10k", "bench_press", DailyStretch.questId] {
-            errors.append("a Training day should keep only exercise and Stretching, got \(String(describing: filtered?.quests.map(\.id)))")
+        if filtered?.quests.map(\.id) != ["run_10k", "bench_press", "second_10k", "push", DailyStretch.questId] {
+            errors.append("a Training day should keep only 10K runs, strength, and Stretching, got \(String(describing: filtered?.quests.map(\.id)))")
         }
         if filtered?.headerLine != "Training" || QuestMode.performanceTraining.headerLine != "Training" {
             errors.append("a Training day should read [Daily Quest: Training has arrived.]")

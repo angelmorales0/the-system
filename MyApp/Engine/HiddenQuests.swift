@@ -60,12 +60,11 @@ enum HiddenQuests {
 }
 
 extension GameSnapshot {
-    /// Unlocks Beyond the Limit at most once per quest day. Not on a red day. Penalty rows never count.
+    /// Unlocks Beyond the Limit at most once per quest day. Penalty rows never count.
     /// Returns the new unlock, or nil when nothing changed.
     @discardableResult
     mutating func checkHiddenQuests(integrations: DayIntegrationSnapshot, now: Date) -> HiddenQuestUnlock? {
         recordCompletedDistances(integrations: integrations)
-        guard trainingBand != .red else { return nil }
         guard !hiddenUnlocks.contains(where: { $0.hiddenId == HiddenQuests.beyondTheLimitId && $0.dayKey == bundle.dayKey }) else { return nil }
         for quest in bundle.quests where quest.status == .completed && HiddenQuests.isEligible(quest) {
             guard let workout = HiddenQuests.completingWorkout(for: quest, in: integrations.workouts),
@@ -222,15 +221,10 @@ enum HiddenQuestRules {
             errors.append("7.46 km should show [7.4/10km] and stay open, got \(String(describing: partial.2?.progress))")
         }
 
-        // A red recovery day never unlocks it, but the row still shows the distance.
+        // A red Training day still has the 10K Run, and it unlocks like any other day.
         var red = day([run(km: 16)], band: .red)
-        if let quest = red.2, quest.status == .completed {
-            if red.0.checkHiddenQuests(integrations: red.1, now: now) != nil {
-                errors.append("a red recovery day must not unlock Beyond the Limit")
-            }
-            if red.0.bundle.quests.first(where: { $0.id == quest.id })?.progress.current != 16 {
-                errors.append("a red recovery day should still show the real distance on the row")
-            }
+        if red.2?.status != .completed || red.0.checkHiddenQuests(integrations: red.1, now: now) == nil {
+            errors.append("a 16 km run on a red Training day should complete the 10K Run and unlock Beyond the Limit")
         }
 
         // A second, longer run that did not complete the quest does not count.

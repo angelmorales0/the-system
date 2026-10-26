@@ -119,13 +119,6 @@ enum QuestSafety {
         if band == .yellow, isRun(quest), let seconds = durationSec(quest), seconds > yellowRunLimitSec {
             issues.append("run longer than 90 minutes on yellow readiness")
         }
-        if band == .red, quest.stat == .STR, quest.difficulty == .hard {
-            issues.append("hard strength session on red readiness")
-        }
-        let activity = quest.verification.params["activityType"]?.stringValue?.lowercased() ?? ""
-        if band == .red, activity.contains("strength"), quest.difficulty == .hard {
-            issues.append("hard strength session on red readiness")
-        }
         if quest.verification.method == .mercurySpendUnder {
             let cap = quest.verification.params["maxDiscretionaryUsd"]?.doubleValue
                 ?? (quest.progress.unit == "usd" ? quest.progress.target : nil)

@@ -180,8 +180,6 @@ struct FallbackCatalog {
         func row(_ id: String, _ title: String, _ stat: Stat, _ method: VerificationMethod, _ params: [String: JSONValue], _ xp: Int, _ minutes: Double) -> QuestTemplate {
             template(id, title, .penalty, stat, method, params, xp, .penalty, minutes, "min")
         }
-        let walk = row("penalty_walk", "Penalty Walk", .END, .healthkitWorkout, ["activityType": .string("walking"), "minDurationSec": .number(1500)], 25, 25)
-        guard band != .red else { return [walk] }
         let seconds = band == .green ? 1800.0 : 1500.0
         let xp = band == .green ? 30 : 25
         return [

@@ -92,8 +92,8 @@ enum QuestGenerationRules {
         hardLift.quests[0].title = "Max Lift"
         hardLift.quests[0].stat = .STR
         hardLift.quests[0].difficulty = .hard
-        if !QuestSafety.issues(in: hardLift, context: redContext).contains(where: { $0.contains("strength") }) {
-            errors.append("red readiness should reject a hard strength quest")
+        if QuestSafety.issues(in: hardLift, context: redContext).contains(where: { $0.contains("strength") }) {
+            errors.append("red readiness should allow a hard strength quest")
         }
 
         var authoredPenalty = sampleBundle(mode: .performanceTraining, dayKey: dayKey, now: now)
