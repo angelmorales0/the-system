@@ -21,8 +21,8 @@ enum PenaltyRules {
             errors.append("an open penalty must keep the day's own header")
         }
         let ids = missed.bundle.quests.map(\.id)
-        if ids != ["q_2026-10-02_pen", "q_2026-10-02_run", DailyStretch.questId] {
-            errors.append("penalty rows should come above the day's quests and Stretching, got \(ids)")
+        if ids != ["q_2026-10-02_pen", "q_2026-10-02_run", ScreenTime.questId, DailyStretch.questId] {
+            errors.append("penalty rows should come above the day's quests, Screen Time, and Stretching, got \(ids)")
         }
         if PenaltyQuests.rows(in: missed.bundle).first?.progress.target != 30 {
             errors.append("tier 1 should keep the base penalty time")

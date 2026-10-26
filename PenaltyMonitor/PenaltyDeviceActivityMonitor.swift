@@ -8,6 +8,7 @@ import UserNotifications
 /// At 5:00 it locks the phone if the quest day that just ended left its required set open, even when the app is closed.
 /// Interval end does not lift shields; only the main app clears them after the penalty quests are done.
 /// It also runs the bedtime emergency: distractor use after bedtime locks every app, and the release schedule lifts it.
+/// And it counts phone screen time: each threshold event of the daily count writes its minutes for the app to read.
 /// This target is `nonisolated`. If the SDK marks these overrides isolated, drop the `nonisolated` keyword.
 class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
     nonisolated override func intervalDidStart(for activity: DeviceActivityName) {
@@ -15,6 +16,7 @@ class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
             FocusMonitor.startDay(now: Date())
             return
         }
+        if activity.rawValue == PhoneScreenMonitor.activity { return }
         if EmergencyMonitor.isEmergency(activity) { return }
         if activity.rawValue == PenaltyMonitorGroup.dawnActivity {
             PenaltyMonitorShields.lockIfDayMissed(now: Date())
@@ -28,6 +30,7 @@ class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
             FocusMonitor.endDay(now: Date())
             return
         }
+        if activity.rawValue == PhoneScreenMonitor.activity { return }
         if activity.rawValue == EmergencyMonitor.releaseActivity {
             EmergencyMonitor.endLockdown()
             return
@@ -39,6 +42,10 @@ class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
     nonisolated override func eventDidReachThreshold(_ event: DeviceActivityEvent.Name, activity: DeviceActivityName) {
         if activity.rawValue == FocusMonitor.activity {
             FocusMonitor.record(event: event.rawValue, now: Date())
+            return
+        }
+        if activity.rawValue == PhoneScreenMonitor.activity {
+            PhoneScreenMonitor.record(event.rawValue, now: Date())
             return
         }
         guard activity.rawValue == EmergencyMonitor.bedtimeActivity, event.rawValue == EmergencyMonitor.bedtimeEvent else { return }
@@ -107,6 +114,24 @@ enum PenaltyMonitorShields {
             : date
         let parts = calendar.dateComponents([.year, .month, .day], from: local)
         return String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
+    }
+}
+
+/// Mirrors `PhoneScreenGroup` in the app. Keep the strings in step.
+enum PhoneScreenMonitor {
+    static let activity = "screenTimeDay"
+    static let eventPrefix = "phone_"
+    static let minutesKey = "screenTimePhoneMinutes"
+    static let dayKey = "screenTimePhoneDayKey"
+
+    /// `phone_95` → 95 minutes of phone use today. Keeps the highest value of the quest day.
+    nonisolated static func record(_ event: String, now: Date) {
+        guard event.hasPrefix(eventPrefix), let minutes = Int(event.dropFirst(eventPrefix.count)) else { return }
+        let defaults = UserDefaults(suiteName: PenaltyMonitorGroup.suiteName) ?? .standard
+        let today = PenaltyMonitorShields.questDayKey(for: now)
+        let previous = defaults.string(forKey: dayKey) == today ? defaults.integer(forKey: minutesKey) : 0
+        defaults.set(today, forKey: dayKey)
+        defaults.set(max(previous, minutes), forKey: minutesKey)
     }
 }
 

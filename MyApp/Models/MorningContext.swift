@@ -103,8 +103,9 @@ struct MorningConstraints: Codable, Equatable {
     /// The player has no gym today: no strength quests, two 10K runs instead.
     var noGymToday = false
 
+    /// A split day is up to 6 lifts plus up to two 10Ks.
     static let standard = MorningConstraints(
-        maxRequiredQuests: 5,
+        maxRequiredQuests: 8,
         maxOptionalQuests: 1,
         preferAutoVerify: true,
         disallowUnsafeAdvice: true
@@ -133,6 +134,8 @@ struct QuestDayRecord: Codable, Equatable {
     var mode: QuestMode
     var trainingBand: ReadinessBand
     var noGym: Bool
+    /// `GymSplit.Day.id` when the day was a split day. Nil for older saves and days without lifts.
+    var splitDay: String? = nil
     var generatedBy: String
     /// A required quest was still open at the end of the day, so the penalty tier rose.
     var missedRequired: Bool
@@ -164,9 +167,21 @@ struct MorningBodyWeight: Codable, Equatable {
     var source: String?
 }
 
+/// The gym split the generator follows: today's day, its exercises, and when each day was last done.
+struct MorningSplit: Codable, Equatable {
+    var name: String
+    var rotation: [String]
+    var today: GymSplit.Day
+    /// Split day name → the newest day it was done.
+    var lastDone: [String: String]
+}
+
 /// The player's goals. The backend adds the 30-day training history that measures them.
 struct MorningGoals: Codable, Equatable {
-    var weeklyTenKs: Int
+    /// Running km to keep in every 7-day window, today included.
+    var runKmPer7Days: Int
+    /// STR targets to put first right now.
+    var focus: [String] = []
     var strength: [MorningStrengthTarget]
     var endurance: [MorningTarget]
     var bodyWeight: MorningBodyWeight
@@ -188,4 +203,5 @@ struct MorningContext: Codable, Equatable {
     /// Up to 30 past quest days, newest first.
     var recentDays: [QuestDayRecord] = []
     var goals: MorningGoals? = nil
+    var split: MorningSplit? = nil
 }

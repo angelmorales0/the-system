@@ -14,9 +14,9 @@ enum QuestGenerateError: Error {
 enum QuestGenerateClient {
     static let defaultsKey = "com.angelmorales.thesystem.questGenerateBaseURL"
     static let environmentKey = "QUEST_GENERATE_BASE_URL"
-    /// The backend reads 30 days of Hevy, Strava, and WHOOP and the model reads all of it, so this is long.
-    /// The catalog quests stay on screen while it runs.
-    static let timeout: TimeInterval = 90
+    /// The backend reads 30 days of Hevy, Strava, and WHOOP, and Claude thinks at high effort over all of it,
+    /// with up to 100 seconds for retries. The catalog quests stay on screen while it runs.
+    static let timeout: TimeInterval = 150
 
     static func make(catalog: FallbackCatalog) -> any QuestGenerating {
         let base = resolvedBase(
@@ -59,6 +59,9 @@ struct MockQuestGenerateClient: QuestGenerating {
         let mode = context.modeDecision.selectedMode
         let band = context.modeDecision.trainingBand
         var built = catalog.makeBundle(mode: mode, band: band, dayKey: context.player.localDate, now: now)
+        if let today = context.split?.today {
+            built = GymSplit.apply(today, to: built, band: band, now: now)
+        }
         built.generatedBy = "mock"
         if let accepted = QuestSafety.accepting(built, context: context, assignedAt: now) {
             return accepted
@@ -130,6 +133,9 @@ extension MockQuestGenerateClient {
             dayKey: context.player.localDate,
             now: now
         )
+        if let today = context.split?.today {
+            built = GymSplit.apply(today, to: built, band: context.modeDecision.trainingBand, now: now)
+        }
         built.generatedBy = "fallback"
         return built
     }

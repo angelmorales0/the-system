@@ -7,7 +7,8 @@ enum QuestSafety {
     static let yellowRunLimitSec = 90.0 * 60
     static let calorieFloor = 1500.0
     static let mercuryCapCeiling = 2000.0
-    static let maxQuests = 8
+    /// Six split lifts, two 10Ks, and one optional quest.
+    static let maxQuests = 9
 
     private static let unsafePhrases = ["starve", "all-nighter", "all nighter", "ignore injury", "max debt"]
 

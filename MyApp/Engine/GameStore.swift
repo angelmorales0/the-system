@@ -42,7 +42,7 @@ final class GameStore: ObservableObject {
             + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check()
             + HiddenQuestRules.check()
-            + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures()
+            + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
             + NoGymDayRules.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
@@ -82,12 +82,21 @@ final class GameStore: ObservableObject {
         enforcePenalty()
         if persistence == .standard {
             EmergencyEnforcement.syncMonitoring(emergencySettings)
+            ScreenTimeEnforcement.syncMonitoring()
             #if os(iOS)
             FocusTracking.syncMonitoring()
             #endif
             observeStepUpdates()
             evaluateEmergencies(now: .now)
         }
+    }
+
+    /// After the phone screen time picker saves, restart the daily count with the new apps.
+    func savePhoneScreenSelection() {
+        if persistence == .standard {
+            ScreenTimeEnforcement.syncMonitoring()
+        }
+        refreshIntegrations(now: .now)
     }
 
     func spendFullRecovery(now: Date = .now) {
@@ -434,6 +443,10 @@ final class GameStore: ObservableObject {
             self.refreshingIntegrations = false
             var next = self.snapshot
             let rebuilt = next.applyWhoopReadiness(remote.whoop, catalog: self.catalog, now: now)
+            next.applyScreenTime(
+                phoneMinutes: PhoneScreenGroup.minutes(for: next.bundle.dayKey),
+                workMinutes: remote.workScreen?.minutes(for: next.bundle.dayKey)
+            )
             next.applyFinance(remote.mercury)
             self.snapshot = next
             self.integrations = DayIntegrationSnapshot.make(

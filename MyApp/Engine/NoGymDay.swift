@@ -5,7 +5,7 @@ import Foundation
 /// Penalty rows are not changed. The setting lasts for one quest day.
 enum NoGymDay {
     static let secondTenKSlug = "run_10k_2"
-    static let secondTenKTitle = "Second 10K"
+    static let secondTenKTitle = TrainingDay.tenKTitle
     /// Runs the day should have: its own 5K or 10K, plus 10Ks up to this count.
     static let runCount = 2
 
@@ -13,6 +13,9 @@ enum NoGymDay {
         guard bundle.mode == .performanceTraining else { return bundle }
         var copy = bundle
         copy.quests.removeAll { isSwappable($0) && TrainingDay.isStrength($0) && $0.status != .completed }
+        if !copy.quests.contains(where: { TrainingDay.isStrength($0) && $0.id != DailyStretch.questId }) {
+            copy.headerLine = TrainingDay.header
+        }
         let runs = copy.quests.filter { isSwappable($0) && TrainingDay.isRaceRun($0) }
         guard runs.count < runCount else { return copy }
         let template = runs.first { isTenK($0) }
@@ -20,7 +23,7 @@ enum NoGymDay {
             tenK(from: template, index: index, bundle: copy, now: now)
         }
         // After the day's own quests, before Stretching, optional rows, and penalty rows.
-        let insertAt = copy.quests.firstIndex { $0.id == DailyStretch.questId || $0.kind != .daily } ?? copy.quests.count
+        let insertAt = copy.quests.firstIndex { $0.id == ScreenTime.questId || $0.id == DailyStretch.questId || $0.kind != .daily } ?? copy.quests.count
         copy.quests.insert(contentsOf: added, at: insertAt)
         return copy
     }
@@ -89,9 +92,10 @@ extension GameSnapshot {
         let lifts = fresh.bundle.quests.filter { lift in
             lift.kind == .daily && TrainingDay.isStrength(lift) && !quests.contains { $0.id == lift.id }
         }
-        let insertAt = quests.firstIndex { $0.id == DailyStretch.questId || $0.kind != .daily } ?? quests.count
+        let insertAt = quests.firstIndex { $0.id == ScreenTime.questId || $0.id == DailyStretch.questId || $0.kind != .daily } ?? quests.count
         quests.insert(contentsOf: lifts, at: insertAt)
         bundle.quests = quests
+        bundle.headerLine = fresh.bundle.headerLine
         return "Gym day again. Strength quests are back."
     }
 }

@@ -122,7 +122,7 @@ WARNING: Failure to complete…
 | FIN balances / spend / income | Mercury accounts + txns | Mercury REST Read Only token + webhooks | FIN stat; spend-under quests; $500K YTD; overspend alerts |
 | Non-Mercury banks (later) | Plaid / MX | Plaid Link later | Same FIN ledger schema |
 | FOC / distractor adherence | DeviceActivity thresholds + report UI | FamilyControls / DeviceActivity / ManagedSettings | FOC score inference; penalty shields |
-| Quest authoring | Cloud LLM (Grok/OpenAI via backend) | `POST /v1/quests/generate` | Daily `QuestBundle` |
+| Quest authoring | Claude Opus 5.5 via backend | `POST /v1/quests/generate` | Daily `QuestBundle` |
 | Manual / timer quests | On-device | In-app timer + confirm | INT Targets, mobility |
 
 **Dedupe workouts:** overlap start/end within ~5–10 min + same sport family → one canonical event (`strava_id`, `whoop_uuid`, `hk_uuid`). Prefer Strava distance, WHOOP strain/zones, HK when only Watch recorded.
@@ -459,7 +459,7 @@ Docs: https://developer.apple.com/documentation/ScreenTimeAPIDocumentation · ht
 - [ ] Strava API application — https://www.strava.com/settings/api — Single Player Mode; `activity:read_all`  
 - [ ] Mercury: Settings → Tokens → **Read Only**; save once; confirm Personal has Tokens UI — https://docs.mercury.com/docs/getting-started  
 - [ ] Backend host with HTTPS for webhooks (Mercury, WHOOP, Strava) + Secrets Manager  
-- [ ] LLM provider key (Grok/OpenAI) on backend only  
+- [ ] `ANTHROPIC_API_KEY` on backend only  
 - [ ] MacroFactor → More → Integrations → Apple Health (weight + nutrition write) — https://help.macrofactorapp.com/en/articles/65-connect-health-connect-or-apple-health  
 
 ### On device
@@ -482,7 +482,7 @@ Docs: https://developer.apple.com/documentation/ScreenTimeAPIDocumentation · ht
 ## 12. Open decisions (short list)
 
 1. **Backend host** — Fly.io / Railway / Cloudflare Workers / AWS: pick one for webhooks + secrets.  
-2. **LLM provider** — Grok vs OpenAI vs Anthropic for daily `QuestBundle` (tone + JSON reliability).  
+2. **LLM provider** — decided: Claude Opus 5.5 (`claude-opus-5-5`), adaptive thinking at high effort, server-side refusal fallbacks.  
 3. **Player display name** — hardcode Angel vs editable profile field (Status currently mocks `DANIEL`).  
 4. **Penalty UX intensity** — shields-only vs shields + denyAppRemoval (recommend **shields-only** for App Review).  
 5. **Income rules for $500K** — employer counterparty allowlist / payroll regex specifics for Angel’s Mercury txns.  

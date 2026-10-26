@@ -4,6 +4,7 @@ struct StatusView: View {
     @EnvironmentObject private var store: GameStore
     @State private var confirmRecovery = false
     @State private var showShields = false
+    @State private var showScreenTime = false
     @State private var showAppIcon = false
     @State private var showEmergency = false
     @State private var selectedStat: Stat?
@@ -96,6 +97,16 @@ struct StatusView: View {
                         }
                         .buttonStyle(.plain)
                         Button {
+                            showScreenTime = true
+                        } label: {
+                            Text("SCREEN TIME")
+                                .font(.caption2.weight(.semibold))
+                                .tracking(1.1)
+                                .foregroundStyle(SystemTheme.muted)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        Button {
                             showEmergency = true
                         } label: {
                             Text("EMERGENCY QUESTS")
@@ -125,6 +136,9 @@ struct StatusView: View {
                 }
                 .sheet(isPresented: $showShields) {
                     PenaltyTargetsSheet()
+                }
+                .sheet(isPresented: $showScreenTime) {
+                    ScreenTimeSheet()
                 }
                 .sheet(isPresented: $showAppIcon) {
                     AppIconSheet()
