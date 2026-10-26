@@ -52,7 +52,7 @@ final class HealthKitStore {
         } catch {
             return .unavailable
         }
-        let interval = QuestDay.calendar.dateInterval(of: .day, for: day) ?? DateInterval(start: day, duration: 86_400)
+        let interval = QuestDay.interval(for: day)
         let predicate = HKQuery.predicateForSamples(withStart: interval.start, end: interval.end, options: .strictStartDate)
         async let protein = quantitySum(.dietaryProtein, unit: .gram(), predicate: predicate)
         async let energy = quantitySum(.dietaryEnergyConsumed, unit: .kilocalorie(), predicate: predicate)

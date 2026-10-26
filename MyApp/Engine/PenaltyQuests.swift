@@ -1,20 +1,20 @@
 import Foundation
 
-/// An open penalty (`penaltyTier` 1...3) adds red `kind: .penalty` rows to the normal day.
+/// An open penalty (`penaltyTier` 1...3) adds red `kind: .penalty` rows to the top of the normal day.
 /// It does not change the day mode. A Full Recovery day adds none; the tier waits for the next day.
+/// While a row is open, every app is locked (see `PenaltyEnforcement`), so rows verify from Apple Health only.
 enum PenaltyQuests {
     /// Each tier above 1 adds this much time to every timed penalty row: 30 / 40 / 50 min on green.
     static let extraSecondsPerTier = 600.0
     private static let durationKeys = ["minMovingTimeSec", "minDurationSec"]
 
-    /// Adds the rows once, after the required quests. Existing penalty rows keep their progress.
+    /// Adds the rows once, above the day's quests. Existing penalty rows keep their progress.
     static func ensure(in bundle: QuestBundle, tier: Int, band: ReadinessBand, catalog: FallbackCatalog, now: Date) -> QuestBundle {
         guard tier > 0, bundle.mode != .fullRecovery, !bundle.quests.isEmpty,
               !bundle.quests.contains(where: { $0.kind == .penalty }) else { return bundle }
         let rows = catalog.penaltyTemplates(band: band).map { quest(from: $0, tier: tier, bundle: bundle, now: now) }
         var copy = bundle
-        let insertAt = copy.quests.lastIndex(where: { $0.kind != .optional }).map { $0 + 1 } ?? copy.quests.count
-        copy.quests.insert(contentsOf: rows, at: insertAt)
+        copy.quests.insert(contentsOf: rows, at: 0)
         return copy
     }
 

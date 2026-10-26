@@ -186,7 +186,7 @@ struct Quest: Identifiable, Codable, Equatable {
     var progress: QuestProgress
     var reward: QuestReward?
     var status: QuestStatus
-    /// Points actually applied, so a checkbox toggle can reverse the same grant.
+    /// Points actually applied when the quest completed.
     var grantedXP: Int
     var grantedStatPoints: Int
     var grantedRecoveryToken: Bool
@@ -435,17 +435,6 @@ struct PlayerState: Codable, Equatable {
         }
     }
 
-    mutating func removeXP(_ amount: Int) {
-        guard amount > 0 else { return }
-        xp -= amount
-        let step = max(xpToNext, 1)
-        while xp < 0 && level > 1 {
-            level -= 1
-            xp += step
-        }
-        if xp < 0 { xp = 0 }
-    }
-
     @discardableResult
     mutating func depositRecoveryToken() -> Bool {
         guard fullRecoveryBank < Self.fullRecoveryCap else { return false }
@@ -479,7 +468,7 @@ struct MorningSignals: Codable, Equatable {
 }
 
 enum QuestDay {
-    /// The phone's current time zone, so the quest day ends at local midnight while traveling.
+    /// The phone's current time zone, so the quest day starts at 5:00 local time while traveling.
     static var timeZone: TimeZone { .autoupdatingCurrent }
 
     static var calendar: Calendar {
@@ -488,13 +477,36 @@ enum QuestDay {
         return calendar
     }
 
+    /// A quest day runs from 5:00 local time to 5:00 the next morning. 1:00 AM still belongs to the day before.
+    static let startHour = 5
+
     static func key(for date: Date) -> String {
-        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        let local = calendar.component(.hour, from: date) < startHour
+            ? calendar.date(byAdding: .day, value: -1, to: date) ?? date
+            : date
+        let parts = calendar.dateComponents([.year, .month, .day], from: local)
         return String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
     }
 
+    /// 5:00 local time on the quest day `key`.
+    static func start(of key: String) -> Date? {
+        guard let noon = date(from: key) else { return nil }
+        return calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: noon)
+    }
+
+    /// The quest day that holds `date`, from its 5:00 start to the next day's 5:00.
+    static func interval(for date: Date) -> DateInterval {
+        let key = key(for: date)
+        guard let start = Self.start(of: key),
+              let end = Self.start(of: Self.key(byAddingDays: 1, to: key)) else {
+            return DateInterval(start: date, duration: 86_400)
+        }
+        return DateInterval(start: start, end: end)
+    }
+
+    /// The last second before the next quest day starts at 5:00.
     static func endOfDay(_ date: Date) -> Date {
-        calendar.date(bySettingHour: 23, minute: 59, second: 59, of: date) ?? date
+        interval(for: date).end.addingTimeInterval(-1)
     }
 
     static func date(from key: String) -> Date? {

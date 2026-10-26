@@ -21,8 +21,8 @@ enum PenaltyRules {
             errors.append("an open penalty must keep the day's own header")
         }
         let ids = missed.bundle.quests.map(\.id)
-        if ids != ["q_2026-10-02_run", DailyStretch.questId, "q_2026-10-02_pen"] {
-            errors.append("penalty rows should follow the day's quests and Stretching, got \(ids)")
+        if ids != ["q_2026-10-02_pen", "q_2026-10-02_run", DailyStretch.questId] {
+            errors.append("penalty rows should come above the day's quests and Stretching, got \(ids)")
         }
         if PenaltyQuests.rows(in: missed.bundle).first?.progress.target != 30 {
             errors.append("tier 1 should keep the base penalty time")
@@ -125,13 +125,9 @@ enum PenaltyRules {
         if GameSnapshot.xpGrant(for: quest) != taxed {
             errors.append("asking for the grant again should not compound the tax")
         }
-        let normal = cleared.bundle.quests[0]
+        let normal = cleared.bundle.quests.first { $0.kind != .penalty } ?? cleared.bundle.quests[0]
         if normal.kind == .penalty || GameSnapshot.xpGrant(for: normal) != normal.xp {
             errors.append("a normal row on a penalty day should keep full XP")
-        }
-        cleared.undoQuest(id: quest.id)
-        if cleared.player.penaltyTier != 1 {
-            errors.append("undoing a penalty clear should restore the tier")
         }
 
         var optionalOnly = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
@@ -149,10 +145,6 @@ enum PenaltyRules {
         _ = capped.apply(.completed(evidence: evidence("cap")), questId: run.id, now: dayOne)
         if capped.player.stats[run.stat] != StatValues.maximum {
             errors.append("a quest must not raise a stat above \(StatValues.maximum), got \(capped.player.stats[run.stat])")
-        }
-        capped.undoQuest(id: run.id)
-        if capped.player.stats[run.stat] != StatValues.maximum - 1 {
-            errors.append("undo should remove only the capped grant, got \(capped.player.stats[run.stat])")
         }
         if StatValues.starter.capped() != StatValues.starter {
             errors.append("starter stats must be at or under the cap")

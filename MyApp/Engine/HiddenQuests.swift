@@ -92,7 +92,6 @@ extension GameSnapshot {
 
     /// A completed distance quest shows the real distance of the run that completed it: 15.2 km on the
     /// 10K Run reads `[15.2/10km]`. Completion alone stops at the target, so this lifts it afterwards.
-    /// Undo still resets the row to 0.
     mutating func recordCompletedDistances(integrations: DayIntegrationSnapshot) {
         for index in bundle.quests.indices {
             let quest = bundle.quests[index]
@@ -217,15 +216,6 @@ enum HiddenQuestRules {
         if short.0.bundle.quests.first(where: { $0.id == short.2?.id })?.progress.bracketLabel != "[14.9/10km]" {
             errors.append("14.9 km should show [14.9/10km] on the 10K Run row")
         }
-        // Undo resets the row to 0, and the next pass does not lift an open quest.
-        if let id = short.2?.id {
-            short.0.undoQuest(id: id)
-            short.0.recordCompletedDistances(integrations: short.1)
-            if short.0.bundle.quests.first(where: { $0.id == id })?.progress.current != 0 {
-                errors.append("an undone 10K Run should go back to [0/10km]")
-            }
-        }
-
         // 7.4 km is partial progress, shown in km.
         let partial = day([run(km: 7.46)])
         if partial.2?.status == .completed || partial.2?.progress.current != 7.4 || partial.2.map(\.progress.bracketLabel) != "[7.4/10km]" {

@@ -180,12 +180,12 @@ struct FallbackCatalog {
         func row(_ id: String, _ title: String, _ stat: Stat, _ method: VerificationMethod, _ params: [String: JSONValue], _ xp: Int, _ minutes: Double) -> QuestTemplate {
             template(id, title, .penalty, stat, method, params, xp, .penalty, minutes, "min")
         }
-        let walk = row("penalty_walk", "Penalty Walk", .END, .stravaActivity, ["types": .array([.string("Walk")]), "minMovingTimeSec": .number(1500)], 25, 25)
+        let walk = row("penalty_walk", "Penalty Walk", .END, .healthkitWorkout, ["activityType": .string("walking"), "minDurationSec": .number(1500)], 25, 25)
         guard band != .red else { return [walk] }
         let seconds = band == .green ? 1800.0 : 1500.0
         let xp = band == .green ? 30 : 25
         return [
-            row("penalty_run", "Penalty Run", .END, .stravaActivity, ["types": .array([.string("Run")]), "minMovingTimeSec": .number(seconds)], xp, seconds / 60),
+            row("penalty_run", "Penalty Run", .END, .healthkitWorkout, ["activityType": .string("running"), "minDurationSec": .number(seconds)], xp, seconds / 60),
             row("penalty_lift", "Penalty Lift", .STR, .healthkitWorkout, ["activityType": .string("traditionalStrengthTraining"), "minDurationSec": .number(seconds)], xp, seconds / 60),
         ]
     }

@@ -50,8 +50,7 @@ final class GameStore: ObservableObject {
         self.persistence = persistence
         dayClock = DayClock.resolve(
             current: persistence == .standard ? DayClock.load() : nil,
-            now: .now,
-            boot: DayClock.bootTime()
+            now: .now
         )
         switch persistence {
         case .memory:
@@ -236,7 +235,7 @@ final class GameStore: ObservableObject {
             }
 
             guard settings.stepsEnabled else { return }
-            let startOfDay = QuestDay.calendar.startOfDay(for: now)
+            let startOfDay = QuestDay.interval(for: now).start
             let stepsToday = await HealthKitBridge.steps(from: startOfDay, to: now)
             guard self.emergency == nil else { return }
             if EmergencyRules.shouldTriggerLowSteps(now: now, stepsToday: stepsToday, settings: settings,
@@ -312,17 +311,8 @@ final class GameStore: ObservableObject {
 
     func handleQuestTap(id: String, now: Date = .now) {
         guard let quest = snapshot.bundle.quests.first(where: { $0.id == id }) else { return }
-        if quest.status == .completed {
-            var next = snapshot
-            next.undoQuest(id: id)
-            snapshot = next
-            verificationNote = nil
-            clock = now
-            persist()
-            ensureTicker()
-            enforcePenalty()
-            return
-        }
+        // A completed quest stays completed. There is no undo.
+        guard quest.status != .completed else { return }
 
         switch quest.verification.method {
         case .timerSession:
@@ -372,7 +362,7 @@ final class GameStore: ObservableObject {
         if snapshot.bundle.dayKey != previousDay {
             verificationNote = nil
         }
-        dayClock = DayClock.resolve(current: dayClock, now: now, boot: DayClock.bootTime())
+        dayClock = DayClock.resolve(current: dayClock, now: now)
         advanceTimers(now: now)
         evaluateConnectedVerifiers(now: now)
         requestGenerationIfNeeded(now: now)
@@ -431,7 +421,8 @@ final class GameStore: ObservableObject {
             penaltyVisible: visible,
             tier: snapshot.player.penaltyTier,
             questTitle: title,
-            dayKey: snapshot.bundle.dayKey
+            dayKey: snapshot.bundle.dayKey,
+            openDayKey: snapshot.missesRequiredSet ? snapshot.bundle.dayKey : nil
         )
     }
 

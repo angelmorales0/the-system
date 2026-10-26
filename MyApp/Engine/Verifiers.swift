@@ -64,7 +64,7 @@ enum VerifierRegistry {
         case .screenTimeLimit:
             // DeviceActivity does not export minute totals to the app. Penalty shields are separate.
             // This quest stays a local checkbox until a report extension exists.
-            return IncompleteVerifier(method: method, reason: "Screen Time minutes are not available to the app. The Penalty Zone still applies while a penalty is open.")
+            return IncompleteVerifier(method: method, reason: "Screen Time minutes are not available to the app. The all-app penalty lock still applies while a penalty is open.")
         }
     }
 }
