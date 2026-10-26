@@ -67,4 +67,17 @@ struct StatLevelReport: Equatable {
     func topGains(_ count: Int = 3) -> [StatRequirement] {
         Array(requirements.filter { $0.levelsAvailable > 0 }.sorted { $0.levelsAvailable > $1.levelsAvailable }.prefix(count))
     }
+
+    /// Drops the removed targets and scales the weights of the rest back to 100, in the same ratio.
+    /// Removing every target gives an empty report: score 0, level 0.
+    func removing(_ removed: Set<String>) -> StatLevelReport {
+        let kept = requirements.filter { !removed.contains($0.category) }
+        let total = kept.reduce(0) { $0 + $1.weight }
+        guard total > 0 else { return StatLevelReport(stat: stat, requirements: []) }
+        return StatLevelReport(stat: stat, requirements: kept.map { requirement in
+            var scaled = requirement
+            scaled.weight = requirement.weight * 100 / total
+            return scaled
+        })
+    }
 }

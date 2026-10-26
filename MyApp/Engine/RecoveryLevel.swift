@@ -72,6 +72,13 @@ struct RecoveryLevelReport: Equatable {
     func topGains(_ count: Int = 3) -> [RecoveryRequirement] {
         Array(requirements.filter { $0.levelsAvailable > 0 }.sorted { $0.levelsAvailable > $1.levelsAvailable }.prefix(count))
     }
+
+    /// The same categories as a REC stat report, so the target list treats REC like every other stat.
+    var statReport: StatLevelReport {
+        StatLevelReport(stat: .REC, requirements: requirements.map {
+            StatRequirement(category: $0.category, passed: $0.passed, progress: $0.progress, weight: $0.weight, detail: $0.detail)
+        })
+    }
 }
 
 /// Deterministic recovery level 0...350.
