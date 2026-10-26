@@ -33,9 +33,9 @@ enum PenaltyShieldCopy {
             backgroundBlurStyle: .systemThickMaterialDark,
             backgroundColor: UIColor(red: 0.012, green: 0.035, blue: 0.09, alpha: 1),
             icon: nil,
-            title: ShieldConfiguration.Label(text: "Penalty Zone", color: .white),
-            subtitle: ShieldConfiguration.Label(text: "Clear the penalty quest in The System.", color: .white),
-            primaryButtonLabel: ShieldConfiguration.Label(text: "Open The System", color: .black),
+            title: ShieldConfiguration.Label(text: "PENALTY QUEST", color: UIColor(red: 1, green: 0.32, blue: 0.36, alpha: 1)),
+            subtitle: ShieldConfiguration.Label(text: "The daily quest was not completed. Every app is locked until the penalty quest is cleared in The System.\nCalls and emergency SOS still work.", color: .white),
+            primaryButtonLabel: ShieldConfiguration.Label(text: "Close", color: .black),
             primaryButtonBackgroundColor: UIColor(red: 0.24, green: 0.72, blue: 1.0, alpha: 1)
         )
     }

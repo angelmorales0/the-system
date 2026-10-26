@@ -481,7 +481,7 @@ struct MorningSignals: Codable, Equatable {
 }
 
 enum QuestDay {
-    /// The phone's current time zone, so the quest day ends at local midnight while traveling.
+    /// The phone's current time zone, so the quest day starts at 5:00 local time while traveling.
     static var timeZone: TimeZone { .autoupdatingCurrent }
 
     static var calendar: Calendar {
@@ -490,17 +490,41 @@ enum QuestDay {
         return calendar
     }
 
+    /// A quest day runs from 5:00 local time to 5:00 the next morning. 1:00 AM still belongs to the day before.
+    static let startHour = 5
+
     static func key(for date: Date) -> String {
-        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        let local = calendar.component(.hour, from: date) < startHour
+            ? calendar.date(byAdding: .day, value: -1, to: date) ?? date
+            : date
+        let parts = calendar.dateComponents([.year, .month, .day], from: local)
         return String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
     }
 
     static func isSunday(_ date: Date) -> Bool {
-        calendar.component(.weekday, from: date) == 1
+        guard let day = self.date(from: key(for: date)) else { return false }
+        return calendar.component(.weekday, from: day) == 1
     }
 
+    /// 5:00 local time on the quest day `key`.
+    static func start(of key: String) -> Date? {
+        guard let noon = date(from: key) else { return nil }
+        return calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: noon)
+    }
+
+    /// The quest day that holds `date`, from its 5:00 start to the next day's 5:00.
+    static func interval(for date: Date) -> DateInterval {
+        let key = key(for: date)
+        guard let start = Self.start(of: key),
+              let end = Self.start(of: Self.key(byAddingDays: 1, to: key)) else {
+            return DateInterval(start: date, duration: 86_400)
+        }
+        return DateInterval(start: start, end: end)
+    }
+
+    /// The last second before the next quest day starts at 5:00.
     static func endOfDay(_ date: Date) -> Date {
-        calendar.date(bySettingHour: 23, minute: 59, second: 59, of: date) ?? date
+        interval(for: date).end.addingTimeInterval(-1)
     }
 
     static func date(from key: String) -> Date? {

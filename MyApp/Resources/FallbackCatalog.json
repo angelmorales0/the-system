@@ -501,12 +501,10 @@
           "kind": "penalty",
           "stat": "END",
           "verification": {
-            "method": "strava_activity",
+            "method": "healthkit_workout",
             "params": {
-              "types": [
-                "Run"
-              ],
-              "minMovingTimeSec": 1800
+              "activityType": "running",
+              "minDurationSec": 1800
             }
           },
           "xp": 30,
@@ -552,12 +550,10 @@
           "kind": "penalty",
           "stat": "END",
           "verification": {
-            "method": "strava_activity",
+            "method": "healthkit_workout",
             "params": {
-              "types": [
-                "Run"
-              ],
-              "minMovingTimeSec": 1500
+              "activityType": "running",
+              "minDurationSec": 1500
             }
           },
           "xp": 25,
@@ -603,12 +599,10 @@
           "kind": "penalty",
           "stat": "END",
           "verification": {
-            "method": "strava_activity",
+            "method": "healthkit_workout",
             "params": {
-              "types": [
-                "Walk"
-              ],
-              "minMovingTimeSec": 1500
+              "activityType": "walking",
+              "minDurationSec": 1500
             }
           },
           "xp": 25,
