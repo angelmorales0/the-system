@@ -1,21 +1,23 @@
 import Foundation
 
 /// "No gym today": the player cannot get to the gym, so the Training day doubles up on cardio.
-/// Strength rows that are not finished give way to a second 10K. Finished work stays.
+/// Strength rows that are not finished give way to a second run, always a 10K. Finished work stays.
 /// Penalty rows are not changed. The setting lasts for one quest day.
 enum NoGymDay {
     static let secondTenKSlug = "run_10k_2"
     static let secondTenKTitle = "Second 10K"
-    static let tenKCount = 2
+    /// Runs the day should have: its own 5K or 10K, plus 10Ks up to this count.
+    static let runCount = 2
 
     static func cardioOnly(_ bundle: QuestBundle, now: Date) -> QuestBundle {
         guard bundle.mode == .performanceTraining else { return bundle }
         var copy = bundle
         copy.quests.removeAll { isSwappable($0) && TrainingDay.isStrength($0) && $0.status != .completed }
-        let tenKs = copy.quests.filter { isSwappable($0) && TrainingDay.isTenK($0) }
-        guard tenKs.count < tenKCount else { return copy }
-        let added = (tenKs.count..<tenKCount).map { index in
-            tenK(from: tenKs.first, index: index, bundle: copy, now: now)
+        let runs = copy.quests.filter { isSwappable($0) && TrainingDay.isRaceRun($0) }
+        guard runs.count < runCount else { return copy }
+        let template = runs.first { isTenK($0) }
+        let added = (runs.count..<runCount).map { index in
+            tenK(from: template, index: index, bundle: copy, now: now)
         }
         // After the day's own quests, before Stretching, optional rows, and penalty rows.
         let insertAt = copy.quests.firstIndex { $0.id == DailyStretch.questId || $0.kind != .daily } ?? copy.quests.count
@@ -26,6 +28,10 @@ enum NoGymDay {
     /// True for a row this setting added, so turning it off can take the row away again.
     static func isAdded(_ quest: Quest, dayKey: String) -> Bool {
         quest.id == "q_\(dayKey)_\(secondTenKSlug)" || quest.id == "q_\(dayKey)_run_10k_1"
+    }
+
+    static func isTenK(_ quest: Quest) -> Bool {
+        TrainingDay.isRaceRun(quest) && quest.verification.params["minDistanceMeters"]?.doubleValue == TrainingDay.tenKMeters
     }
 
     private static func isSwappable(_ quest: Quest) -> Bool {
@@ -103,7 +109,7 @@ enum NoGymDayRules {
         var day = GameSnapshot.fresh(catalog: catalog, now: now)
         let before = day.bundle.quests.map(\.id)
         guard day.bundle.quests.contains(where: { isLift($0) }),
-              day.bundle.quests.contains(where: { TrainingDay.isTenK($0) }) else {
+              day.bundle.quests.contains(where: { NoGymDay.isTenK($0) }) else {
             return ["the green Training day should have a lift and a 10K"]
         }
 
@@ -112,7 +118,7 @@ enum NoGymDayRules {
         if day.bundle.quests.contains(where: { isLift($0) }) {
             errors.append("no gym should remove the unfinished lifts, got \(ids)")
         }
-        if day.bundle.quests.filter { TrainingDay.isTenK($0) }.count != 2 {
+        if day.bundle.quests.filter({ NoGymDay.isTenK($0) }).count != 2 {
             errors.append("no gym should give two 10K rows, got \(ids)")
         }
         if ids.last != DailyStretch.questId {
@@ -124,7 +130,7 @@ enum NoGymDayRules {
 
         // A rebuild the same day, for example when WHOOP readiness arrives, keeps the swap.
         day.rebuildBundle(catalog: catalog, now: now)
-        if day.bundle.quests.contains(where: { isLift($0) }) || day.bundle.quests.filter { TrainingDay.isTenK($0) }.count != 2 {
+        if day.bundle.quests.contains(where: { isLift($0) }) || day.bundle.quests.filter({ NoGymDay.isTenK($0) }).count != 2 {
             errors.append("a rebuild should keep the no-gym swap, got \(day.bundle.quests.map(\.id))")
         }
         let again = day.bundle
