@@ -8,6 +8,9 @@ import Foundation
 /// weighted strength on Press Day, and a max-effort set on Arms Day. Squats come twice (heavy and light).
 /// Rows and the deadlift come once: the deadlift is the most tiring lift next to the running.
 /// Pistol squats and handstand push-ups are optional rows, done at home on a good day: one per day at most.
+/// Four support exercises protect the running and the shoulders but score no STR target: Romanian deadlift and
+/// calf raises on Squat Day, a lying leg curl on Deadlift Day, and face pulls on Arms Day. Toes-to-bar moved off
+/// Squat Day to make room.
 /// The fifth day is upper body with no pressing, so it does not tire the chest before the next Bench Day.
 /// The two lower days are the only heavy leg days, two days apart, so the split stays inside the heavy-leg limits
 /// next to the running. A third leg day would cost the runs more than it gives the lifts.
@@ -41,6 +44,9 @@ enum GymSplit {
         var optional = false
         /// How to run this exercise today, for the generator and the player. Nil when the role says enough.
         var note: String? = nil
+        /// A support exercise: it trains what the running and the shoulders need, but no STR target.
+        /// Its `target` names the muscle instead.
+        var support = false
     }
 
     struct Day: Codable, Equatable {
@@ -56,6 +62,11 @@ enum GymSplit {
         Exercise(exercise: exercise, aliases: aliases, role: role, sets: sets, minReps: reps.lowerBound, maxReps: reps.upperBound, target: target, optional: optional, note: note)
     }
 
+    /// A support exercise in double progression. The name is Hevy's, without equipment, so the Hevy check finds it.
+    private static func support(_ exercise: String, _ sets: Int, _ reps: ClosedRange<Int>, muscle: String, aliases: [String], note: String? = nil) -> Exercise {
+        Exercise(exercise: exercise, aliases: aliases, role: .accessory, sets: sets, minReps: reps.lowerBound, maxReps: reps.upperBound, target: muscle, note: note, support: true)
+    }
+
     private static func hold(_ exercise: String, _ sets: Int, seconds: Double, target: String, aliases: [String]) -> Exercise {
         Exercise(exercise: exercise, aliases: aliases, role: .accessory, sets: sets, minReps: 0, maxReps: 0, secondsPerSet: seconds, target: target)
     }
@@ -69,11 +80,14 @@ enum GymSplit {
         lift("Bicep Curl", .accessory, 3, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
     ])
 
-    static let squat = Day(id: "squat", name: "Squat Day", focus: "Lower body: squat, single-leg work, and core", lowerBody: true, exercises: [
+    static let squat = Day(id: "squat", name: "Squat Day", focus: "Lower body: squat, single-leg work, hamstrings, and calves", lowerBody: true, exercises: [
         lift("Squat", .main, 4, 1...5, target: "Squat", aliases: StrengthLevel.squat.aliases),
         // Sets count both legs: 2 per leg.
         lift("Bulgarian Split Squat", .accessory, 4, 8...12, target: "Bulgarian split squat", aliases: StrengthLevel.bulgarianSplitSquat.aliases),
-        lift("Toes To Bar", .accessory, 3, 5...10, target: "Toes-to-bar", aliases: StrengthLevel.toesToBar.aliases),
+        support("Romanian Deadlift", 3, 8...10, muscle: "Hamstrings", aliases: ["romanian deadlift", "rdl"],
+                note: "Hamstrings and glutes for the running. Moderate weight, 2-3 reps in reserve; this is not a heavy deadlift."),
+        support("Standing Calf Raise", 3, 10...15, muscle: "Calves", aliases: ["standing calf raise", "calf raise", "seated calf raise"],
+                note: "Calves and Achilles for the running. Slow, full range, a pause at the bottom."),
         hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
         // Optional and last: done at home on a good day, so the gym session stays short next to the running.
         lift("Pistol Squat", .accessory, 6, 3...10, target: "Pistol squats", aliases: StrengthLevel.pistolAliases, optional: true,
@@ -91,11 +105,13 @@ enum GymSplit {
              note: "Optional. Do them at home if you have time. Skipping them never misses the day."),
     ])
 
-    static let deadlift = Day(id: "deadlift", name: "Deadlift Day", focus: "Lower body: deadlift and light squat, plus light overhead press, grip, and core", lowerBody: true, exercises: [
+    static let deadlift = Day(id: "deadlift", name: "Deadlift Day", focus: "Lower body: deadlift, light squat, and hamstrings, plus light overhead press, grip, and core", lowerBody: true, exercises: [
         lift("Deadlift", .main, 3, 1...5, target: "Deadlift", aliases: StrengthLevel.deadlift.aliases),
         lift("Squat", .light, 3, 8...8, target: "Squat", aliases: StrengthLevel.squat.aliases),
         // The day after the heavy press: practice at a light weight.
         lift("Overhead Press", .light, 3, 7...8, target: "Overhead press", aliases: StrengthLevel.overheadPress.aliases),
+        support("Lying Leg Curl", 3, 8...12, muscle: "Hamstrings", aliases: ["lying leg curl", "seated leg curl", "leg curl", "nordic hamstring curl", "nordic curl"],
+                note: "Knee-flexion hamstring work, which the hinge lifts miss. Runners need it to protect the hamstrings."),
         hold("Farmers Walk", 3, seconds: 60, target: "Farmer's carry", aliases: StrengthLevel.farmerAliases),
         lift("Toes To Bar", .accessory, 3, 5...10, target: "Toes-to-bar", aliases: StrengthLevel.toesToBar.aliases),
     ])
@@ -106,6 +122,8 @@ enum GymSplit {
         lift("Bicep Curl", .accessory, 5, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
         lift("Toes To Bar", .accessory, 3, 5...10, target: "Toes-to-bar", aliases: StrengthLevel.toesToBar.aliases),
         hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
+        support("Face Pull", 3, 12...15, muscle: "Rear delts", aliases: ["face pull"],
+                note: "Rear delts and rotator cuff, to balance the pressing and lateral raises. Light, controlled reps."),
     ])
 
     // Three pull-up sessions, three jobs. Together: about 14 sets a rotation, most of them short of failure.
@@ -215,7 +233,7 @@ enum GymSplit {
 
         // Every exercise trains a real STR target, and every STR target is in the split.
         let targets = Set(StrengthLevel.evaluate(workouts: [], now: now).requirements.map(\.category))
-        let trained = Set(rotation.flatMap { $0.exercises.map(\.target) })
+        let trained = Set(rotation.flatMap { $0.exercises.filter { !$0.support }.map(\.target) })
         if !trained.isSubset(of: targets) || trained != targets {
             errors.append("the split should train exactly the STR targets, missing \(targets.subtracting(trained).sorted()), extra \(trained.subtracting(targets).sorted())")
         }
@@ -233,7 +251,7 @@ enum GymSplit {
         }
         // Days a rotation that train each target. The focus targets come 3 times; the hardest lifts once.
         let expectedDays: [String: Int] = [
-            "Lateral raise": 3, "Dumbbell curl": 3, "Toes-to-bar": 3,
+            "Lateral raise": 3, "Dumbbell curl": 3, "Toes-to-bar": 2,
             "Pull-ups": 3, "Dead hang": 3, "Squat": 2, "Overhead press": 2, "Barbell row": 1,
             "Deadlift": 1, "Bench press": 1, "Weighted dips": 1, "Handstand push-ups": 1,
             "Bulgarian split squat": 1, "Pistol squats": 1, "Farmer's carry": 1,
@@ -310,6 +328,15 @@ enum GymSplit {
         }
         if skipped.missesRequiredSet {
             errors.append("skipping only the optional pistol squats should not miss the day")
+        }
+
+        // Support exercises: a hinge and a knee-flexion hamstring lift on different days, face pulls, and calf raises.
+        let supportDays = rotation.flatMap { day in day.exercises.filter(\.support).map { "\(day.id): \($0.exercise)" } }
+        if supportDays != ["squat: Romanian Deadlift", "squat: Standing Calf Raise", "deadlift: Lying Leg Curl", "arms: Face Pull"] {
+            errors.append("support exercises should be RDL and calf raises on Squat Day, leg curls on Deadlift Day, face pulls on Arms Day, got \(supportDays)")
+        }
+        if rotation.flatMap(\.exercises).contains(where: { $0.support && targets.contains($0.target) }) {
+            errors.append("a support exercise must not claim an STR target")
         }
 
         // Optional rows: pistol squats and handstand push-ups only, last in their day, and one per day at most.
