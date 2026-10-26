@@ -21,8 +21,15 @@ struct CatalogEntry: Codable, Equatable {
     var quests: [QuestTemplate]
 }
 
+/// Penalty rows for one or more readiness bands. They are added to the day; they are not a day mode.
+struct PenaltyEntry: Codable, Equatable {
+    var readinessBands: [ReadinessBand]
+    var quests: [QuestTemplate]
+}
+
 struct FallbackCatalog {
     private var table: [QuestMode: [ReadinessBand: CatalogEntry]]
+    private var penaltyTable: [ReadinessBand: [QuestTemplate]] = [:]
 
     init(data: Data) throws {
         let file = try JSONDecoder().decode(CatalogFile.self, from: data)
@@ -36,6 +43,11 @@ struct FallbackCatalog {
             }
         }
         self.table = table
+        for entry in file.penaltyQuests ?? [] {
+            for band in entry.readinessBands {
+                penaltyTable[band] = entry.quests
+            }
+        }
     }
 
     private init(table: [QuestMode: [ReadinessBand: CatalogEntry]]) {
@@ -63,6 +75,9 @@ struct FallbackCatalog {
             for band in ReadinessBand.allCases where table[mode]?[band] == nil {
                 missing.append("\(mode.rawValue)/\(band.rawValue)")
             }
+        }
+        for band in ReadinessBand.allCases where penaltyTable[band] == nil {
+            missing.append("penalty/\(band.rawValue)")
         }
         return missing
     }
@@ -103,6 +118,13 @@ struct FallbackCatalog {
         ).strippingModelCompletion(assignedAt: now)
     }
 
+    /// Base (tier 1) penalty rows for the band. `PenaltyQuests` scales them by tier.
+    func penaltyTemplates(band: ReadinessBand) -> [QuestTemplate] {
+        if let match = penaltyTable[band] { return match }
+        if let yellow = penaltyTable[.yellow] { return yellow }
+        return Self.synthesizedPenalty(band: band)
+    }
+
     private func resolve(mode: QuestMode, band: ReadinessBand) -> CatalogEntry {
         if let match = table[mode]?[band] { return match }
         if let yellow = table[mode]?[.yellow] { return yellow }
@@ -125,11 +147,11 @@ struct FallbackCatalog {
                 QuestTemplate(
                     id: "manual",
                     title: mode.headerLine,
-                    kind: mode == .penalty ? .penalty : .daily,
+                    kind: .daily,
                     stat: .FOC,
                     verification: VerificationSpec(method: .manualConfirm, params: ["prompt": .string("Confirm complete")]),
                     xp: 20,
-                    difficulty: mode == .penalty ? .penalty : .easy,
+                    difficulty: .easy,
                     progress: QuestProgress(current: 0, target: 1, unit: "session"),
                     reward: nil
                 )
@@ -151,6 +173,21 @@ struct FallbackCatalog {
                 template("protein", "Protein", .daily, .END, .macrofactorProtein, ["minProteinG": .number(150)], 25, .easy, 150, "g")
             ]
         )
+    }
+
+    /// Used only when the JSON catalog has no penalty rows. Exercise only, like a Training day.
+    private static func synthesizedPenalty(band: ReadinessBand) -> [QuestTemplate] {
+        func row(_ id: String, _ title: String, _ stat: Stat, _ method: VerificationMethod, _ params: [String: JSONValue], _ xp: Int, _ minutes: Double) -> QuestTemplate {
+            template(id, title, .penalty, stat, method, params, xp, .penalty, minutes, "min")
+        }
+        let walk = row("penalty_walk", "Penalty Walk", .END, .stravaActivity, ["types": .array([.string("Walk")]), "minMovingTimeSec": .number(1500)], 25, 25)
+        guard band != .red else { return [walk] }
+        let seconds = band == .green ? 1800.0 : 1500.0
+        let xp = band == .green ? 30 : 25
+        return [
+            row("penalty_run", "Penalty Run", .END, .stravaActivity, ["types": .array([.string("Run")]), "minMovingTimeSec": .number(seconds)], xp, seconds / 60),
+            row("penalty_lift", "Penalty Lift", .STR, .healthkitWorkout, ["activityType": .string("traditionalStrengthTraining"), "minDurationSec": .number(seconds)], xp, seconds / 60),
+        ]
     }
 
     private static func template(
@@ -182,4 +219,5 @@ struct FallbackCatalog {
 private struct CatalogFile: Codable {
     var schemaVersion: Int
     var entries: [CatalogEntry]
+    var penaltyQuests: [PenaltyEntry]?
 }

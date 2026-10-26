@@ -1,7 +1,6 @@
 import Foundation
 
 struct ModePickerInput: Equatable {
-    var penaltyTier: Int
     var spendingFullRecovery: Bool
     var isSunday: Bool
     var readinessBand: ReadinessBand
@@ -15,11 +14,9 @@ struct ModeDecision: Equatable {
 }
 
 /// Rules-only day mode. The LLM is not allowed to override this once it exists.
+/// An open penalty does not pick a mode; `PenaltyQuests` adds its rows to the day.
 enum ModePicker {
     static func decide(_ input: ModePickerInput) -> ModeDecision {
-        if input.penaltyTier > 0 && !input.spendingFullRecovery {
-            return lock(.penalty, ["penalty_active"])
-        }
         if input.spendingFullRecovery {
             return lock(.fullRecovery, ["full_recovery_spent"])
         }
@@ -44,9 +41,6 @@ enum ModePicker {
             }
         }
 
-        expect(sample(penaltyTier: 1), .penalty, ["penalty_active"])
-        expect(sample(penaltyTier: 2, isSunday: true, readinessBand: .red), .penalty, ["penalty_active"])
-        expect(sample(penaltyTier: 1, spendingFullRecovery: true), .fullRecovery, ["full_recovery_spent"])
         expect(sample(spendingFullRecovery: true, readinessBand: .green), .fullRecovery, ["full_recovery_spent"])
         expect(sample(isSunday: true, readinessBand: .red), .recovery, ["sunday_red"])
         expect(sample(readinessBand: .red), .recovery, ["readiness_red"])
@@ -63,14 +57,12 @@ enum ModePicker {
     }
 
     private static func sample(
-        penaltyTier: Int = 0,
         spendingFullRecovery: Bool = false,
         isSunday: Bool = false,
         readinessBand: ReadinessBand = .green,
         sleepPerformance: Int? = 80
     ) -> ModePickerInput {
         ModePickerInput(
-            penaltyTier: penaltyTier,
             spendingFullRecovery: spendingFullRecovery,
             isSunday: isSunday,
             readinessBand: readinessBand,

@@ -14,17 +14,29 @@ enum PenaltyRules {
 
         var missed = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
         missed.refreshIfNeeded(catalog: catalog, now: dayTwo)
-        if missed.player.penaltyTier != 1 || missed.bundle.mode != .penalty {
-            errors.append("a missed required day should open penalty tier 1, got tier \(missed.player.penaltyTier) \(missed.bundle.mode.rawValue)")
+        if missed.player.penaltyTier != 1 || missed.bundle.mode != .performanceTraining {
+            errors.append("a missed required day should open penalty tier 1 on a Training day, got tier \(missed.player.penaltyTier) \(missed.bundle.mode.rawValue)")
         }
-        if missed.bundle.headerLine != "Penalty Quest" {
-            errors.append("penalty morning should use the fallback header")
+        if missed.bundle.headerLine != "Performance Training" {
+            errors.append("an open penalty must keep the day's own header")
+        }
+        let ids = missed.bundle.quests.map(\.id)
+        if ids != ["q_2026-10-02_run", DailyStretch.questId, "q_2026-10-02_pen"] {
+            errors.append("penalty rows should follow the day's quests and Stretching, got \(ids)")
+        }
+        if PenaltyQuests.rows(in: missed.bundle).first?.progress.target != 30 {
+            errors.append("tier 1 should keep the base penalty time")
         }
         missed.refreshIfNeeded(catalog: catalog, now: dayThree)
         missed.refreshIfNeeded(catalog: catalog, now: dayFour)
         missed.refreshIfNeeded(catalog: catalog, now: dayFive)
         if missed.player.penaltyTier != 3 {
             errors.append("penalty tier should cap at 3, got \(missed.player.penaltyTier)")
+        }
+        let tierThree = PenaltyQuests.rows(in: missed.bundle)
+        if tierThree.count != 1 || tierThree.first?.progress.target != 50
+            || tierThree.first?.verification.params["minMovingTimeSec"]?.doubleValue != 3000 {
+            errors.append("tier 3 should add 20 minutes to each penalty row, got \(tierThree.map(\.progress.target))")
         }
 
         var emergency = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
@@ -50,6 +62,19 @@ enum PenaltyRules {
         rested.refreshIfNeeded(catalog: catalog, now: dayTwo)
         if rested.player.penaltyTier != 0 {
             errors.append("a Full Recovery day must not open a penalty, got tier \(rested.player.penaltyTier)")
+        }
+
+        var restWithPenalty = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
+        restWithPenalty.player.penaltyTier = 2
+        restWithPenalty.signals.spendingFullRecovery = true
+        restWithPenalty.fullRecoveryDayKey = restWithPenalty.bundle.dayKey
+        restWithPenalty.rebuildForTest(catalog: catalog, now: dayOne)
+        if restWithPenalty.bundle.mode != .fullRecovery || !PenaltyQuests.rows(in: restWithPenalty.bundle).isEmpty {
+            errors.append("a Full Recovery day must not add penalty rows")
+        }
+        restWithPenalty.refreshIfNeeded(catalog: catalog, now: dayTwo)
+        if restWithPenalty.player.penaltyTier != 2 || PenaltyQuests.rows(in: restWithPenalty.bundle).isEmpty {
+            errors.append("the tier should wait through Full Recovery and return the next day")
         }
 
         var banked = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
@@ -82,20 +107,27 @@ enum PenaltyRules {
         cleared.player.penaltyTier = 1
         cleared.rebuildForTest(catalog: catalog, now: dayOne)
         let beforeXP = cleared.player.xp
-        let quest = cleared.bundle.quests[0]
+        guard let quest = PenaltyQuests.rows(in: cleared.bundle).first,
+              let penaltyIndex = cleared.bundle.quests.firstIndex(where: { $0.id == quest.id }) else {
+            return errors + ["tier 1 should add a penalty row"]
+        }
         _ = cleared.apply(.completed(evidence: evidence("pen")), questId: quest.id, now: dayOne)
         if cleared.player.penaltyTier != 0 {
-            errors.append("finishing every penalty quest should drop the tier")
+            errors.append("finishing every penalty row should drop the tier, even with the day's quests open")
         }
-        let taxed = GameSnapshot.xpGrant(for: quest, mode: .penalty)
-        if taxed != 27 || cleared.bundle.quests[0].grantedXP != taxed {
-            errors.append("penalty XP should be 0.9× once, got grant \(taxed) stored \(cleared.bundle.quests[0].grantedXP)")
+        let taxed = GameSnapshot.xpGrant(for: quest)
+        if taxed != 27 || cleared.bundle.quests[penaltyIndex].grantedXP != taxed {
+            errors.append("penalty XP should be 0.9× once, got grant \(taxed) stored \(cleared.bundle.quests[penaltyIndex].grantedXP)")
         }
         if cleared.player.xp != beforeXP + taxed {
             errors.append("the 0.9× tax should be applied once")
         }
-        if GameSnapshot.xpGrant(for: quest, mode: .penalty) != taxed {
+        if GameSnapshot.xpGrant(for: quest) != taxed {
             errors.append("asking for the grant again should not compound the tax")
+        }
+        let normal = cleared.bundle.quests[0]
+        if normal.kind == .penalty || GameSnapshot.xpGrant(for: normal) != normal.xp {
+            errors.append("a normal row on a penalty day should keep full XP")
         }
         cleared.undoQuest(id: quest.id)
         if cleared.player.penaltyTier != 1 {
@@ -138,11 +170,12 @@ enum PenaltyRules {
       {"mode":"performance_training","readinessBands":["green","yellow","red"],"headerLine":"Performance Training","narrative":"Train.","warnings":[],"quests":[
         {"id":"run","title":"Run","kind":"daily","stat":"END","verification":{"method":"manual_confirm","params":{}},"xp":30,"difficulty":"normal","progress":{"current":0,"target":1,"unit":"session"},"reward":null}
       ]},
-      {"mode":"penalty","readinessBands":["green","yellow","red"],"headerLine":"Penalty Quest","narrative":"Clear it.","warnings":[],"quests":[
-        {"id":"pen","title":"Penalty Run","kind":"penalty","stat":"END","verification":{"method":"manual_confirm","params":{}},"xp":30,"difficulty":"penalty","progress":{"current":0,"target":1,"unit":"session"},"reward":null}
-      ]},
       {"mode":"full_recovery","readinessBands":["green","yellow","red"],"headerLine":"Full Recovery Day","narrative":"Rest.","warnings":[],"quests":[
         {"id":"rest","title":"Rest","kind":"daily","stat":"REC","verification":{"method":"manual_confirm","params":{}},"xp":10,"difficulty":"easy","progress":{"current":0,"target":1,"unit":"session"},"reward":null}
+      ]}
+    ],"penaltyQuests":[
+      {"readinessBands":["green","yellow","red"],"quests":[
+        {"id":"pen","title":"Penalty Run","kind":"penalty","stat":"END","verification":{"method":"strava_activity","params":{"types":["Run"],"minMovingTimeSec":1800}},"xp":30,"difficulty":"penalty","progress":{"current":0,"target":30,"unit":"min"},"reward":null}
       ]}
     ]}
     """

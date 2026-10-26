@@ -59,8 +59,8 @@ final class GameStore: ObservableObject {
         case .standard:
             snapshot = GameSnapshot.loadFromUserDefaults() ?? GameSnapshot.fresh(catalog: catalog)
             snapshot.refreshIfNeeded(catalog: catalog)
-            // A day saved before the Stretching row or the exercise-only Training rule gets them now.
-            snapshot.bundle = DailyStretch.ensure(in: TrainingDay.exerciseOnly(snapshot.bundle) ?? snapshot.bundle, now: .now)
+            // A day saved before the Stretching row, the exercise-only Training rule, or penalty rows gets them now.
+            snapshot.bundle = snapshot.finished(TrainingDay.exerciseOnly(snapshot.bundle) ?? snapshot.bundle, catalog: catalog, now: .now)
         }
         if persistence == .standard {
             statHistory = StatLevelHistory.load()
@@ -424,8 +424,9 @@ final class GameStore: ObservableObject {
     }
 
     private func enforcePenalty() {
-        let visible = snapshot.player.penaltyTier > 0 && snapshot.bundle.mode == .penalty
-        let title = snapshot.bundle.quests.first(where: { $0.status != .completed })?.title ?? snapshot.bundle.headerLine
+        let open = PenaltyQuests.rows(in: snapshot.bundle).first(where: { $0.status != .completed })
+        let visible = snapshot.player.penaltyTier > 0 && open != nil
+        let title = open?.title ?? snapshot.bundle.headerLine
         PenaltyEnforcement.sync(
             penaltyVisible: visible,
             tier: snapshot.player.penaltyTier,
@@ -471,7 +472,7 @@ final class GameStore: ObservableObject {
               let prepared = TrainingDay.exerciseOnly(accepted) else { return }
         var next = snapshot
         next.generatedBundle = prepared
-        next.bundle = DailyStretch.ensure(in: prepared, now: now)
+        next.bundle = next.finished(prepared, catalog: catalog, now: now)
         snapshot = next
         runningTimersRemoveMissing()
         persist()

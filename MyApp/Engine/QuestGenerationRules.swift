@@ -23,8 +23,8 @@ enum QuestGenerationRules {
 
         snapshot.player.penaltyTier = 1
         let penalty = ContextBuilder.make(snapshot: snapshot, now: now)
-        if penalty.modeDecision.selectedMode != .penalty || penalty.modeDecision.lockedByRules != true {
-            errors.append("penalty tier should lock penalty mode")
+        if penalty.modeDecision.selectedMode != .performanceTraining || penalty.player.penaltyTier != 1 {
+            errors.append("an open penalty should not change the day mode")
         }
         snapshot.player.penaltyTier = 0
         snapshot.signals.spendingFullRecovery = true
@@ -87,6 +87,12 @@ enum QuestGenerationRules {
         hardLift.quests[0].difficulty = .hard
         if !QuestSafety.issues(in: hardLift, context: redContext).contains(where: { $0.contains("strength") }) {
             errors.append("red readiness should reject a hard strength quest")
+        }
+
+        var authoredPenalty = sampleBundle(mode: .performanceTraining, dayKey: dayKey, now: now)
+        authoredPenalty.quests[0].kind = .penalty
+        if !QuestSafety.issues(in: authoredPenalty, context: training).contains(where: { $0.contains("penalty") }) {
+            errors.append("a generated penalty quest should be rejected")
         }
 
         var lowProtein = sampleBundle(mode: .performanceTraining, dayKey: dayKey, now: now)
@@ -163,6 +169,13 @@ enum QuestGenerationRules {
         }
 
         let bundled = FallbackCatalog.bundled()
+        for band in ReadinessBand.allCases {
+            let rows = bundled.penaltyTemplates(band: band)
+            // Training days are exercise only, so penalty rows are too.
+            if rows.isEmpty || rows.contains(where: { $0.kind != .penalty || !TrainingDay.exerciseMethods.contains($0.verification.method) }) {
+                errors.append("penalty rows for \(band.rawValue) should be exercise-only penalty quests")
+            }
+        }
         if bundled.missingCoverage().isEmpty {
             for mode in QuestMode.allCases {
                 for band in ReadinessBand.allCases {

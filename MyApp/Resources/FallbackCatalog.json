@@ -487,16 +487,12 @@
           "reward": null
         }
       ]
-    },
+    }
+  ],
+  "penaltyQuests": [
     {
-      "mode": "penalty",
       "readinessBands": [
         "green"
-      ],
-      "headerLine": "Penalty Quest",
-      "narrative": "Yesterday was missed. Clear every penalty row.",
-      "warnings": [
-        "Failure to complete\nthe penalty quest will extend\nthe penalty."
       ],
       "quests": [
         {
@@ -542,59 +538,12 @@
             "unit": "min"
           },
           "reward": null
-        },
-        {
-          "id": "mobility",
-          "title": "Mobility",
-          "kind": "penalty",
-          "stat": "AGI",
-          "verification": {
-            "method": "timer_session",
-            "params": {
-              "minSec": 900,
-              "label": "Mobility"
-            }
-          },
-          "xp": 15,
-          "difficulty": "penalty",
-          "progress": {
-            "current": 0,
-            "target": 15,
-            "unit": "min"
-          },
-          "reward": null
-        },
-        {
-          "id": "protein",
-          "title": "Protein",
-          "kind": "penalty",
-          "stat": "END",
-          "verification": {
-            "method": "macrofactor_protein",
-            "params": {
-              "minProteinG": 160
-            }
-          },
-          "xp": 20,
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 160,
-            "unit": "g"
-          },
-          "reward": null
         }
       ]
     },
     {
-      "mode": "penalty",
       "readinessBands": [
         "yellow"
-      ],
-      "headerLine": "Penalty Quest",
-      "narrative": "Penalty day, moderate readiness. Still required.",
-      "warnings": [
-        "Failure to complete\nthe penalty quest will extend\nthe penalty."
       ],
       "quests": [
         {
@@ -603,12 +552,15 @@
           "kind": "penalty",
           "stat": "END",
           "verification": {
-            "method": "whoop_strain",
+            "method": "strava_activity",
             "params": {
-              "minStrain": 10
+              "types": [
+                "Run"
+              ],
+              "minMovingTimeSec": 1500
             }
           },
-          "xp": 30,
+          "xp": 25,
           "difficulty": "penalty",
           "progress": {
             "current": 0,
@@ -629,7 +581,7 @@
               "minDurationSec": 1500
             }
           },
-          "xp": 30,
+          "xp": 25,
           "difficulty": "penalty",
           "progress": {
             "current": 0,
@@ -637,59 +589,12 @@
             "unit": "min"
           },
           "reward": null
-        },
-        {
-          "id": "mobility",
-          "title": "Mobility",
-          "kind": "penalty",
-          "stat": "AGI",
-          "verification": {
-            "method": "timer_session",
-            "params": {
-              "minSec": 900,
-              "label": "Mobility"
-            }
-          },
-          "xp": 15,
-          "difficulty": "penalty",
-          "progress": {
-            "current": 0,
-            "target": 15,
-            "unit": "min"
-          },
-          "reward": null
-        },
-        {
-          "id": "protein",
-          "title": "Protein",
-          "kind": "penalty",
-          "stat": "END",
-          "verification": {
-            "method": "macrofactor_protein",
-            "params": {
-              "minProteinG": 160
-            }
-          },
-          "xp": 20,
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 160,
-            "unit": "g"
-          },
-          "reward": null
         }
       ]
     },
     {
-      "mode": "penalty",
       "readinessBands": [
         "red"
-      ],
-      "headerLine": "Penalty Quest",
-      "narrative": "Penalty day on red readiness. Hard lifting stays off the card.",
-      "warnings": [
-        "Failure to complete\nthe penalty quest will extend\nthe penalty."
       ],
       "quests": [
         {
@@ -711,67 +616,6 @@
           "progress": {
             "current": 0,
             "target": 25,
-            "unit": "min"
-          },
-          "reward": null
-        },
-        {
-          "id": "mobility",
-          "title": "Mobility",
-          "kind": "penalty",
-          "stat": "AGI",
-          "verification": {
-            "method": "timer_session",
-            "params": {
-              "minSec": 900,
-              "label": "Mobility"
-            }
-          },
-          "xp": 15,
-          "difficulty": "penalty",
-          "progress": {
-            "current": 0,
-            "target": 15,
-            "unit": "min"
-          },
-          "reward": null
-        },
-        {
-          "id": "protein",
-          "title": "Protein",
-          "kind": "penalty",
-          "stat": "END",
-          "verification": {
-            "method": "macrofactor_protein",
-            "params": {
-              "minProteinG": 160
-            }
-          },
-          "xp": 20,
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 160,
-            "unit": "g"
-          },
-          "reward": null
-        },
-        {
-          "id": "focus_block",
-          "title": "Focus Block",
-          "kind": "penalty",
-          "stat": "FOC",
-          "verification": {
-            "method": "manual_confirm",
-            "params": {
-              "prompt": "Confirm the penalty focus block"
-            }
-          },
-          "xp": 20,
-          "difficulty": "penalty",
-          "progress": {
-            "current": 0,
-            "target": 20,
             "unit": "min"
           },
           "reward": null

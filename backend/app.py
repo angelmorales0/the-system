@@ -27,7 +27,6 @@ MODES = {
     "performance_training",
     "recovery",
     "full_recovery",
-    "penalty",
 }
 METHODS = {
     "whoop_strain",
@@ -64,6 +63,7 @@ Rules:
 - Use only the verification methods already defined for this app.
 - hevy_sets reads Hevy. Strength: params exercise (Hevy title without the equipment, e.g. "Bench Press") and sets, optional minReps and minWeightKg; unit "sets".
 - performance_training is exercise only: runs, walks, and lifts (strava_activity, hevy_sets strength, healthkit_workout). No protein, nutrition, spending, or stretch quests. The app adds its own Stretching quest.
+- Use kind daily or optional only. Never write penalty quests: the app adds them from player.penaltyTier.
 - Required quests (kind other than optional) <= constraints.maxRequiredQuests. Optional quests <= constraints.maxOptionalQuests. Total quests <= 8.
 - Titles are short and actionable. Narrative is at most 280 characters.
 - Scale physical load from whoop.readinessBand: green full, yellow moderate, red recovery only.
@@ -331,7 +331,7 @@ def validate_quest(quest: dict[str, Any], band: str, seen: set[str]) -> list[str
     title = str(quest.get("title") or "").strip()
     if not 3 <= len(title) <= 48:
         problems.append("quest title length")
-    if quest.get("kind") not in {"daily", "optional", "penalty"}:
+    if quest.get("kind") not in {"daily", "optional"} or quest.get("difficulty") == "penalty":
         problems.append("quest kind")
     if quest.get("stat") not in STATS:
         problems.append("quest stat")
@@ -449,9 +449,6 @@ def mode_quests(mode: str, band: str, day: str) -> list[dict[str, Any]]:
         return [sleep, mobility, protein, walk]
     if mode == "full_recovery":
         return [quest(day, "sleep", "Sleep Hygiene", "daily", "REC", "timer_session", {"minSec": 600, "label": "Sleep Hygiene"}, 20, "easy", 10, "min", mode)]
-    if mode == "penalty":
-        run = quest(day, "penalty_run", "Penalty Run", "penalty", "END", "strava_activity", {"types": ["Run"], "minMovingTimeSec": 1800}, 30, "penalty", 30, "min", mode)
-        return [run, mobility, protein]
     if band == "yellow":
         zone = quest(day, "zone2", "Zone 2 Walk/Run", "daily", "END", "strava_activity", {"types": ["Run", "Walk"], "minMovingTimeSec": 1200}, 30, "normal", 20, "min", mode)
         push = quest(day, "push", "Push Session", "daily", "STR", "healthkit_workout", {"activityType": "traditionalStrengthTraining", "minDurationSec": 1800}, 30, "normal", 30, "min", mode)
@@ -483,7 +480,6 @@ def header_for(mode: str) -> str:
         "performance_training": "Training",
         "recovery": "Recovery",
         "full_recovery": "Full Recovery Day",
-        "penalty": "Penalty Quest",
     }
     return names.get(mode, "Daily Quest")
 
@@ -491,8 +487,6 @@ def header_for(mode: str) -> str:
 def narrative_for(mode: str, band: str) -> str:
     if mode == "recovery" or band == "red":
         return "Red day. Sleep and a short mobility block."
-    if mode == "penalty":
-        return "Clear the penalty rows."
     return "The daily quest is waiting."
 
 
@@ -719,6 +713,9 @@ def self_check() -> None:
     money = template_bundle(sample_request("recovery"))
     money["quests"][0] = quest("2026-10-01", "spend_cap", "Spend Under Cap", "daily", "FIN", "mercury_spend_under", {"maxDiscretionaryUsd": -5}, 20, "easy", 1, "usd", "recovery")
     expect_rejected(money, sample_request("recovery"), "negative mercury")
+    penalty = json.loads(json.dumps(base))
+    penalty["quests"][0]["kind"] = "penalty"
+    expect_rejected(penalty, sample_request(), "model penalty row")
     unlocked = sample_request()
     unlocked["modeDecision"]["lockedByRules"] = False
     if not validate_request(unlocked):

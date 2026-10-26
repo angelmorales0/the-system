@@ -219,9 +219,9 @@ struct GameSnapshot: Codable, Equatable {
         bundle.quests[index] = quest
     }
 
-    static func xpGrant(for quest: Quest, mode: QuestMode) -> Int {
+    static func xpGrant(for quest: Quest) -> Int {
         var amount = quest.xp
-        if mode == .penalty {
+        if quest.kind == .penalty {
             // Once, from the quest's own XP. Callers must not run this on an already taxed grant.
             amount = max(1, Int((Double(quest.xp) * 0.9).rounded()))
         }
@@ -233,7 +233,6 @@ struct GameSnapshot: Codable, Equatable {
 
     func modeInput(now: Date) -> ModePickerInput {
         ModePickerInput(
-            penaltyTier: player.penaltyTier,
             spendingFullRecovery: signals.spendingFullRecovery,
             isSunday: QuestDay.isSunday(now),
             readinessBand: signals.readinessBand,
@@ -342,21 +341,32 @@ struct GameSnapshot: Codable, Equatable {
            cached.dayKey == dayKey,
            cached.mode == decision.selectedMode,
            let allowed = TrainingDay.exerciseOnly(cached) {
-            bundle = DailyStretch.ensure(in: allowed.strippingModelCompletion(assignedAt: now), now: now)
+            bundle = finished(allowed.strippingModelCompletion(assignedAt: now), catalog: catalog, now: now)
             return
         }
-        bundle = DailyStretch.ensure(in: catalog.makeBundle(
+        bundle = finished(catalog.makeBundle(
             mode: decision.selectedMode,
             band: signals.readinessBand,
             dayKey: dayKey,
             now: now
-        ), now: now)
+        ), catalog: catalog, now: now)
+    }
+
+    /// Adds the fixed rows every day gets: Stretching, then any open penalty.
+    func finished(_ bundle: QuestBundle, catalog: FallbackCatalog, now: Date) -> QuestBundle {
+        PenaltyQuests.ensure(
+            in: DailyStretch.ensure(in: bundle, now: now),
+            tier: player.penaltyTier,
+            band: signals.readinessBand,
+            catalog: catalog,
+            now: now
+        )
     }
 
     private mutating func complete(at index: Int) {
         var quest = bundle.quests[index]
         guard quest.status != .completed else { return }
-        let xpGain = Self.xpGrant(for: quest, mode: bundle.mode)
+        let xpGain = Self.xpGrant(for: quest)
         // Only the points under the cap are granted, so undo removes exactly what was added.
         let statGain = min(quest.difficulty.statWeight, player.stats.room(for: quest.stat))
         player.addXP(xpGain)
@@ -374,20 +384,16 @@ struct GameSnapshot: Codable, Equatable {
         liftPenaltyIfCleared()
     }
 
-    /// Every required penalty row is done. Tier drops to 0. The 0.9× XP tax already applied at grant time.
+    /// Every penalty row is done. Tier drops to 0. The 0.9× XP tax already applied at grant time.
     private mutating func liftPenaltyIfCleared() {
-        guard bundle.mode == .penalty else { return }
-        let required = bundle.quests.filter { $0.kind != .optional }
-        guard !required.isEmpty, required.allSatisfy({ $0.status == .completed }) else { return }
-        guard player.penaltyTier > 0 else { return }
+        guard PenaltyQuests.isCleared(in: bundle), player.penaltyTier > 0 else { return }
         heldPenaltyTier = player.penaltyTier
         player.penaltyTier = 0
     }
 
     private mutating func restorePenaltyIfNeeded() {
-        guard bundle.mode == .penalty, player.penaltyTier == 0 else { return }
-        let required = bundle.quests.filter { $0.kind != .optional }
-        guard required.contains(where: { $0.status != .completed }) else { return }
+        let rows = PenaltyQuests.rows(in: bundle)
+        guard player.penaltyTier == 0, rows.contains(where: { $0.status != .completed }) else { return }
         player.penaltyTier = min(3, max(1, heldPenaltyTier))
     }
 

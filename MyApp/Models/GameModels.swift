@@ -9,7 +9,6 @@ enum QuestMode: String, Codable, CaseIterable, Equatable {
     case performanceTraining = "performance_training"
     case recovery
     case fullRecovery = "full_recovery"
-    case penalty
 
     /// Text inside `[Daily Quest: {headerLine} has arrived.]`
     var headerLine: String {
@@ -17,12 +16,12 @@ enum QuestMode: String, Codable, CaseIterable, Equatable {
         case .performanceTraining: "Training"
         case .recovery: "Recovery"
         case .fullRecovery: "Full Recovery Day"
-        case .penalty: "Penalty Quest"
         }
     }
 
     /// Old saves can name removed modes (`hybrid`, `interview_prep`, `study_block`, `nutrition_focus`,
-    /// `finance_discipline`, `focus_deepwork`). Read those as Performance Training.
+    /// `finance_discipline`, `focus_deepwork`, `penalty`). Read those as Performance Training.
+    /// An old Penalty day keeps its `kind: .penalty` rows, so clearing them still drops the tier.
     init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
         self = QuestMode(rawValue: raw) ?? .performanceTraining
@@ -38,7 +37,7 @@ enum QuestKind: String, Codable, Equatable {
 enum Difficulty: String, Codable, Equatable {
     case easy, normal, hard, penalty
 
-    /// Stat points granted on completion. Penalty days tax XP, not this weight.
+    /// Stat points granted on completion. Penalty rows tax XP, not this weight.
     var statWeight: Int {
         switch self {
         case .easy: 1
