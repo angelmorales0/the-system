@@ -237,8 +237,7 @@ struct GameSnapshot: Codable, Equatable {
             spendingFullRecovery: signals.spendingFullRecovery,
             isSunday: QuestDay.isSunday(now),
             readinessBand: signals.readinessBand,
-            sleepPerformance: signals.sleepPerformance,
-            calendarBusyMinutes: signals.calendarBusyMinutes
+            sleepPerformance: signals.sleepPerformance
         )
     }
 

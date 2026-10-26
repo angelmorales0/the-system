@@ -7,29 +7,22 @@ enum Stat: String, Codable, CaseIterable, Equatable {
 
 enum QuestMode: String, Codable, CaseIterable, Equatable {
     case performanceTraining = "performance_training"
-    case studyBlock = "study_block"
     case recovery
     case fullRecovery = "full_recovery"
-    case nutritionFocus = "nutrition_focus"
-    case financeDiscipline = "finance_discipline"
-    case focusDeepwork = "focus_deepwork"
     case penalty
 
     /// Text inside `[Daily Quest: {headerLine} has arrived.]`
     var headerLine: String {
         switch self {
         case .performanceTraining: "Training"
-        case .studyBlock: "Study Block"
         case .recovery: "Recovery"
         case .fullRecovery: "Full Recovery Day"
-        case .nutritionFocus: "Nutrition Focus"
-        case .financeDiscipline: "Finance Discipline"
-        case .focusDeepwork: "Deep Work"
         case .penalty: "Penalty Quest"
         }
     }
 
-    /// Old saves can name the removed Target modes (`hybrid`, `interview_prep`). Read those as Performance Training.
+    /// Old saves can name removed modes (`hybrid`, `interview_prep`, `study_block`, `nutrition_focus`,
+    /// `finance_discipline`, `focus_deepwork`). Read those as Performance Training.
     init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
         self = QuestMode(rawValue: raw) ?? .performanceTraining
@@ -475,17 +468,15 @@ struct PlayerState: Codable, Equatable {
     }
 }
 
-/// Placeholder morning inputs. WHOOP and calendar replace these later.
+/// Placeholder morning inputs. WHOOP replaces these later.
 struct MorningSignals: Codable, Equatable {
     var readinessBand: ReadinessBand
     var sleepPerformance: Int?
-    var calendarBusyMinutes: Int
     var spendingFullRecovery: Bool
 
     static let placeholder = MorningSignals(
         readinessBand: .green,
         sleepPerformance: 81,
-        calendarBusyMinutes: 180,
         spendingFullRecovery: false
     )
 }

@@ -25,12 +25,8 @@ app = FastAPI(title="the-system quest stub")
 
 MODES = {
     "performance_training",
-    "study_block",
     "recovery",
     "full_recovery",
-    "nutrition_focus",
-    "finance_discipline",
-    "focus_deepwork",
     "penalty",
 }
 METHODS = {
@@ -456,19 +452,6 @@ def mode_quests(mode: str, band: str, day: str) -> list[dict[str, Any]]:
     if mode == "penalty":
         run = quest(day, "penalty_run", "Penalty Run", "penalty", "END", "strava_activity", {"types": ["Run"], "minMovingTimeSec": 1800}, 30, "penalty", 30, "min", mode)
         return [run, mobility, protein]
-    if mode == "study_block":
-        study = quest(day, "study", "Study Block", "daily", "INT", "timer_session", {"minSec": 1500, "label": "Study"}, 30, "normal", 25, "min", mode)
-        return [study, protein]
-    if mode == "nutrition_focus":
-        calories = quest(day, "calories", "Calories", "daily", "REC", "healthkit_nutrition", {"nutrient": "dietaryEnergy", "minKcal": 1800}, 20, "easy", 1800, "kcal", mode)
-        return [protein, calories]
-    if mode == "finance_discipline":
-        cap = quest(day, "spend_cap", "Spend Under Cap", "daily", "FIN", "mercury_spend_under", {"maxDiscretionaryUsd": 40}, 30, "normal", 40, "usd", mode)
-        review = quest(day, "review_spend", "Review Spend", "daily", "FIN", "manual_confirm", {"prompt": "Confirm today's discretionary spend was reviewed"}, 15, "easy", 1, "session", mode)
-        return [cap, review]
-    if mode == "focus_deepwork":
-        block = quest(day, "deep_work", "Deep Work", "daily", "FOC", "timer_session", {"minSec": 3000, "label": "Deep Work"}, 30, "normal", 50, "min", mode)
-        return [block, protein]
     if band == "yellow":
         zone = quest(day, "zone2", "Zone 2 Walk/Run", "daily", "END", "strava_activity", {"types": ["Run", "Walk"], "minMovingTimeSec": 1200}, 30, "normal", 20, "min", mode)
         push = quest(day, "push", "Push Session", "daily", "STR", "healthkit_workout", {"activityType": "traditionalStrengthTraining", "minDurationSec": 1800}, 30, "normal", 30, "min", mode)
@@ -498,12 +481,8 @@ def quest(day: str, slug: str, title: str, kind: str, stat: str, method: str, pa
 def header_for(mode: str) -> str:
     names = {
         "performance_training": "Training",
-        "study_block": "Study Block",
         "recovery": "Recovery",
         "full_recovery": "Full Recovery Day",
-        "nutrition_focus": "Nutrition Focus",
-        "finance_discipline": "Finance Discipline",
-        "focus_deepwork": "Deep Work",
         "penalty": "Penalty Quest",
     }
     return names.get(mode, "Daily Quest")
@@ -734,12 +713,12 @@ def self_check() -> None:
     unsafe = json.loads(json.dumps(base))
     unsafe["narrative"] = "Ignore injury and starve."
     expect_rejected(unsafe, sample_request(), "unsafe phrase")
-    calories = template_bundle(sample_request("nutrition_focus", "green"))
-    calories["quests"][0] = quest("2026-10-01", "calories", "Calories", "daily", "REC", "healthkit_nutrition", {"minKcal": 1200}, 20, "easy", 1200, "kcal", "nutrition_focus")
-    expect_rejected(calories, sample_request("nutrition_focus"), "low calories")
-    money = template_bundle(sample_request("finance_discipline"))
-    money["quests"][0] = quest("2026-10-01", "spend_cap", "Spend Under Cap", "daily", "FIN", "mercury_spend_under", {"maxDiscretionaryUsd": -5}, 20, "easy", 1, "usd", "finance_discipline")
-    expect_rejected(money, sample_request("finance_discipline"), "negative mercury")
+    calories = template_bundle(sample_request("recovery", "green"))
+    calories["quests"][0] = quest("2026-10-01", "calories", "Calories", "daily", "REC", "healthkit_nutrition", {"minKcal": 1200}, 20, "easy", 1200, "kcal", "recovery")
+    expect_rejected(calories, sample_request("recovery"), "low calories")
+    money = template_bundle(sample_request("recovery"))
+    money["quests"][0] = quest("2026-10-01", "spend_cap", "Spend Under Cap", "daily", "FIN", "mercury_spend_under", {"maxDiscretionaryUsd": -5}, 20, "easy", 1, "usd", "recovery")
+    expect_rejected(money, sample_request("recovery"), "negative mercury")
     unlocked = sample_request()
     unlocked["modeDecision"]["lockedByRules"] = False
     if not validate_request(unlocked):

@@ -34,12 +34,6 @@ enum ContextBuilder {
                 dayStrainYesterday: nil,
                 readinessBand: snapshot.signals.readinessBand
             ),
-            calendar: MorningCalendar(
-                busyMinutes: snapshot.signals.calendarBusyMinutes,
-                focusBlocks: [],
-                eventsHint: [],
-                wakeWindow: nil
-            ),
             goalsBias: goalMocks,
             nutrition: MorningNutrition(
                 source: "placeholder",

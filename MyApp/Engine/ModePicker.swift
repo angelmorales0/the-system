@@ -6,7 +6,6 @@ struct ModePickerInput: Equatable {
     var isSunday: Bool
     var readinessBand: ReadinessBand
     var sleepPerformance: Int?
-    var calendarBusyMinutes: Int
 }
 
 struct ModeDecision: Equatable {
@@ -33,13 +32,6 @@ enum ModePicker {
         if let sleep = input.sleepPerformance, sleep < 60 {
             return lock(.recovery, ["sleep_low"])
         }
-        if input.calendarBusyMinutes > 360 {
-            // The written rule is `focus_deepwork | nutrition_focus`. Yellow takes the lighter nutrition day.
-            if input.readinessBand == .yellow {
-                return lock(.nutritionFocus, ["calendar_busy", "readiness_yellow"])
-            }
-            return lock(.focusDeepwork, ["calendar_busy"])
-        }
         return lock(.performanceTraining, ["default_training"])
     }
 
@@ -57,13 +49,11 @@ enum ModePicker {
         expect(sample(penaltyTier: 1, spendingFullRecovery: true), .fullRecovery, ["full_recovery_spent"])
         expect(sample(spendingFullRecovery: true, readinessBand: .green), .fullRecovery, ["full_recovery_spent"])
         expect(sample(isSunday: true, readinessBand: .red), .recovery, ["sunday_red"])
-        expect(sample(readinessBand: .red, calendarBusyMinutes: 500), .recovery, ["readiness_red"])
+        expect(sample(readinessBand: .red), .recovery, ["readiness_red"])
         expect(sample(sleepPerformance: 59), .recovery, ["sleep_low"])
         expect(sample(sleepPerformance: 60), .performanceTraining, ["default_training"])
         expect(sample(sleepPerformance: nil), .performanceTraining, ["default_training"])
-        expect(sample(readinessBand: .yellow, calendarBusyMinutes: 361), .nutritionFocus, ["calendar_busy", "readiness_yellow"])
-        expect(sample(readinessBand: .green, calendarBusyMinutes: 400), .focusDeepwork, ["calendar_busy"])
-        expect(sample(calendarBusyMinutes: 360), .performanceTraining, ["default_training"])
+        expect(sample(readinessBand: .yellow), .performanceTraining, ["default_training"])
         expect(sample(isSunday: true, readinessBand: .green), .performanceTraining, ["default_training"])
         return errors
     }
@@ -77,16 +67,14 @@ enum ModePicker {
         spendingFullRecovery: Bool = false,
         isSunday: Bool = false,
         readinessBand: ReadinessBand = .green,
-        sleepPerformance: Int? = 80,
-        calendarBusyMinutes: Int = 120
+        sleepPerformance: Int? = 80
     ) -> ModePickerInput {
         ModePickerInput(
             penaltyTier: penaltyTier,
             spendingFullRecovery: spendingFullRecovery,
             isSunday: isSunday,
             readinessBand: readinessBand,
-            sleepPerformance: sleepPerformance,
-            calendarBusyMinutes: calendarBusyMinutes
+            sleepPerformance: sleepPerformance
         )
     }
 }

@@ -103,21 +103,18 @@ enum QuestGenerationRules {
             errors.append("unsafe phrasing should be rejected")
         }
 
-        var cheapCalories = sampleBundle(mode: .nutritionFocus, dayKey: dayKey, now: now)
-        cheapCalories.mode = .nutritionFocus
+        var cheapCalories = sampleBundle(mode: .recovery, dayKey: dayKey, now: now)
         cheapCalories.quests[0].verification.params = ["minKcal": .number(1200)]
         cheapCalories.quests[0].progress = QuestProgress(current: 0, target: 1200, unit: "kcal")
-        let nutrition = sampleContext(mode: .nutritionFocus, band: .green, dayKey: dayKey)
-        if QuestSafety.issues(in: cheapCalories, context: nutrition).isEmpty {
+        let recoveryGreen = sampleContext(mode: .recovery, band: .green, dayKey: dayKey)
+        if QuestSafety.issues(in: cheapCalories, context: recoveryGreen).isEmpty {
             errors.append("calorie target under 1500 should be rejected")
         }
 
-        var debt = sampleBundle(mode: .financeDiscipline, dayKey: dayKey, now: now)
-        debt.mode = .financeDiscipline
+        var debt = sampleBundle(mode: .recovery, dayKey: dayKey, now: now)
         debt.quests[0].verification = VerificationSpec(method: .mercurySpendUnder, params: ["maxDiscretionaryUsd": .number(-5)])
         debt.quests[0].progress = QuestProgress(current: 0, target: 1, unit: "usd")
-        let finance = sampleContext(mode: .financeDiscipline, band: .green, dayKey: dayKey)
-        if QuestSafety.issues(in: debt, context: finance).isEmpty {
+        if QuestSafety.issues(in: debt, context: recoveryGreen).isEmpty {
             errors.append("negative mercury cap should be rejected")
         }
 
@@ -250,7 +247,6 @@ enum QuestGenerationRules {
                 dayStrainYesterday: nil,
                 readinessBand: band
             ),
-            calendar: MorningCalendar(busyMinutes: 0, focusBlocks: [], eventsHint: [], wakeWindow: nil),
             goalsBias: [],
             nutrition: MorningNutrition(source: "placeholder", available: false, proteinG: nil, proteinTargetG: 150, calories: nil, calorieTarget: nil, asOf: nil),
             mercury: MorningMercury(available: false, spendTodayUsd: nil, softDailyCapUsd: nil, discretionary7dUsd: nil, state: "unavailable"),
