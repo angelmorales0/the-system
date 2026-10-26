@@ -95,6 +95,9 @@ struct SystemView: View {
                     .accessibilityLabel(penalty ? "Penalty: \(quest.title)" : quest.title)
                     .accessibilityValue(store.accessibilityValue(for: quest))
                     .accessibilityHint(questRowHint(quest))
+                    if quest.id == ScreenTime.questId {
+                        ScreenTimeSplit(day: store.snapshot.screenTimeToday)
+                    }
                 }
             }
 
@@ -126,6 +129,30 @@ struct SystemView: View {
             text[range].foregroundColor = QuestLight.penalty
         }
         return text
+    }
+}
+
+/// Work and phone under the Screen Time row. A line over its own cap turns red; only the total can fail the quest.
+private struct ScreenTimeSplit: View {
+    let day: ScreenTimeDay
+
+    var body: some View {
+        HStack(spacing: 14) {
+            line("Work", day.workMinutes, ScreenTime.workCapMinutes, over: day.workOver, measured: day.workMeasured)
+            line("Phone", day.phoneMinutes, ScreenTime.phoneCapMinutes, over: day.phoneOver, measured: day.phoneMeasured)
+            Spacer(minLength: 0)
+        }
+        .font(.caption.monospacedDigit())
+        .padding(.leading, 12)
+        .padding(.bottom, 6)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func line(_ name: String, _ minutes: Int, _ cap: Int, over: Bool, measured: Bool) -> some View {
+        Text(measured ? "\(name) \(ScreenTime.clock(minutes))/\(ScreenTime.clock(cap))" : "\(name) --/\(ScreenTime.clock(cap))")
+            .foregroundStyle(over ? QuestLight.penalty : QuestLight.ink.opacity(0.75))
+            .shadow(color: (over ? QuestLight.penalty : QuestLight.cyan).opacity(0.5), radius: 4)
+            .accessibilityLabel(over ? "\(name) over its cap" : name)
     }
 }
 

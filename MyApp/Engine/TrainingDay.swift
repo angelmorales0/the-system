@@ -29,7 +29,7 @@ enum TrainingDay {
     }
 
     static func isExercise(_ quest: Quest) -> Bool {
-        if quest.id == DailyStretch.questId { return true }
+        if quest.id == DailyStretch.questId || quest.id == ScreenTime.questId { return true }
         // One general Stretching row replaces specific stretches.
         let exercise = quest.verification.params["exercise"]?.stringValue ?? quest.title
         guard !StretchTime.isStretchExercise(exercise), !StretchTime.isStretchExercise(quest.title) else { return false }

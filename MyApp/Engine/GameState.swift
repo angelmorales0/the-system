@@ -27,6 +27,8 @@ struct GameSnapshot: Codable, Equatable {
     var recentQuestTitles: [String] = []
     /// Past quest days as they ended, newest first, at most 30. The generator reads them.
     var questHistory: [QuestDayRecord] = []
+    /// Today's phone and work screen minutes. The Screen Time row follows them.
+    var screenTime: ScreenTimeDay?
     /// Local day that already spent its one generation attempt, including a failed one.
     var generationAttemptDayKey: String?
     /// Last accepted generated bundle for that day, before the player’s progress.
@@ -61,6 +63,7 @@ struct GameSnapshot: Codable, Equatable {
         let key = QuestDay.key(for: now)
         // Flying west across midnight moves the local date back. Keep the later day, so it is not judged twice.
         guard key > bundle.dayKey else { return }
+        settleScreenTime()
         recordQuestDay()
         recordMissedDayIfNeeded()
         let previousTitles = bundle.quests.map(\.title)
@@ -104,6 +107,12 @@ struct GameSnapshot: Codable, Equatable {
         questHistory = Array(questHistory.prefix(QuestDayRecord.keepDays))
     }
 
+    /// A Screen Time row that stayed under the total cap all day completes as the day ends, with its XP.
+    mutating func settleScreenTime() {
+        guard let index = bundle.quests.firstIndex(where: { $0.id == ScreenTime.questId && $0.status == .pending }) else { return }
+        complete(at: index)
+    }
+
     /// Incomplete required quests escalate the penalty. A Full Recovery day does not.
     mutating func recordMissedDayIfNeeded() {
         guard missesRequiredSet else { return }
@@ -113,7 +122,9 @@ struct GameSnapshot: Codable, Equatable {
     /// True when ending the day now would raise the penalty tier.
     var missesRequiredSet: Bool {
         let required = bundle.quests.filter { $0.kind != .optional }
-        let missed = (!required.isEmpty && required.contains { $0.status != .completed })
+        // A Screen Time row still under its cap holds until the day ends; only a failed one is a miss.
+        let open = required.filter { $0.status != .completed && !($0.id == ScreenTime.questId && $0.status == .pending) }
+        let missed = !open.isEmpty
             || emergencyFailedDayKey == bundle.dayKey
         let waived = bundle.mode == .fullRecovery || signals.spendingFullRecovery || fullRecoveryDayKey == bundle.dayKey
         return missed && !waived
@@ -384,7 +395,7 @@ struct GameSnapshot: Codable, Equatable {
     func finished(_ bundle: QuestBundle, catalog: FallbackCatalog, now: Date) -> QuestBundle {
         let day = noGymDayKey == bundle.dayKey ? NoGymDay.cardioOnly(bundle, now: now) : bundle
         return PenaltyQuests.ensure(
-            in: DailyStretch.ensure(in: day, now: now),
+            in: DailyStretch.ensure(in: ScreenTime.ensure(in: day, now: now), now: now),
             tier: player.penaltyTier,
             band: trainingBand,
             catalog: catalog,
@@ -440,7 +451,7 @@ extension GameSnapshot {
         case fullRecoveryDayKey, queuedFullRecoveryDayKey, hasDistractorSelection
         case hiddenUnlocks
         case emergencyFailedDayKey, noGymDayKey
-        case questHistory
+        case questHistory, screenTime
     }
 
     init(from decoder: Decoder) throws {
@@ -466,6 +477,7 @@ extension GameSnapshot {
         generationAttemptDayKey = try container.decodeIfPresent(String.self, forKey: .generationAttemptDayKey)
         generatedBundle = try container.decodeIfPresent(QuestBundle.self, forKey: .generatedBundle)
         questHistory = try container.decodeIfPresent([QuestDayRecord].self, forKey: .questHistory) ?? []
+        screenTime = try container.decodeIfPresent(ScreenTimeDay.self, forKey: .screenTime)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -488,6 +500,7 @@ extension GameSnapshot {
         try container.encodeIfPresent(emergencyFailedDayKey, forKey: .emergencyFailedDayKey)
         try container.encodeIfPresent(noGymDayKey, forKey: .noGymDayKey)
         try container.encode(questHistory, forKey: .questHistory)
+        try container.encodeIfPresent(screenTime, forKey: .screenTime)
         try container.encodeIfPresent(generationAttemptDayKey, forKey: .generationAttemptDayKey)
         try container.encodeIfPresent(generatedBundle, forKey: .generatedBundle)
     }

@@ -23,7 +23,7 @@ enum NoGymDay {
             tenK(from: template, index: index, bundle: copy, now: now)
         }
         // After the day's own quests, before Stretching, optional rows, and penalty rows.
-        let insertAt = copy.quests.firstIndex { $0.id == DailyStretch.questId || $0.kind != .daily } ?? copy.quests.count
+        let insertAt = copy.quests.firstIndex { $0.id == ScreenTime.questId || $0.id == DailyStretch.questId || $0.kind != .daily } ?? copy.quests.count
         copy.quests.insert(contentsOf: added, at: insertAt)
         return copy
     }
@@ -92,7 +92,7 @@ extension GameSnapshot {
         let lifts = fresh.bundle.quests.filter { lift in
             lift.kind == .daily && TrainingDay.isStrength(lift) && !quests.contains { $0.id == lift.id }
         }
-        let insertAt = quests.firstIndex { $0.id == DailyStretch.questId || $0.kind != .daily } ?? quests.count
+        let insertAt = quests.firstIndex { $0.id == ScreenTime.questId || $0.id == DailyStretch.questId || $0.kind != .daily } ?? quests.count
         quests.insert(contentsOf: lifts, at: insertAt)
         bundle.quests = quests
         bundle.headerLine = fresh.bundle.headerLine

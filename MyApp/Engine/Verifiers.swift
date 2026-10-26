@@ -62,9 +62,9 @@ enum VerifierRegistry {
         case .mercurySpendUnder:
             return MercurySpendUnderVerifier()
         case .screenTimeLimit:
-            // DeviceActivity does not export minute totals to the app. Penalty shields are separate.
-            // This quest stays a local checkbox until a report extension exists.
-            return IncompleteVerifier(method: method, reason: "Screen Time minutes are not available to the app. The all-app penalty lock still applies while a penalty is open.")
+            // The row moves from Screen Time threshold events (phone) and the backend (work), not from a verifier.
+            // It completes when the day ends under the cap, and fails as soon as the total goes over.
+            return IncompleteVerifier(method: method, reason: "Screen Time updates from your phone and Mac readings. It completes when the day ends under 8.5 hours.")
         }
     }
 }
@@ -152,14 +152,9 @@ struct IncompleteVerifier: Verifier {
 }
 
 extension VerificationMethod {
-    /// Screen Time is still a local checkbox. Connected sources, including Mercury, cannot be checked off by hand.
+    /// No quest is checked off by hand. Connected sources, including Mercury and Screen Time, decide.
     var allowsLocalCheckbox: Bool {
-        switch self {
-        case .screenTimeLimit:
-            return true
-        default:
-            return false
-        }
+        false
     }
 }
 
