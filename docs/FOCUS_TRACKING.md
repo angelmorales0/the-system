@@ -60,12 +60,16 @@ Copy `build/FocusTracker.dmg` to the work Mac, open it, and drag FocusTracker to
 ## Checking it works
 
 - Mac menu: "Today: 1 h 12 min" goes up while you use the Mac, and "Sent 10:45 AM" updates every 15 minutes.
-- iPhone: the Screen Time quest's Work line shows the minutes of all Macs together.
+- iPhone: the Screen Time quest's Work line shows the minutes of all Macs together. A minute used on two Macs counts once.
+- iPhone: "Shared −12m" under the row means phone time that surely happened while a Mac was counting. The total counts it once.
 - Worker: Cloudflare dashboard → KV → `screentime` shows one `day:YYYY-MM-DD` key per day.
 
 ## Limits
 
 - FocusTracker counts only while it runs. If you quit it, that time is not counted.
 - A video with no keyboard or mouse input stops counting after 5 minutes.
+- Mac + Mac overlap is exact to the minute. Phone + Mac overlap is a safe estimate: iOS reports only when phone use passes
+  each 5- or 10-minute step, so the app removes only the overlap it can prove. Some real overlap can stay counted.
+- After a Worker code change, paste the new `screentime-worker/worker.js` into the Worker (**Edit code → Deploy**).
 - If the work network blocks the Worker, minutes wait on the Mac and send when it can reach it.
 - Anyone with the token can read and write your Mac minutes. Keep it private; change the `TOKEN` secret to revoke it.

@@ -2,11 +2,19 @@ import Foundation
 
 /// `GET /v1/integrations/screentime/snapshot?day=` on the screen time Worker →
 /// `{"available": true, "dayKey": "2026-10-26", "workMinutes": 280}`.
-/// Every Mac running FocusTracker adds to `workMinutes`: all Mac time counts as work.
+/// Every Mac running FocusTracker adds to `workMinutes`: all Mac time counts as work. A minute used on two Macs counts once.
+/// `active` is the merged bitmap of the Macs' active minutes: bit i is minute i after 5:00.
 nonisolated struct WorkScreenReading: Decodable, Equatable {
     var available: Bool
     var dayKey: String
     var workMinutes: Int?
+    var active: String?
+
+    /// The Macs' active minutes for `dayKey`, or nil when the Worker has none.
+    func activeMinutes(for dayKey: String) -> Data? {
+        guard available, self.dayKey == dayKey, let active else { return nil }
+        return Data(base64Encoded: active)
+    }
 
     /// A reading for another day is ignored.
     func minutes(for dayKey: String) -> Int? {

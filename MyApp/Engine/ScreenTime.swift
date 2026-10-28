@@ -64,8 +64,12 @@ struct ScreenTimeDay: Codable, Equatable {
     var workMinutes = 0
     var phoneMeasured = false
     var workMeasured = false
+    /// Phone minutes that surely happened while a Mac was also counting (see `ScreenOverlap`). Counted once.
+    /// Optional, so days saved before it existed still load.
+    var overlapMinutes: Int?
 
-    var totalMinutes: Int { phoneMinutes + workMinutes }
+    var sharedMinutes: Int { min(overlapMinutes ?? 0, phoneMinutes, workMinutes) }
+    var totalMinutes: Int { phoneMinutes + workMinutes - sharedMinutes }
     /// Red line, no failure.
     var phoneOver: Bool { phoneMinutes > ScreenTime.phoneCapMinutes }
     var workOver: Bool { workMinutes > ScreenTime.workCapMinutes }
@@ -83,6 +87,8 @@ enum PhoneScreenGroup {
     static let activity = "screenTimeDay"
     /// Event names are this prefix plus the minutes they mark: `phone_95`.
     static let eventPrefix = "phone_"
+    /// Threshold minutes → when the monitor saw it, as seconds since 1970.
+    static let timesKey = "screenTimePhoneTimes"
 
     /// Thresholds the monitor reports: every 5 minutes up to 2 hours, then every 10 minutes past the failure point.
     /// Phone minutes can be the whole day on a day with no Mac work.
@@ -92,6 +98,17 @@ enum PhoneScreenGroup {
     static func minutes(for dayKey: String, defaults: UserDefaults = PenaltyGroup.defaults) -> Int? {
         guard defaults.string(forKey: Self.dayKey) == dayKey else { return nil }
         return defaults.integer(forKey: minutesKey)
+    }
+
+    /// When each phone threshold was reached on `dayKey`. Empty when the monitor has none for that day.
+    static func times(for dayKey: String, defaults: UserDefaults = PenaltyGroup.defaults) -> [Int: Date] {
+        guard defaults.string(forKey: Self.dayKey) == dayKey,
+              let raw = defaults.dictionary(forKey: timesKey) as? [String: Double] else { return [:] }
+        var times: [Int: Date] = [:]
+        for (minutes, seconds) in raw {
+            if let minutes = Int(minutes) { times[minutes] = Date(timeIntervalSince1970: seconds) }
+        }
+        return times
     }
 
     static var hasSelection: Bool {
@@ -116,6 +133,34 @@ enum PhoneScreenGroup {
         PenaltyGroup.defaults.set(data, forKey: selectionKey)
     }
     #endif
+}
+
+/// Finds phone minutes that happened while a Mac was counting, so the same minute is not counted twice.
+/// iOS only says when phone use passed each threshold, not which minutes it used. Between two thresholds
+/// the phone used `p` minutes somewhere in a window of `w` minutes, and the Macs were active `m` of them.
+/// At least `p + m - w` of those minutes were shared, so only that much is removed: never more than is sure.
+enum ScreenOverlap {
+    /// Extra minute on each window for a late threshold report, so the estimate stays on the safe side.
+    static let slackMinutes = 1
+
+    static func minutes(phoneTimes: [Int: Date], macActive: Data, dayStart: Date) -> Int {
+        let slots = macActive.count * 8
+        func active(_ slot: Int) -> Bool { macActive[slot >> 3] & (1 << UInt8(slot & 7)) != 0 }
+        var shared = 0
+        var lastMinutes = 0
+        var windowStart = 0
+        for (minutes, time) in phoneTimes.sorted(by: { $0.key < $1.key }) {
+            let offset = time.timeIntervalSince(dayStart) / 60
+            let windowEnd = min(slots, max(windowStart, Int(offset.rounded(.up))))
+            let phone = minutes - lastMinutes
+            let mac = (windowStart..<windowEnd).filter(active).count
+            let window = windowEnd - windowStart + slackMinutes
+            shared += max(0, min(phone, mac, phone + mac - window))
+            lastMinutes = minutes
+            windowStart = min(windowEnd, max(windowStart, Int(offset.rounded(.down))))
+        }
+        return shared
+    }
 }
 
 /// Starts the daily phone count: one schedule from the quest day's start to the next, with a threshold event every few minutes.
@@ -149,7 +194,7 @@ enum ScreenTimeEnforcement {
 
 extension GameSnapshot {
     /// Takes the newest readings for today and moves the Screen Time row. Past the grace, the row fails and stays failed.
-    mutating func applyScreenTime(phoneMinutes: Int?, workMinutes: Int?) {
+    mutating func applyScreenTime(phoneMinutes: Int?, workMinutes: Int?, overlapMinutes: Int? = nil) {
         var day = screenTime?.dayKey == bundle.dayKey ? screenTime ?? ScreenTimeDay(dayKey: bundle.dayKey) : ScreenTimeDay(dayKey: bundle.dayKey)
         // Readings only grow during a day; a stale or missing one never lowers the count.
         if let phoneMinutes {
@@ -159,6 +204,9 @@ extension GameSnapshot {
         if let workMinutes {
             day.workMinutes = max(day.workMinutes, workMinutes)
             day.workMeasured = true
+        }
+        if let overlapMinutes {
+            day.overlapMinutes = overlapMinutes
         }
         screenTime = day
         guard let index = bundle.quests.firstIndex(where: { $0.id == ScreenTime.questId }) else { return }
@@ -250,6 +298,27 @@ enum ScreenTimeRules {
         if PhoneScreenGroup.thresholds.first != 5 || PhoneScreenGroup.thresholds.last ?? 0 <= ScreenTime.failAfterMinutes
             || Set(PhoneScreenGroup.thresholds).count != PhoneScreenGroup.thresholds.count {
             errors.append("phone thresholds should run from 5 minutes past the total cap, without repeats")
+        }
+        // Phone 10:00–10:10 while a Mac was active 10:00–10:15: the second 5 minutes surely overlap.
+        if let start = QuestDay.start(of: "2026-10-05") {
+            var bits = [UInt8](repeating: 0, count: 188)
+            for slot in 300..<315 { bits[slot >> 3] |= 1 << UInt8(slot & 7) }
+            let at = { (minute: Int) in start.addingTimeInterval(Double(minute) * 60) }
+            let shared = ScreenOverlap.minutes(phoneTimes: [5: at(305), 10: at(310)], macActive: Data(bits), dayStart: start)
+            if shared != 4 {
+                errors.append("5 phone minutes inside a 5-minute Mac window should share 4 minutes after the slack, got \(shared)")
+            }
+            // Phone use while every Mac was idle shares nothing.
+            if ScreenOverlap.minutes(phoneTimes: [5: at(605), 10: at(610)], macActive: Data(bits), dayStart: start) != 0 {
+                errors.append("phone time away from the Mac should not overlap")
+            }
+            var both = ScreenTimeDay(dayKey: "x")
+            both.phoneMinutes = 60
+            both.workMinutes = 60
+            both.overlapMinutes = 50
+            if both.totalMinutes != 70 || both.sharedMinutes != 50 {
+                errors.append("an hour on each with 50 shared minutes should total 70, got \(both.totalMinutes)")
+            }
         }
         if ScreenTime.clock(280) != "4h 40m" || ScreenTime.clock(32) != "32m" || ScreenTime.clock(420) != "7h" {
             errors.append("screen time clock format wrong")

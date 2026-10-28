@@ -123,15 +123,21 @@ enum PhoneScreenMonitor {
     static let eventPrefix = "phone_"
     static let minutesKey = "screenTimePhoneMinutes"
     static let dayKey = "screenTimePhoneDayKey"
+    static let timesKey = "screenTimePhoneTimes"
 
-    /// `phone_95` → 95 minutes of phone use today. Keeps the highest value of the quest day.
+    /// `phone_95` → 95 minutes of phone use today. Keeps the highest value of the quest day,
+    /// and when each threshold was reached, so the app can find phone time that overlaps Mac time.
     nonisolated static func record(_ event: String, now: Date) {
         guard event.hasPrefix(eventPrefix), let minutes = Int(event.dropFirst(eventPrefix.count)) else { return }
         let defaults = UserDefaults(suiteName: PenaltyMonitorGroup.suiteName) ?? .standard
         let today = PenaltyMonitorShields.questDayKey(for: now)
-        let previous = defaults.string(forKey: dayKey) == today ? defaults.integer(forKey: minutesKey) : 0
+        let sameDay = defaults.string(forKey: dayKey) == today
+        let previous = sameDay ? defaults.integer(forKey: minutesKey) : 0
+        var times = sameDay ? defaults.dictionary(forKey: timesKey) as? [String: Double] ?? [:] : [:]
+        times[String(minutes)] = times[String(minutes)] ?? now.timeIntervalSince1970
         defaults.set(today, forKey: dayKey)
         defaults.set(max(previous, minutes), forKey: minutesKey)
+        defaults.set(times, forKey: timesKey)
     }
 }
 

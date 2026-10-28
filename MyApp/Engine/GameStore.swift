@@ -430,6 +430,12 @@ final class GameStore: ObservableObject {
         }
     }
 
+    /// Phone minutes that surely overlap Mac minutes today. Nil without the Macs' minute bitmap or the day's start.
+    private static func screenOverlap(dayKey: String, macScreen: WorkScreenReading?) -> Int? {
+        guard let active = macScreen?.activeMinutes(for: dayKey), let start = QuestDay.start(of: dayKey) else { return nil }
+        return ScreenOverlap.minutes(phoneTimes: PhoneScreenGroup.times(for: dayKey), macActive: active, dayStart: start)
+    }
+
     private func refreshIntegrations(now: Date) {
         guard !refreshingIntegrations else { return }
         refreshingIntegrations = true
@@ -446,7 +452,8 @@ final class GameStore: ObservableObject {
             let rebuilt = next.applyWhoopReadiness(remote.whoop, catalog: self.catalog, now: now)
             next.applyScreenTime(
                 phoneMinutes: PhoneScreenGroup.minutes(for: next.bundle.dayKey),
-                workMinutes: macScreen?.minutes(for: next.bundle.dayKey)
+                workMinutes: macScreen?.minutes(for: next.bundle.dayKey),
+                overlapMinutes: Self.screenOverlap(dayKey: next.bundle.dayKey, macScreen: macScreen)
             )
             next.applyFinance(remote.mercury)
             self.snapshot = next

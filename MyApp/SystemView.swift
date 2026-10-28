@@ -147,6 +147,12 @@ private struct ScreenTimeSplit: View {
         HStack(spacing: 14) {
             line("Work", day.workMinutes, ScreenTime.workCapMinutes, over: day.workOver, measured: day.workMeasured)
             line("Phone", day.phoneMinutes, ScreenTime.phoneCapMinutes, over: day.phoneOver, measured: day.phoneMeasured)
+            // Minutes on the phone while a Mac was counting too. The row's total counts them once.
+            if day.sharedMinutes > 0 {
+                Text("Shared −\(ScreenTime.clock(day.sharedMinutes))")
+                    .foregroundStyle(QuestLight.ink.opacity(0.75))
+                    .accessibilityLabel("\(day.sharedMinutes) shared minutes counted once")
+            }
             Spacer(minLength: 0)
         }
         .font(.caption.monospacedDigit())
