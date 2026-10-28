@@ -34,9 +34,9 @@ enum PenaltyRules {
             errors.append("penalty tier should cap at 3, got \(missed.player.penaltyTier)")
         }
         let tierThree = PenaltyQuests.rows(in: missed.bundle)
-        if tierThree.count != 1 || tierThree.first?.progress.target != 50
-            || tierThree.first?.verification.params["minMovingTimeSec"]?.doubleValue != 3000 {
-            errors.append("tier 3 should add 20 minutes to each penalty row, got \(tierThree.map(\.progress.target))")
+        if tierThree.count != 1 || tierThree.first?.progress.target != 30
+            || tierThree.first?.verification.params["minMovingTimeSec"]?.doubleValue != 1800 {
+            errors.append("tier 3 should keep the same penalty rows as tier 1, got \(tierThree.map(\.progress.target))")
         }
 
         var emergency = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
@@ -150,15 +150,15 @@ enum PenaltyRules {
             errors.append("starter stats must be at or under the cap")
         }
 
-        // The bundled penalty run is a 10K at every tier and band. Only timed rows grow with the tier.
+        // The bundled penalty is one flat 10K at every tier and band.
         let bundled = FallbackCatalog.bundled()
         for band in ReadinessBand.allCases {
             var day = GameSnapshot.fresh(catalog: bundled, now: dayOne, signals: .placeholder)
             day.signals.readinessBand = band
             day.player.penaltyTier = 3
             day.rebuildForTest(catalog: bundled, now: dayOne)
-            let runs = PenaltyQuests.rows(in: day.bundle).filter { $0.stat == .END }
-            if runs.isEmpty || runs.contains(where: { !TrainingDay.isRaceRun($0) || $0.progress.target != 10 || $0.progress.unit != "km"
+            let runs = PenaltyQuests.rows(in: day.bundle)
+            if runs.count != 1 || runs.contains(where: { !TrainingDay.isRaceRun($0) || $0.progress.target != 10 || $0.progress.unit != "km"
                 || $0.verification.params["minDistanceMeters"]?.doubleValue != TrainingDay.tenKMeters }) {
                 errors.append("a \(band.rawValue) tier 3 penalty run should be a 10K, got \(runs.map { "\($0.title) \($0.verification.params)" })")
             }

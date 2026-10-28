@@ -175,17 +175,9 @@ struct FallbackCatalog {
         )
     }
 
-    /// Used only when the JSON catalog has no penalty rows. Exercise only, like a Training day.
+    /// Used only when the JSON catalog has no penalty rows. A flat 10K, like the bundled catalog.
     private static func synthesizedPenalty(band: ReadinessBand) -> [QuestTemplate] {
-        func row(_ id: String, _ title: String, _ stat: Stat, _ method: VerificationMethod, _ params: [String: JSONValue], _ xp: Int, _ minutes: Double) -> QuestTemplate {
-            template(id, title, .penalty, stat, method, params, xp, .penalty, minutes, "min")
-        }
-        let seconds = band == .green ? 1800.0 : 1500.0
-        let xp = band == .green ? 30 : 25
-        return [
-            template("penalty_run", "Penalty 10K", .penalty, .END, .stravaActivity, ["types": .array([.string("Run")]), "minDistanceMeters": .number(TrainingDay.tenKMeters)], xp, .penalty, 10, "km"),
-            row("penalty_lift", "Penalty Lift", .STR, .healthkitWorkout, ["activityType": .string("traditionalStrengthTraining"), "minDurationSec": .number(seconds)], xp, seconds / 60),
-        ]
+        [template("penalty_run", "Penalty 10K", .penalty, .END, .stravaActivity, ["types": .array([.string("Run")]), "minDistanceMeters": .number(TrainingDay.tenKMeters)], 30, .penalty, 10, "km")]
     }
 
     private static func template(

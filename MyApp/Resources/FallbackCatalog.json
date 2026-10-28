@@ -155,57 +155,7 @@
   "penaltyQuests": [
     {
       "readinessBands": [
-        "green"
-      ],
-      "quests": [
-        {
-          "id": "penalty_run",
-          "title": "Penalty 10K",
-          "kind": "penalty",
-          "stat": "END",
-          "verification": {
-            "method": "strava_activity",
-            "params": {
-              "types": [
-                "Run"
-              ],
-              "minDistanceMeters": 10000
-            }
-          },
-          "xp": 30,
-          "difficulty": "penalty",
-          "progress": {
-            "current": 0,
-            "target": 10,
-            "unit": "km"
-          },
-          "reward": null
-        },
-        {
-          "id": "penalty_lift",
-          "title": "Penalty Lift",
-          "kind": "penalty",
-          "stat": "STR",
-          "verification": {
-            "method": "healthkit_workout",
-            "params": {
-              "activityType": "traditionalStrengthTraining",
-              "minDurationSec": 1800
-            }
-          },
-          "xp": 30,
-          "difficulty": "penalty",
-          "progress": {
-            "current": 0,
-            "target": 30,
-            "unit": "min"
-          },
-          "reward": null
-        }
-      ]
-    },
-    {
-      "readinessBands": [
+        "green",
         "yellow",
         "red"
       ],
@@ -224,33 +174,12 @@
               "minDistanceMeters": 10000
             }
           },
-          "xp": 25,
+          "xp": 30,
           "difficulty": "penalty",
           "progress": {
             "current": 0,
             "target": 10,
             "unit": "km"
-          },
-          "reward": null
-        },
-        {
-          "id": "penalty_lift",
-          "title": "Penalty Lift",
-          "kind": "penalty",
-          "stat": "STR",
-          "verification": {
-            "method": "healthkit_workout",
-            "params": {
-              "activityType": "traditionalStrengthTraining",
-              "minDurationSec": 1500
-            }
-          },
-          "xp": 25,
-          "difficulty": "penalty",
-          "progress": {
-            "current": 0,
-            "target": 25,
-            "unit": "min"
           },
           "reward": null
         }
