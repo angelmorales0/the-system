@@ -121,6 +121,6 @@ private struct SetupView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .formStyle(.grouped)
-        .frame(width: 420)
+        .frame(width: 420, height: 320)
     }
 }
