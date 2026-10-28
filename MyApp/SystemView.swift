@@ -61,7 +61,7 @@ struct SystemView: View {
                 ForEach(store.goalQuests) { quest in
                     // Open penalty rows sit in the normal list, in red, with a PENALTY tag.
                     let penalty = quest.kind == .penalty
-                    let ink = penalty ? QuestLight.penalty : QuestLight.ink
+                    let ink = penalty ? QuestLight.penalty : screenTimeInk(quest) ?? QuestLight.ink
                     Button {
                         store.handleQuestTap(id: quest.id)
                     } label: {
@@ -87,7 +87,7 @@ struct SystemView: View {
                         }
                         .font(.subheadline)
                         .foregroundStyle(ink)
-                        .shadow(color: (penalty ? QuestLight.penalty : QuestLight.cyan).opacity(0.6), radius: 5)
+                        .shadow(color: (penalty ? QuestLight.penalty : screenTimeInk(quest) ?? QuestLight.cyan).opacity(0.6), radius: 5)
                         .frame(minHeight: 44)
                         .contentShape(Rectangle())
                     }
@@ -121,6 +121,13 @@ struct SystemView: View {
             QuestSignalRing(dayClock: store.dayClock, missesRequiredSet: store.snapshot.missesRequiredSet)
                 .frame(width: 43, height: 43)
         }
+    }
+
+    /// Screen Time is yellow from the 8.5 h cap through the grace, and red once it fails.
+    private func screenTimeInk(_ quest: Quest) -> Color? {
+        guard quest.id == ScreenTime.questId else { return nil }
+        if quest.status == .failed { return QuestLight.penalty }
+        return store.snapshot.screenTimeToday.atCap ? QuestLight.caution : nil
     }
 
     private var warning: AttributedString {
@@ -174,6 +181,7 @@ enum QuestLight {
     static let cyan = Color(red: 0.20, green: 0.80, blue: 1)
     static let blue = Color(red: 0.08, green: 0.42, blue: 1)
     static let penalty = Color(red: 1, green: 0.12, blue: 0.32)
+    static let caution = Color(red: 1, green: 0.84, blue: 0.2)
 }
 
 struct QuestBackdrop: View {

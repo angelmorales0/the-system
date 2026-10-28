@@ -7,11 +7,15 @@ import FamilyControls
 
 /// The daily screen time quest: phone minutes from Screen Time, work minutes (the Mac) from the backend.
 /// Only the combined total can fail it. A sub-cap over its limit only turns its line red.
-/// Over 510 minutes the quest fails, the day misses its required set, and a penalty opens at the day's end.
+/// At 510 minutes the row turns yellow. Past the 30-minute grace (over 540) the quest fails,
+/// the day misses its required set, and a penalty opens at the day's end.
 enum ScreenTime {
     static let questId = "daily_screen_time"
     static let title = "Screen Time"
     static let totalCapMinutes = 510
+    /// Minutes over the total cap before the quest fails.
+    static let graceMinutes = 30
+    static var failAfterMinutes: Int { totalCapMinutes + graceMinutes }
     static let workCapMinutes = 420
     static let phoneCapMinutes = 90
 
@@ -65,8 +69,10 @@ struct ScreenTimeDay: Codable, Equatable {
     /// Red line, no failure.
     var phoneOver: Bool { phoneMinutes > ScreenTime.phoneCapMinutes }
     var workOver: Bool { workMinutes > ScreenTime.workCapMinutes }
-    /// The only failure: the combined total over 8.5 hours.
-    var overTotal: Bool { totalMinutes > ScreenTime.totalCapMinutes }
+    /// Yellow row: the total reached 8.5 hours but is still inside the grace.
+    var atCap: Bool { totalMinutes >= ScreenTime.totalCapMinutes && !overTotal }
+    /// The only failure: the combined total more than 30 minutes over 8.5 hours.
+    var overTotal: Bool { totalMinutes > ScreenTime.failAfterMinutes }
 }
 
 /// App Group storage shared with the Screen Time monitor. The monitor repeats these strings; change them together.
@@ -78,9 +84,9 @@ enum PhoneScreenGroup {
     /// Event names are this prefix plus the minutes they mark: `phone_95`.
     static let eventPrefix = "phone_"
 
-    /// Thresholds the monitor reports: every 5 minutes up to 2 hours, then every 10 minutes up to the total cap.
-    /// Phone minutes can be the whole 510 on a day with no Mac work.
-    static let thresholds: [Int] = Array(stride(from: 5, through: 120, by: 5)) + Array(stride(from: 130, through: ScreenTime.totalCapMinutes + 10, by: 10))
+    /// Thresholds the monitor reports: every 5 minutes up to 2 hours, then every 10 minutes past the failure point.
+    /// Phone minutes can be the whole day on a day with no Mac work.
+    static let thresholds: [Int] = Array(stride(from: 5, through: 120, by: 5)) + Array(stride(from: 130, through: ScreenTime.failAfterMinutes + 10, by: 10))
 
     /// Phone minutes the monitor wrote for `dayKey`, or nil when it has none for that day.
     static func minutes(for dayKey: String, defaults: UserDefaults = PenaltyGroup.defaults) -> Int? {
@@ -142,7 +148,7 @@ enum ScreenTimeEnforcement {
 }
 
 extension GameSnapshot {
-    /// Takes the newest readings for today and moves the Screen Time row. Over the total cap, the row fails and stays failed.
+    /// Takes the newest readings for today and moves the Screen Time row. Past the grace, the row fails and stays failed.
     mutating func applyScreenTime(phoneMinutes: Int?, workMinutes: Int?) {
         var day = screenTime?.dayKey == bundle.dayKey ? screenTime ?? ScreenTimeDay(dayKey: bundle.dayKey) : ScreenTimeDay(dayKey: bundle.dayKey)
         // Readings only grow during a day; a stale or missing one never lowers the count.
@@ -191,12 +197,12 @@ enum ScreenTimeRules {
             errors.append("Screen Time is measured, so it must not be a checkbox")
         }
 
-        // 8 h of work and 30 min of phone is 510: work is red, the quest still holds.
+        // 8 h of work and 30 min of phone is 510: work is red, the row is yellow, the quest still holds.
         snapshot.applyScreenTime(phoneMinutes: 30, workMinutes: 480)
         let day = snapshot.screenTimeToday
         let quest = snapshot.bundle.quests.first { $0.id == ScreenTime.questId }
-        if !day.workOver || day.phoneOver || day.overTotal || quest?.status != .pending || quest?.progress.current != 510 {
-            errors.append("8 h work + 30 min phone should be red for work but not failed, got \(day) \(String(describing: quest?.status))")
+        if !day.workOver || day.phoneOver || day.overTotal || !day.atCap || quest?.status != .pending || quest?.progress.current != 510 {
+            errors.append("8 h work + 30 min phone should be red for work and yellow, but not failed, got \(day) \(String(describing: quest?.status))")
         }
         // A pending Screen Time row alone does not count as an open required set.
         for index in snapshot.bundle.quests.indices where snapshot.bundle.quests[index].id != ScreenTime.questId {
@@ -214,14 +220,19 @@ enum ScreenTimeRules {
             errors.append("a held Screen Time day should complete with XP and open no penalty")
         }
 
-        // One more minute of phone: 511 fails the quest and opens a penalty at the day's end.
-        snapshot.applyScreenTime(phoneMinutes: 31, workMinutes: nil)
-        if snapshot.bundle.quests.first(where: { $0.id == ScreenTime.questId })?.status != .failed || !snapshot.missesRequiredSet {
-            errors.append("511 minutes should fail the quest and miss the required set")
+        // 540 is the last minute of the grace: still yellow and pending.
+        snapshot.applyScreenTime(phoneMinutes: 60, workMinutes: nil)
+        if !snapshot.screenTimeToday.atCap || snapshot.bundle.quests.first(where: { $0.id == ScreenTime.questId })?.status != .pending {
+            errors.append("540 minutes should be yellow and still pending")
+        }
+        // One more minute of phone: 541 fails the quest and opens a penalty at the day's end.
+        snapshot.applyScreenTime(phoneMinutes: 61, workMinutes: nil)
+        if snapshot.screenTimeToday.atCap || snapshot.bundle.quests.first(where: { $0.id == ScreenTime.questId })?.status != .failed || !snapshot.missesRequiredSet {
+            errors.append("541 minutes should fail the quest and miss the required set")
         }
         // A lower reading later does not undo it.
         snapshot.applyScreenTime(phoneMinutes: 10, workMinutes: 10)
-        if snapshot.screenTimeToday.totalMinutes != 511 || snapshot.bundle.quests.first(where: { $0.id == ScreenTime.questId })?.status != .failed {
+        if snapshot.screenTimeToday.totalMinutes != 541 || snapshot.bundle.quests.first(where: { $0.id == ScreenTime.questId })?.status != .failed {
             errors.append("a lower reading must not lower the count or clear the failure")
         }
         snapshot.refreshIfNeeded(catalog: catalog, now: now.addingTimeInterval(86_400))
@@ -233,10 +244,10 @@ enum ScreenTimeRules {
         var exact = ScreenTimeDay(dayKey: "x")
         exact.workMinutes = 420
         exact.phoneMinutes = 90
-        if exact.workOver || exact.phoneOver || exact.overTotal {
+        if exact.workOver || exact.phoneOver || exact.overTotal || !exact.atCap {
             errors.append("7 h work and 1.5 h phone should be inside every cap")
         }
-        if PhoneScreenGroup.thresholds.first != 5 || PhoneScreenGroup.thresholds.last ?? 0 <= ScreenTime.totalCapMinutes
+        if PhoneScreenGroup.thresholds.first != 5 || PhoneScreenGroup.thresholds.last ?? 0 <= ScreenTime.failAfterMinutes
             || Set(PhoneScreenGroup.thresholds).count != PhoneScreenGroup.thresholds.count {
             errors.append("phone thresholds should run from 5 minutes past the total cap, without repeats")
         }
