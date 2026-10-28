@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Menu-bar only (LSUIElement): no Dock icon. It starts at login so every day is counted.
 @main struct FocusTrackerApp: App {
-    @State private var tracker = FocusTracker()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
         // Start at login the first time it runs. The menu can turn it off.
@@ -15,30 +15,52 @@ import SwiftUI
 
     var body: some Scene {
         MenuBarExtra {
-            FocusMenu(tracker: tracker)
+            FocusMenu(tracker: appDelegate.tracker, showSetup: appDelegate.showSetup)
         } label: {
-            Image(systemName: tracker.paused ? "eye.slash" : "eye")
+            Image(systemName: appDelegate.tracker.paused ? "eye.slash" : "eye")
         }
-        Window("FocusTracker Setup", id: SetupView.windowID) {
-            SetupView(tracker: tracker)
+    }
+}
+
+/// Opening the app again (Finder, Spotlight, Launchpad) shows Setup, because a menu-bar app has no Dock icon
+/// and its eye icon can hide behind the notch. The first launch also shows Setup until it has an address and token.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    let tracker = FocusTracker()
+    private var setupWindow: NSWindow?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        if !tracker.isSetUp { showSetup() }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showSetup()
+        return true
+    }
+
+    func showSetup() {
+        if setupWindow == nil {
+            let window = NSWindow(contentViewController: NSHostingController(rootView: SetupView(tracker: tracker)))
+            window.title = "FocusTracker Setup"
+            window.styleMask = [.titled, .closable]
+            window.isReleasedWhenClosed = false
+            window.center()
+            setupWindow = window
         }
-        .windowResizability(.contentSize)
+        NSApplication.shared.activate()
+        setupWindow?.makeKeyAndOrderFront(nil)
     }
 }
 
 private struct FocusMenu: View {
     let tracker: FocusTracker
-    @Environment(\.openWindow) private var openWindow
+    let showSetup: () -> Void
     @State private var startsAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
         Text("Today: \(Self.duration(tracker.todayMinutes))")
         Text(statusLine)
         Divider()
-        Button("Set Up…") {
-            NSApplication.shared.activate()
-            openWindow(id: SetupView.windowID)
-        }
+        Button("Set Up…", action: showSetup)
         Button("Send Now") { tracker.sendNow() }
             .disabled(!tracker.isSetUp)
         Toggle("Start at Login", isOn: $startsAtLogin)
@@ -66,7 +88,6 @@ private struct FocusMenu: View {
 
 /// The Worker address and token. "Save and Test" checks the network first, then the token.
 private struct SetupView: View {
-    static let windowID = "setup"
     let tracker: FocusTracker
     @State private var endpoint = UserDefaults.standard.string(forKey: TrackerSettings.endpointKey) ?? ""
     @State private var token = UserDefaults.standard.string(forKey: TrackerSettings.tokenKey) ?? ""
