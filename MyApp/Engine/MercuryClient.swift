@@ -8,6 +8,9 @@ nonisolated struct MercurySettings: Codable, Equatable {
 
     /// Monthly budget in USD. Nil shows budget adherence as not configured.
     var monthlyBudgetUsd: Double?
+    /// When the budget was last set. A budget stays locked for `budgetLockMonths` after it, so it cannot be
+    /// raised in a bad month. Nil for a save from before the lock, which can be set once.
+    var budgetSetAt: Date?
     /// Share of income held back for taxes, 0 to 0.6.
     var taxReserveRate: Double = 0
     /// Local hour (America/Los_Angeles) after which today's spend counts as settled.
@@ -29,6 +32,27 @@ nonisolated struct MercurySettings: Codable, Equatable {
     }
 
     var budget: Double? { monthlyBudgetUsd.flatMap { $0 > 0 ? $0 : nil } }
+
+    static let budgetLockMonths = 3
+
+    /// The day the budget can change again, or nil when it was never set.
+    func budgetUnlockDate(calendar: Calendar = .current) -> Date? {
+        guard budget != nil, let setAt = budgetSetAt else { return nil }
+        return calendar.date(byAdding: .month, value: Self.budgetLockMonths, to: setAt)
+    }
+
+    func canSetBudget(now: Date = .now, calendar: Calendar = .current) -> Bool {
+        guard let unlock = budgetUnlockDate(calendar: calendar) else { return true }
+        return now >= unlock
+    }
+
+    /// Sets the budget and starts its 3-month lock. False, and no change, while the lock holds or the amount is not positive.
+    mutating func setBudget(_ amount: Double, now: Date = .now, calendar: Calendar = .current) -> Bool {
+        guard amount > 0, amount.isFinite, canSetBudget(now: now, calendar: calendar) else { return false }
+        monthlyBudgetUsd = amount
+        budgetSetAt = now
+        return true
+    }
     var taxRate: Double { min(max(taxReserveRate, 0), 0.6) }
     var hour: Int { min(max(settleHour, 0), 23) }
     var overrides: [String: String] { categoryMap.filter { Self.categoryTags.contains($0.value) } }
@@ -443,6 +467,29 @@ enum MercuryClient {
 
     static func check() -> [String] {
         var errors: [String] = []
+        let calendar = Calendar(identifier: .gregorian)
+        let day1 = Date(timeIntervalSince1970: 1_780_000_000)
+        var settings = MercurySettings()
+        if !settings.canSetBudget(now: day1) || !settings.setBudget(2_000, now: day1, calendar: calendar) || settings.budget != 2_000 {
+            errors.append("a budget should be settable once")
+        }
+        let later = calendar.date(byAdding: .day, value: 60, to: day1)!
+        let unlocked = calendar.date(byAdding: .month, value: 3, to: day1)!
+        if settings.canSetBudget(now: later, calendar: calendar) || settings.setBudget(5_000, now: later, calendar: calendar) || settings.budget != 2_000 {
+            errors.append("a budget should stay locked for 3 months")
+        }
+        if settings.budgetUnlockDate(calendar: calendar) != unlocked || !settings.canSetBudget(now: unlocked, calendar: calendar)
+            || !settings.setBudget(2_500, now: unlocked, calendar: calendar) || settings.budget != 2_500 {
+            errors.append("the budget should unlock 3 months after it was set")
+        }
+        if settings.setBudget(0, now: unlocked.addingTimeInterval(1), calendar: calendar) || settings.setBudget(-5, now: unlocked.addingTimeInterval(1), calendar: calendar) {
+            errors.append("a budget must be positive")
+        }
+        var old = MercurySettings()
+        old.monthlyBudgetUsd = 1_500
+        if !old.canSetBudget(now: day1) {
+            errors.append("a budget saved before the lock existed can be set once")
+        }
         func txn(_ id: String, _ amount: Double, _ kind: String, _ when: String, _ category: String = "", status: String = "sent", name: String = "") -> JSONValue {
             .object(["id": .string(id), "amount": .number(amount), "kind": .string(kind), "status": .string(status), "postedAt": .string(when),
                      "mercuryCategory": .string(category), "counterpartyName": .string(name)])
