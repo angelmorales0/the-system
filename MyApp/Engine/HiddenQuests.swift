@@ -11,7 +11,7 @@ struct HiddenQuestUnlock: Codable, Equatable, Identifiable {
     var achieved: Double
     var required: Double
     var unit: String
-    /// False only on unlocks saved while the bank had a cap of 3.
+    /// True only on old unlocks. Tokens now come only from RecoveryHolidays.
     var grantedToken: Bool
     /// True after the player closes the reveal window.
     var seen: Bool
@@ -69,7 +69,6 @@ extension GameSnapshot {
         for quest in bundle.quests where quest.status == .completed && HiddenQuests.isEligible(quest) {
             guard let workout = HiddenQuests.completingWorkout(for: quest, in: integrations.workouts),
                   let result = HiddenQuests.beyondTheLimit(quest: quest, workout: workout) else { continue }
-            player.depositRecoveryToken()
             let unlock = HiddenQuestUnlock(
                 hiddenId: HiddenQuests.beyondTheLimitId,
                 title: HiddenQuests.beyondTheLimitTitle,
@@ -79,7 +78,7 @@ extension GameSnapshot {
                 achieved: result.achieved,
                 required: result.required,
                 unit: "km",
-                grantedToken: true,
+                grantedToken: false,
                 seen: false,
                 unlockedAt: now
             )
@@ -173,7 +172,7 @@ enum HiddenQuestRules {
         if tenK?.status != .completed {
             errors.append("a 15.2 km run should complete the 10K Run, got \(String(describing: tenK?.status))")
         }
-        // 15.2 km on a 10 km target unlocks Beyond the Limit and banks one token.
+        // 15.2 km on a 10 km target unlocks Beyond the Limit. It banks no token.
         let bankBefore = fifteen.player.fullRecoveryBank
         let unlock = fifteen.checkHiddenQuests(integrations: fifteenData, now: now)
         // The 10K Run row itself carries the extra distance.
@@ -181,8 +180,8 @@ enum HiddenQuestRules {
         if tenKRow?.progress.bracketLabel != "[15.2/10km]" || tenKRow?.status != .completed {
             errors.append("the 10K Run row should show [15.2/10km] after a 15.2 km run, got \(String(describing: tenKRow?.progress))")
         }
-        if unlock == nil || unlock?.grantedToken != true || fifteen.player.fullRecoveryBank != bankBefore + 1 {
-            errors.append("15.2 km should unlock Beyond the Limit and bank a token, got \(String(describing: unlock)) bank \(fifteen.player.fullRecoveryBank)")
+        if unlock == nil || unlock?.grantedToken != false || fifteen.player.fullRecoveryBank != bankBefore {
+            errors.append("15.2 km should unlock Beyond the Limit without a token, got \(String(describing: unlock)) bank \(fifteen.player.fullRecoveryBank)")
         }
         if unlock?.bracketLabel != "[15.2/10km]" || unlock?.percentOver != 52 {
             errors.append("the unlock should show [15.2/10km] and 52%, got \(String(describing: unlock?.bracketLabel)) \(String(describing: unlock?.percentOver))")
@@ -191,7 +190,7 @@ enum HiddenQuestRules {
             errors.append("a new unlock should wait for the reveal window")
         }
         // Once per day: a second check grants nothing.
-        if fifteen.checkHiddenQuests(integrations: fifteenData, now: now) != nil || fifteen.player.fullRecoveryBank != bankBefore + 1 {
+        if fifteen.checkHiddenQuests(integrations: fifteenData, now: now) != nil || fifteen.player.fullRecoveryBank != bankBefore {
             errors.append("Beyond the Limit must unlock at most once per day")
         }
         fifteen.markHiddenRevealSeen(id: unlock?.id ?? "")
@@ -235,12 +234,6 @@ enum HiddenQuestRules {
             errors.append("only the workout that completed the quest may unlock Beyond the Limit")
         }
 
-        // The bank has no cap: a large bank still gets a token.
-        var large = day([run(km: 15)], bank: 7)
-        let largeUnlock = large.0.checkHiddenQuests(integrations: large.1, now: now)
-        if largeUnlock == nil || largeUnlock?.grantedToken != true || large.0.player.fullRecoveryBank != 8 {
-            errors.append("a bank of 7 should unlock with a token, got \(String(describing: largeUnlock)) bank \(large.0.player.fullRecoveryBank)")
-        }
         return errors
     }
 }

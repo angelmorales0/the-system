@@ -62,6 +62,7 @@ struct GameSnapshot: Codable, Equatable {
         let key = QuestDay.key(for: now)
         // Flying west across midnight moves the local date back. Keep the later day, so it is not judged twice.
         guard key > bundle.dayKey else { return }
+        grantHolidayRecovery(previousKey: bundle.dayKey, key: key)
         settleScreenTime()
         recordQuestDay()
         recordMissedDayIfNeeded()
@@ -410,14 +411,10 @@ struct GameSnapshot: Codable, Equatable {
         let statGain = min(quest.difficulty.statWeight, player.stats.room(for: quest.stat))
         player.addXP(xpGain)
         player.stats[quest.stat] += statGain
-        var grantedToken = false
-        if quest.kind == .optional && quest.reward?.type == .fullRecoveryToken {
-            player.depositRecoveryToken()
-            grantedToken = true
-        }
+        // Full Recovery tokens come only from RecoveryHolidays, never from a quest.
         quest.grantedXP = xpGain
         quest.grantedStatPoints = statGain
-        quest.grantedRecoveryToken = grantedToken
+        quest.grantedRecoveryToken = false
         quest.status = .completed
         quest.progress.current = quest.progress.target
         bundle.quests[index] = quest

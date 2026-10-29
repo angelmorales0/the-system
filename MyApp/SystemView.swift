@@ -277,7 +277,7 @@ private struct HiddenQuestReveal: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 2)
                     sectionTitle("REWARD").padding(.top, 22)
-                    Text(unlock.grantedToken ? "Full Recovery token ×1" : "Full Recovery bank is full. No token added.")
+                    Text(unlock.grantedToken ? "Full Recovery token ×1" : "No token. Full Recovery tokens come only on holidays.")
                         .font(.subheadline)
                         .padding(.top, 10)
                     Button(action: onClose) {

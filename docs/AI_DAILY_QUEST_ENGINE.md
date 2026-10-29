@@ -75,7 +75,7 @@ Mode selection is **deterministic rules first**, LLM fills quests inside the cho
 ### 1.3 Optional Quests
 
 - **Sunday Easy Quest** (default): low difficulty, ~10–20 min, verify soft or manual.
-- On complete → `full_recovery_bank += 1` (no cap).
+- On complete → XP only. Full Recovery tokens come only on holidays: +1 on New Year's Day, March 3, October 21, Thanksgiving (US), and Christmas (no cap).
 - Other optionals (future): double-XP weekend challenge — keep schema ready (`reward: { type, amount }`).
 
 ### 1.4 Penalty Quests
@@ -481,8 +481,8 @@ On quest complete:
 ```
 stat[quest.stat] += difficultyWeight // easy 1, normal 2, hard 3, penalty 2
 xp += quest.xp * (penaltyDay ? 0.9 : 1.0)
-if kind == optional && reward.type == full_recovery_token:
-    bank = min(bank+1, 3)
+// Quests never add a Full Recovery token.
+// On each new quest day: if day is a recovery holiday, bank += 1 (no cap).
 ```
 
 Radar / Status update from `PlayerState`, not from LLM.
@@ -616,11 +616,11 @@ Also: System copy never diagnoses injury; a red trainingBand → easy walk only,
 6. Protein clears night.  
 7. Target day counted; Status INT + FOC bump.
 
-### 7.3 Sunday optional → bank Full Recovery
+### 7.3 Sunday optional (no token; tokens come only on holidays)
 
 1. Mode `performance_training` or `recovery`; GOAL has normal (lighter) required set.  
 2. OPTIONAL: `Evening Walk 15 min` reward `full_recovery_token`.  
-3. User completes optional → Status `FULL RECOVERY x2 → x3`.  
+3. User completes optional → XP only. The bank does not change.  
 4. Later week: Status tap bank → confirm `Spend Full Recovery?` → tomorrow assigned `full_recovery` (or immediate if before quest gen).
 
 ### 7.4 Full Recovery day
