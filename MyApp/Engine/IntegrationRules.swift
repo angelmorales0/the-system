@@ -82,7 +82,7 @@ enum IntegrationRules {
         } else {
             errors.append("disconnected Strava must not complete, got \(disconnected)")
         }
-        if VerificationMethod.stravaActivity.allowsLocalCheckbox || VerificationMethod.macrofactorProtein.allowsLocalCheckbox {
+        if VerificationMethod.stravaActivity.allowsLocalCheckbox || VerificationMethod.hevySets.allowsLocalCheckbox {
             errors.append("connected sources should not use the local checkbox")
         }
 
@@ -179,57 +179,8 @@ enum IntegrationRules {
             errors.append("3 minutes of splits should complete")
         }
 
-        var health = HealthDaySummary.unavailable
-        health.access = .requested
-        health.proteinGrams = 160
-        health.proteinPrefersMacroFactor = true
-        let proteinDay = DayIntegrationSnapshot.make(
-            whoop: .disconnected(dayKey: "2026-10-01", reason: ""),
-            strava: .disconnected(dayKey: "2026-10-01", reason: ""),
-            health: health
-        )
-        let protein = MacroFactorProteinVerifier().evaluate(
-            quest: quest(method: .macrofactorProtein, params: ["minProteinG": .number(150)]),
-            context: context(proteinDay, now: start)
-        )
-        if case .completed(let evidence) = protein {
-            if evidence.source != "macrofactor" {
-                errors.append("protein evidence should prefer MacroFactor")
-            }
-        } else {
-            errors.append("150g protein should complete at 160g, got \(protein)")
-        }
-        var short = health
-        short.proteinGrams = 40
-        short.proteinPrefersMacroFactor = false
-        let partialDay = DayIntegrationSnapshot(whoop: proteinDay.whoop, strava: proteinDay.strava, health: short, workouts: [])
-        if case .progress = MacroFactorProteinVerifier().evaluate(
-            quest: quest(method: .macrofactorProtein, params: ["minProteinG": .number(150)]),
-            context: context(partialDay, now: start)
-        ) {
-        } else {
-            errors.append("40g protein should be progress, not a completion")
-        }
-        let lockedOut = MacroFactorProteinVerifier().evaluate(
-            quest: quest(method: .macrofactorProtein, params: ["minProteinG": .number(150)]),
-            context: context(day, now: start)
-        )
-        if case .incomplete = lockedOut {
-        } else {
-            errors.append("protein without Health access must stay incomplete")
-        }
-
         var duplicate = connected
-        duplicate.health = HealthDaySummary(
-            access: .requested,
-            proteinGrams: 0,
-            proteinPrefersMacroFactor: false,
-            energyKcal: 0,
-            bodyMassKg: nil,
-            bodyMassPrefersMacroFactor: false,
-            sleepAsleepHours: 0,
-            workouts: [sameRun]
-        )
+        duplicate.health = HealthDaySummary(access: .requested, workouts: [sameRun])
         duplicate.workouts = WorkoutDedupe.canonical([run, sameRun])
         let hkRun = HealthKitWorkoutVerifier().evaluate(
             quest: quest(method: .healthkitWorkout, params: ["activityType": .string("running"), "minDurationSec": .number(600)]),
@@ -241,45 +192,6 @@ enum IntegrationRules {
             }
         } else {
             errors.append("HealthKit can see a deduped run, got \(hkRun)")
-        }
-
-        let spendQuest = quest(method: .mercurySpendUnder, params: ["maxDiscretionaryUsd": .number(40)])
-        let unconfigured = MercurySpendUnderVerifier().evaluate(quest: spendQuest, context: context(day, now: start))
-        if case .incomplete(let reason) = unconfigured {
-            if !reason.contains("TODO") {
-                errors.append("disconnected Mercury should explain the TODO")
-            }
-        } else {
-            errors.append("disconnected Mercury must not complete, got \(unconfigured)")
-        }
-        if VerificationMethod.mercurySpendUnder.allowsLocalCheckbox {
-            errors.append("mercury should not use the local checkbox")
-        }
-        var openDay = day
-        openDay.mercury = reading(spent: 0, settled: false, pace: "NORMAL", ytd: 0)
-        let early = MercurySpendUnderVerifier().evaluate(quest: spendQuest, context: context(openDay, now: start))
-        if case .completed = early {
-            errors.append("zero spend before the day settles must not complete")
-        } else if case .progress = early {
-        } else {
-            errors.append("an open day under the cap should be progress, got \(early)")
-        }
-        var settledDay = day
-        settledDay.mercury = reading(spent: 10, settled: true, pace: "NORMAL", ytd: 0)
-        let clearedSpend = MercurySpendUnderVerifier().evaluate(quest: spendQuest, context: context(settledDay, now: start))
-        if case .completed(let evidence) = clearedSpend {
-            if evidence.source != "mercury" || evidence.externalId != "mercury:spend:2026-10-01" {
-                errors.append("mercury completion should cite the day, got \(evidence.externalId)")
-            }
-        } else {
-            errors.append("settled spend under the cap should complete, got \(clearedSpend)")
-        }
-        var overDay = day
-        overDay.mercury = reading(spent: 50, settled: true, pace: "CRITICAL", ytd: 0)
-        let over = MercurySpendUnderVerifier().evaluate(quest: spendQuest, context: context(overDay, now: start))
-        if case .failed = over {
-        } else {
-            errors.append("spend over the cap should fail, got \(over)")
         }
 
         var rich = GameSnapshot(version: 1, player: .starter, signals: .placeholder, bundle: .empty)

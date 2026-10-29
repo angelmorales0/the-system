@@ -52,7 +52,7 @@ Strava scope: `activity:read_all`. Redirect: `http://127.0.0.1:8787/v1/oauth/str
 
 `POST /v1/oauth/whoop/refresh` and `POST /v1/oauth/strava/refresh` exchange the stored refresh token. WHOOP rotates that token; the new one replaces the file. A failed refresh does not invent workouts.
 
-HealthKit is on-device only. In Apple Health, allow workouts, protein, dietary energy, weight, and sleep. MacroFactor has no API: turn on More → Integrations → Apple Health so its protein and weight samples are preferred when they are present. The HealthKit entitlement is in `MyApp.entitlements` for iOS; turn on HealthKit for the App ID in the developer portal before running on a device.
+HealthKit is on-device only. In Apple Health, allow workouts, weight, and steps. MacroFactor has no API: turn on More → Integrations → Apple Health so its weight samples are preferred when they are present. The HealthKit entitlement is in `MyApp.entitlements` for iOS; turn on HealthKit for the App ID in the developer portal before running on a device.
 
 ## Hevy
 

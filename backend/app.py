@@ -30,13 +30,9 @@ MODES = {
 }
 METHODS = {
     "whoop_strain",
-    "whoop_recovery",
     "strava_activity",
     "hevy_sets",
     "healthkit_workout",
-    "healthkit_nutrition",
-    "macrofactor_protein",
-    "mercury_spend_under",
     "screen_time_limit",
     "manual_confirm",
     "timer_session",
@@ -597,24 +593,10 @@ def validate_quest(quest: dict[str, Any], band: str, seen: set[str]) -> list[str
 
 def bound_problems(title: str, method: str | None, params: dict[str, Any], difficulty: Any, stat: Any, band: str, target: Any, unit: Any) -> list[str]:
     problems: list[str] = []
-    protein = method == "macrofactor_protein" or "protein" in title.lower() or "minProteinG" in params
-    grams: list[float] = []
-    if "minProteinG" in params:
-        grams.append(float(params["minProteinG"]))
-    if protein and unit == "g" and isinstance(target, (int, float)):
-        grams.append(float(target))
-    if protein and (not grams or any(value < 80 or value > 250 for value in grams)):
-        problems.append("protein outside 80-250g")
     if band == "yellow" and is_run(title, params):
         seconds = duration_sec(params, target, unit)
         if seconds is not None and seconds > 90 * 60:
             problems.append("run longer than 90 minutes on yellow readiness")
-    if method == "mercury_spend_under":
-        cap = params.get("maxDiscretionaryUsd")
-        if cap is None and unit == "usd":
-            cap = target
-        if not isinstance(cap, (int, float)) or cap < 0 or cap > 2000:
-            problems.append("mercury cap out of range")
     for key in ("minKcal", "calorieTarget", "calories", "maxKcal", "calorieFloor"):
         value = params.get(key)
         if isinstance(value, (int, float)) and value < 1500:
@@ -1018,7 +1000,7 @@ def self_check() -> None:
     expect_rejected(flipped, sample_request(), "mode override")
     low = json.loads(json.dumps(base))
     low["quests"][0] = quest("2026-10-01", "protein", "Protein", "daily", "END", "macrofactor_protein", {"minProteinG": 40}, 20, "easy", 40, "g", "performance_training")
-    expect_rejected(low, sample_request(), "low protein")
+    expect_rejected(low, sample_request(), "removed protein method")
     yellow = sample_request("performance_training", "yellow")
     long_run = template_bundle(yellow)
     long_run["quests"][0] = quest("2026-10-01", "long_run", "Long Run", "daily", "END", "strava_activity", {"types": ["Run"], "minMovingTimeSec": 6000}, 20, "normal", 100, "min", "performance_training")
@@ -1052,7 +1034,7 @@ def self_check() -> None:
     expect_rejected(calories, sample_request(), "low calories")
     money = template_bundle(sample_request())
     money["quests"][0] = quest("2026-10-01", "spend_cap", "Spend Under Cap", "daily", "FIN", "mercury_spend_under", {"maxDiscretionaryUsd": -5}, 20, "easy", 1, "usd", "performance_training")
-    expect_rejected(money, sample_request(), "negative mercury")
+    expect_rejected(money, sample_request(), "removed spending method")
     short_sleep = sample_request("performance_training", "green")
     short_sleep["modeDecision"]["trainingBand"] = "yellow"
     if template_bundle(short_sleep)["quests"][1]["title"] != "Push Session":

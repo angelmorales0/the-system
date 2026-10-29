@@ -88,9 +88,9 @@ enum TrainingDay {
             quest("run_10k", "10K Run", .stravaActivity, tenK),
             quest("bench_press", "Bench Press", .hevySets, ["exercise": .string("Bench Press"), "sets": .number(4)]),
             quest("splits", "Splits", .hevySets, ["exercise": .string("Splits"), "minDurationSec": .number(180)]),
-            quest("protein", "Protein", .macrofactorProtein),
+            quest("confirm", "Confirm", .manualConfirm),
             quest("mobility", "Mobility", .timerSession),
-            quest("light_spend", "Light Spend Cap", .mercurySpendUnder, kind: .optional),
+            quest("screen", "Screen Time", .screenTimeLimit, kind: .optional),
             quest("run_5k", "5K Run", .stravaActivity, ["types": .array([.string("Run")]), "minDistanceMeters": .number(fiveKMeters)]),
             quest("run_8k", "8K Run", .stravaActivity, ["types": .array([.string("Run")]), "minDistanceMeters": .number(8_000)]),
             quest("intervals", "Run Intervals", .stravaActivity, ["types": .array([.string("Run")]), "minMovingTimeSec": .number(1_200)]),
@@ -112,7 +112,7 @@ enum TrainingDay {
             errors.append("a Training day should read [Daily Quest: Training has arrived.]")
         }
         var nothing = bundle
-        nothing.quests = [quest("protein", "Protein", .macrofactorProtein)]
+        nothing.quests = [quest("confirm", "Confirm", .manualConfirm)]
         if exerciseOnly(nothing) != nil {
             errors.append("a Training bundle with no exercise should fall back to the catalog")
         }

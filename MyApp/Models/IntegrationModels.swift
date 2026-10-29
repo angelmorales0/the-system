@@ -27,24 +27,9 @@ enum HealthAccess: String, Codable, Equatable {
 
 struct HealthDaySummary: Equatable {
     var access: HealthAccess
-    var proteinGrams: Double
-    var proteinPrefersMacroFactor: Bool
-    var energyKcal: Double
-    var bodyMassKg: Double?
-    var bodyMassPrefersMacroFactor: Bool
-    var sleepAsleepHours: Double
     var workouts: [WorkoutEvent]
 
-    static let unavailable = HealthDaySummary(
-        access: .unavailable,
-        proteinGrams: 0,
-        proteinPrefersMacroFactor: false,
-        energyKcal: 0,
-        bodyMassKg: nil,
-        bodyMassPrefersMacroFactor: false,
-        sleepAsleepHours: 0,
-        workouts: []
-    )
+    static let unavailable = HealthDaySummary(access: .unavailable, workouts: [])
 }
 
 nonisolated struct WhoopDayReading: Codable, Equatable {

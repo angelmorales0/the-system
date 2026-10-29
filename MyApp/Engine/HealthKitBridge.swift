@@ -5,7 +5,7 @@ extension Notification.Name {
     static let stepsDidChange = Notification.Name("com.angelmorales.thesystem.stepsDidChange")
 }
 
-/// Reads workouts, nutrition, weight, and sleep. MacroFactor is preferred when its samples are present.
+/// Reads workouts, weight, and steps. For weight, MacroFactor is preferred when its samples are present.
 /// There is no MacroFactor API. The app only sees what MacroFactor wrote into Apple Health.
 enum HealthKitBridge {
     static func summary(on day: Date) async -> HealthDaySummary {
@@ -64,23 +64,7 @@ final class HealthKitStore {
         }
         let interval = QuestDay.interval(for: day)
         let predicate = HKQuery.predicateForSamples(withStart: interval.start, end: interval.end, options: .strictStartDate)
-        async let protein = quantitySum(.dietaryProtein, unit: .gram(), predicate: predicate)
-        async let energy = quantitySum(.dietaryEnergyConsumed, unit: .kilocalorie(), predicate: predicate)
-        async let mass = latestQuantity(.bodyMass, unit: .gram(), predicate: predicate)
-        async let sleep = sleepHours(predicate: predicate)
-        async let workouts = workoutEvents(predicate: predicate)
-        let proteinResult = await protein
-        let massResult = await mass
-        return HealthDaySummary(
-            access: .requested,
-            proteinGrams: proteinResult.total,
-            proteinPrefersMacroFactor: proteinResult.prefersMacroFactor,
-            energyKcal: await energy.total,
-            bodyMassKg: massResult.total.map { $0 / 1000 },
-            bodyMassPrefersMacroFactor: massResult.prefersMacroFactor,
-            sleepAsleepHours: await sleep,
-            workouts: await workouts
-        )
+        return HealthDaySummary(access: .requested, workouts: await workoutEvents(predicate: predicate))
     }
 
     func startObservers() {
@@ -132,14 +116,6 @@ final class HealthKitStore {
         }
     }
 
-    private func quantitySum(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit, predicate: NSPredicate) async -> MacroFactorTotal {
-        guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else { return .empty }
-        let samples: [HKQuantitySample] = await samples(type: type, predicate: predicate)
-        let chosen = MacroFactorSamples.prefer(samples)
-        let total = chosen.reduce(0) { $0 + $1.quantity.doubleValue(for: unit) }
-        return MacroFactorTotal(total: total, prefersMacroFactor: MacroFactorSamples.containsMacroFactor(samples))
-    }
-
     func latestBodyMass(since start: Date, until end: Date) async -> BodyMassReading? {
         guard HKHealthStore.isHealthDataAvailable(), let type = HKQuantityType.quantityType(forIdentifier: .bodyMass) else { return nil }
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
@@ -150,33 +126,6 @@ final class HealthKitStore {
             date: latest.startDate,
             source: MacroFactorSamples.isMacroFactor(latest) ? "MacroFactor" : "Apple Health"
         )
-    }
-
-    private func latestQuantity(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit, predicate: NSPredicate) async -> MacroFactorOptional {
-        guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else { return .empty }
-        let samples: [HKQuantitySample] = await samples(type: type, predicate: predicate)
-        let chosen = MacroFactorSamples.prefer(samples)
-        guard let latest = chosen.max(by: { $0.startDate < $1.startDate }) else { return .empty }
-        return MacroFactorOptional(
-            total: latest.quantity.doubleValue(for: unit),
-            prefersMacroFactor: MacroFactorSamples.isMacroFactor(latest)
-        )
-    }
-
-    private func sleepHours(predicate: NSPredicate) async -> Double {
-        guard let type = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else { return 0 }
-        let samples: [HKCategorySample] = await samples(type: type, predicate: predicate)
-        let asleep: Set<Int> = [
-            HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
-            HKCategoryValueSleepAnalysis.asleepCore.rawValue,
-            HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
-            HKCategoryValueSleepAnalysis.asleepREM.rawValue,
-        ]
-        let seconds = samples.reduce(0.0) { total, sample in
-            guard asleep.contains(sample.value) else { return total }
-            return total + sample.endDate.timeIntervalSince(sample.startDate)
-        }
-        return seconds / 3600
     }
 
     private func workoutEvents(predicate: NSPredicate) async -> [WorkoutEvent] {
@@ -212,13 +161,8 @@ final class HealthKitStore {
 
     private static var sampleTypes: [HKSampleType] {
         var types: [HKSampleType] = []
-        for identifier in [HKQuantityTypeIdentifier.dietaryProtein, .dietaryEnergyConsumed, .bodyMass] {
-            if let type = HKQuantityType.quantityType(forIdentifier: identifier) {
-                types.append(type)
-            }
-        }
-        if let sleep = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) {
-            types.append(sleep)
+        if let mass = HKQuantityType.quantityType(forIdentifier: .bodyMass) {
+            types.append(mass)
         }
         types.append(HKWorkoutType.workoutType())
         return types
@@ -238,18 +182,6 @@ final class HealthKitStore {
     }
 }
 
-private struct MacroFactorTotal {
-    var total: Double
-    var prefersMacroFactor: Bool
-    static let empty = MacroFactorTotal(total: 0, prefersMacroFactor: false)
-}
-
-private struct MacroFactorOptional {
-    var total: Double?
-    var prefersMacroFactor: Bool
-    static let empty = MacroFactorOptional(total: nil, prefersMacroFactor: false)
-}
-
 /// MacroFactor writes Apple Health under a source whose name or bundle id contains "macrofactor".
 nonisolated enum MacroFactorSamples {
     static func isMacroFactor(_ sample: HKQuantitySample) -> Bool {
@@ -257,10 +189,6 @@ nonisolated enum MacroFactorSamples {
         let name = source.name.lowercased()
         let bundle = source.bundleIdentifier.lowercased()
         return name.contains("macrofactor") || bundle.contains("macrofactor")
-    }
-
-    static func containsMacroFactor(_ samples: [HKQuantitySample]) -> Bool {
-        samples.contains(where: isMacroFactor)
     }
 
     static func prefer(_ samples: [HKQuantitySample]) -> [HKQuantitySample] {

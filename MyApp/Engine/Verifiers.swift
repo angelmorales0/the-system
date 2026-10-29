@@ -47,20 +47,12 @@ enum VerifierRegistry {
             return TimerSessionVerifier()
         case .whoopStrain:
             return WhoopStrainVerifier()
-        case .whoopRecovery:
-            return WhoopRecoveryVerifier()
         case .stravaActivity:
             return StravaActivityVerifier()
         case .hevySets:
             return HevySetsVerifier()
         case .healthkitWorkout:
             return HealthKitWorkoutVerifier()
-        case .healthkitNutrition:
-            return HealthKitNutritionVerifier()
-        case .macrofactorProtein:
-            return MacroFactorProteinVerifier()
-        case .mercurySpendUnder:
-            return MercurySpendUnderVerifier()
         case .screenTimeLimit:
             // The row moves from Screen Time threshold events (phone) and the backend (work), not from a verifier.
             // It completes when the day ends under the cap, and fails as soon as the total goes over.
@@ -287,6 +279,12 @@ enum VerificationFixtures {
         if case .rejected = state.apply(.completed(evidence: forged), questId: state.bundle.quests[1].id, now: assigned) {
         } else {
             errors.append("llm evidence should be rejected")
+        }
+
+        // An old save can hold a removed method. It loads as a manual confirm.
+        let removed = Data(#"{"method":"macrofactor_protein","params":{"minProteinG":150}}"#.utf8)
+        if (try? JSONDecoder().decode(VerificationSpec.self, from: removed))?.method != .manualConfirm {
+            errors.append("a removed verification method should load as a manual confirm")
         }
 
         return errors

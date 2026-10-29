@@ -103,14 +103,6 @@ enum QuestGenerationRules {
             errors.append("a generated penalty quest should be rejected")
         }
 
-        var lowProtein = sampleBundle(mode: .performanceTraining, dayKey: dayKey, now: now)
-        lowProtein.quests[0].title = "Protein"
-        lowProtein.quests[0].verification = VerificationSpec(method: .macrofactorProtein, params: ["minProteinG": .number(40)])
-        lowProtein.quests[0].progress = QuestProgress(current: 0, target: 40, unit: "g")
-        if QuestSafety.issues(in: lowProtein, context: training).isEmpty {
-            errors.append("protein below 80g should be rejected")
-        }
-
         var starved = sampleBundle(mode: .performanceTraining, dayKey: dayKey, now: now)
         starved.narrative = "Starve through an all-nighter."
         if !QuestSafety.issues(in: starved, context: training).contains(where: { $0.contains("unsafe") }) {
@@ -123,13 +115,6 @@ enum QuestGenerationRules {
         let trainingGreen = sampleContext(mode: .performanceTraining, band: .green, dayKey: dayKey)
         if QuestSafety.issues(in: cheapCalories, context: trainingGreen).isEmpty {
             errors.append("calorie target under 1500 should be rejected")
-        }
-
-        var debt = sampleBundle(mode: .performanceTraining, dayKey: dayKey, now: now)
-        debt.quests[0].verification = VerificationSpec(method: .mercurySpendUnder, params: ["maxDiscretionaryUsd": .number(-5)])
-        debt.quests[0].progress = QuestProgress(current: 0, target: 1, unit: "usd")
-        if QuestSafety.issues(in: debt, context: trainingGreen).isEmpty {
-            errors.append("negative mercury cap should be rejected")
         }
 
         if let decoded = decodeModelJSON() {

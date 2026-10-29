@@ -28,43 +28,6 @@ struct HealthKitWorkoutVerifier: Verifier {
     }
 }
 
-struct HealthKitNutritionVerifier: Verifier {
-    var method: VerificationMethod { .healthkitNutrition }
-
-    func evaluate(quest: Quest, context: VerificationContext) -> VerificationResult {
-        guard quest.verification.method == method else { return .unchanged }
-        guard context.integrations.health.access == .requested else {
-            return .incomplete(reason: "TODO: Allow Health access for nutrition.")
-        }
-        let nutrient = quest.verification.params["nutrient"]?.stringValue?.lowercased() ?? ""
-        if nutrient.contains("protein") || quest.progress.unit == "g" {
-            return proteinResult(quest: quest, context: context, minimum: quest.verification.params["minProteinG"]?.doubleValue ?? quest.progress.target)
-        }
-        let minimum = quest.verification.params["minKcal"]?.doubleValue ?? quest.progress.target
-        return scalarResult(
-            current: context.integrations.health.energyKcal,
-            minimum: minimum,
-            quest: quest,
-            context: context,
-            source: "healthkit",
-            externalId: "hk:energy:\(context.dayKey)"
-        )
-    }
-}
-
-struct MacroFactorProteinVerifier: Verifier {
-    var method: VerificationMethod { .macrofactorProtein }
-
-    func evaluate(quest: Quest, context: VerificationContext) -> VerificationResult {
-        guard quest.verification.method == method else { return .unchanged }
-        guard context.integrations.health.access == .requested else {
-            return .incomplete(reason: "TODO: Allow Health access so MacroFactor protein can be read.")
-        }
-        let minimum = quest.verification.params["minProteinG"]?.doubleValue ?? quest.progress.target
-        return proteinResult(quest: quest, context: context, minimum: minimum)
-    }
-}
-
 struct WhoopStrainVerifier: Verifier {
     var method: VerificationMethod { .whoopStrain }
 
@@ -82,27 +45,6 @@ struct WhoopStrainVerifier: Verifier {
             context: context,
             source: "whoop",
             externalId: "whoop:strain:\(context.dayKey)"
-        )
-    }
-}
-
-struct WhoopRecoveryVerifier: Verifier {
-    var method: VerificationMethod { .whoopRecovery }
-
-    func evaluate(quest: Quest, context: VerificationContext) -> VerificationResult {
-        guard quest.verification.method == method else { return .unchanged }
-        let reading = context.integrations.whoop
-        guard reading.configured, reading.available, let score = reading.recoveryScore else {
-            return .incomplete(reason: reading.reason.isEmpty ? "TODO: WHOOP recovery is not connected." : reading.reason)
-        }
-        let minimum = quest.verification.params["minRecoveryScore"]?.doubleValue ?? quest.progress.target
-        return scalarResult(
-            current: Double(score),
-            minimum: minimum,
-            quest: quest,
-            context: context,
-            source: "whoop",
-            externalId: "whoop:recovery:\(context.dayKey)"
         )
     }
 }
@@ -274,18 +216,6 @@ enum StretchTime {
     }
 }
 
-private func proteinResult(quest: Quest, context: VerificationContext, minimum: Double) -> VerificationResult {
-    let source = context.integrations.health.proteinPrefersMacroFactor ? "macrofactor" : "healthkit"
-    return scalarResult(
-        current: context.integrations.health.proteinGrams,
-        minimum: minimum,
-        quest: quest,
-        context: context,
-        source: source,
-        externalId: "hk:protein:\(context.dayKey)"
-    )
-}
-
 /// The longest matching workout that no other quest used today, so two 10K rows need two runs.
 private func workoutResult(_ matches: [CanonicalWorkout], quest: Quest, context: VerificationContext, source: String) -> VerificationResult {
     guard !matches.isEmpty else { return .unchanged }
@@ -325,39 +255,6 @@ private func scalarResult(
         return .progress(current: min(current, quest.progress.target), evidence: evidence)
     }
     return .completed(evidence: evidence)
-}
-
-struct MercurySpendUnderVerifier: Verifier {
-    static let source = "mercury"
-    var method: VerificationMethod { .mercurySpendUnder }
-
-    func evaluate(quest: Quest, context: VerificationContext) -> VerificationResult {
-        guard quest.verification.method == method else { return .unchanged }
-        let reading = context.integrations.mercury
-        guard reading.configured, reading.available, reading.synced else {
-            let reason = reading.reason.isEmpty ? "TODO: Mercury is not connected." : reading.reason
-            return .incomplete(reason: reason)
-        }
-        let cap = quest.verification.params["maxDiscretionaryUsd"]?.doubleValue ?? reading.capUsd
-        let spent = reading.discretionarySpendUsd
-        if spent > cap + 0.001 {
-            return .failed(reason: "Discretionary spend is over the cap.")
-        }
-        let evidence = Evidence.make(
-            source: Self.source,
-            externalId: "mercury:spend:\(context.dayKey)",
-            payload: "mercury|spend|\(context.dayKey)|\(spent)|\(cap)",
-            timestamp: context.now
-        )
-        if context.claimedKeys.contains(evidence.reuseKey) {
-            return .failed(reason: "That evidence was already used for another quest today.")
-        }
-        // $0 in the morning is not a clear. The backend marks the day settled at the settle hour, or once the day is past.
-        guard reading.settled else {
-            return .progress(current: min(max(spent, 0), quest.progress.target), evidence: evidence)
-        }
-        return .completed(evidence: evidence)
-    }
 }
 
 /// Distance targets for runs and walks. Param: `minDistanceMeters`; the quest shows km (`[6.2/10km]`).

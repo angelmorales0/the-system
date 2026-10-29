@@ -2,11 +2,8 @@ import Foundation
 
 /// On-device check for a generated bundle. The fallback catalog does not pass through here.
 enum QuestSafety {
-    static let proteinFloor = 80.0
-    static let proteinCeiling = 250.0
     static let yellowRunLimitSec = 90.0 * 60
     static let calorieFloor = 1500.0
-    static let mercuryCapCeiling = 2000.0
     /// Six split lifts, two 10Ks, and one optional quest.
     static let maxQuests = 9
 
@@ -108,28 +105,8 @@ enum QuestSafety {
 
     private static func bounds(for quest: Quest, band: ReadinessBand) -> [String] {
         var issues: [String] = []
-        let grams = proteinGrams(in: quest)
-        if isProtein(quest) {
-            if grams.isEmpty {
-                issues.append("protein quest missing grams")
-            }
-            if grams.contains(where: { $0 < proteinFloor || $0 > proteinCeiling }) {
-                issues.append("protein outside \(Int(proteinFloor))–\(Int(proteinCeiling))g")
-            }
-        }
         if band == .yellow, isRun(quest), let seconds = durationSec(quest), seconds > yellowRunLimitSec {
             issues.append("run longer than 90 minutes on yellow readiness")
-        }
-        if quest.verification.method == .mercurySpendUnder {
-            let cap = quest.verification.params["maxDiscretionaryUsd"]?.doubleValue
-                ?? (quest.progress.unit == "usd" ? quest.progress.target : nil)
-            if let cap {
-                if cap < 0 || cap > mercuryCapCeiling {
-                    issues.append("mercury cap out of range")
-                }
-            } else {
-                issues.append("mercury cap missing")
-            }
         }
         for key in ["minKcal", "calorieTarget", "calories", "maxKcal", "calorieFloor"] {
             if let value = quest.verification.params[key]?.doubleValue, value < calorieFloor {
@@ -140,25 +117,6 @@ enum QuestSafety {
             issues.append("calorie suggestion below the floor")
         }
         return issues
-    }
-
-    private static func isProtein(_ quest: Quest) -> Bool {
-        if quest.verification.method == .macrofactorProtein { return true }
-        if quest.verification.params["minProteinG"] != nil { return true }
-        if quest.title.lowercased().contains("protein") { return true }
-        let nutrient = quest.verification.params["nutrient"]?.stringValue?.lowercased() ?? ""
-        return nutrient.contains("protein")
-    }
-
-    private static func proteinGrams(in quest: Quest) -> [Double] {
-        var grams: [Double] = []
-        if let value = quest.verification.params["minProteinG"]?.doubleValue {
-            grams.append(value)
-        }
-        if isProtein(quest), quest.progress.unit == "g" {
-            grams.append(quest.progress.target)
-        }
-        return grams
     }
 
     private static func isRun(_ quest: Quest) -> Bool {

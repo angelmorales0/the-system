@@ -56,16 +56,19 @@ enum ReadinessBand: String, Codable, CaseIterable, Equatable {
 
 enum VerificationMethod: String, Codable, CaseIterable, Equatable {
     case whoopStrain = "whoop_strain"
-    case whoopRecovery = "whoop_recovery"
     case stravaActivity = "strava_activity"
     case hevySets = "hevy_sets"
     case healthkitWorkout = "healthkit_workout"
-    case healthkitNutrition = "healthkit_nutrition"
-    case macrofactorProtein = "macrofactor_protein"
-    case mercurySpendUnder = "mercury_spend_under"
     case screenTimeLimit = "screen_time_limit"
     case manualConfirm = "manual_confirm"
     case timerSession = "timer_session"
+
+    /// Old saves can name removed methods (`whoop_recovery`, `healthkit_nutrition`, `macrofactor_protein`,
+    /// `mercury_spend_under`). Read those as a manual confirm, so the save still loads.
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = VerificationMethod(rawValue: raw) ?? .manualConfirm
+    }
 }
 
 enum QuestRewardType: String, Codable, Equatable {
