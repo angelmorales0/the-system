@@ -3,15 +3,8 @@ import Foundation
 /// Targets for emergency quests. Saved in the App Group so the Screen Time monitor can read them.
 /// Times are minutes after local midnight.
 nonisolated struct EmergencySettings: Codable, Equatable {
-    /// No emergency quest starts before this time. Bedtime must start at or after it; its lockdown may run past midnight.
+    /// No emergency quest starts before this time.
     var earliestStart = 18 * 60
-
-    var bedtimeEnabled = false
-    var bedtimeStart = 23 * 60
-    var wakeTime = 6 * 60 + 30
-    /// Minutes of distractor use after bedtime before the lockdown starts. Screen Time counts whole minutes.
-    var bedtimeGraceMinutes = 1
-    var lockdownMinutes = 10
 
     var stepsEnabled = false
     var stepCheckTime = 18 * 60
@@ -30,15 +23,11 @@ nonisolated struct EmergencySettings: Codable, Equatable {
     init() {}
 
     /// Missing keys keep their defaults, so a later field does not reset saved targets.
+    /// Keys of the removed bedtime lockdown in old saves are ignored.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = EmergencySettings.standard
         earliestStart = try c.decodeIfPresent(Int.self, forKey: .earliestStart) ?? d.earliestStart
-        bedtimeEnabled = try c.decodeIfPresent(Bool.self, forKey: .bedtimeEnabled) ?? d.bedtimeEnabled
-        bedtimeStart = try c.decodeIfPresent(Int.self, forKey: .bedtimeStart) ?? d.bedtimeStart
-        wakeTime = try c.decodeIfPresent(Int.self, forKey: .wakeTime) ?? d.wakeTime
-        bedtimeGraceMinutes = try c.decodeIfPresent(Int.self, forKey: .bedtimeGraceMinutes) ?? d.bedtimeGraceMinutes
-        lockdownMinutes = try c.decodeIfPresent(Int.self, forKey: .lockdownMinutes) ?? d.lockdownMinutes
         stepsEnabled = try c.decodeIfPresent(Bool.self, forKey: .stepsEnabled) ?? d.stepsEnabled
         stepCheckTime = try c.decodeIfPresent(Int.self, forKey: .stepCheckTime) ?? d.stepCheckTime
         minimumSteps = try c.decodeIfPresent(Int.self, forKey: .minimumSteps) ?? d.minimumSteps
@@ -51,8 +40,6 @@ nonisolated struct EmergencySettings: Codable, Equatable {
 }
 
 nonisolated enum EmergencyKind: String, Codable, Equatable {
-    /// Phone use after bedtime. All apps lock for `lockdownMinutes`. It ends on its own and cannot fail.
-    case bedtimeLockdown = "bedtime_lockdown"
     /// Too few steps by the check time. Distractors lock until the walk is done or the limit runs out.
     case lowSteps = "low_steps"
     /// The daily Stretching quest is still open at the check time. Distractors lock until its minutes are logged.
@@ -79,7 +66,6 @@ nonisolated struct EmergencyQuest: Codable, Equatable, Identifiable {
 
     var title: String {
         switch kind {
-        case .bedtimeLockdown: "Lights Out"
         case .lowSteps: "Movement"
         case .skippedStretch: "Restore Flexibility"
         }
@@ -87,40 +73,9 @@ nonisolated struct EmergencyQuest: Codable, Equatable, Identifiable {
 }
 
 enum EmergencyRules {
-    /// DeviceActivity refuses a schedule shorter than 15 minutes.
-    static let minimumScheduleMinutes = 15
-
     static func minuteOfDay(_ date: Date) -> Int {
         let parts = QuestDay.calendar.dateComponents([.hour, .minute], from: date)
         return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
-    }
-
-    /// True between bedtime and wake time. A window that crosses midnight wraps.
-    static func isBedtime(_ date: Date, settings: EmergencySettings) -> Bool {
-        let minute = minuteOfDay(date)
-        let start = effectiveBedtimeStart(settings)
-        let end = settings.wakeTime
-        if start == end { return false }
-        return start < end ? (minute >= start && minute < end) : (minute >= start || minute < end)
-    }
-
-    /// The lockdown window for a bedtime trigger. The release schedule starts in the past when needed,
-    /// so the full DeviceActivity interval is at least 15 minutes and still ends on time.
-    static func releaseWindow(triggeredAt: Date, lockdownMinutes: Int) -> (start: Date, end: Date) {
-        let lock = max(1, lockdownMinutes)
-        let end = triggeredAt.addingTimeInterval(Double(lock) * 60)
-        let lead = max(0, minimumScheduleMinutes - lock)
-        return (triggeredAt.addingTimeInterval(-Double(lead) * 60), end)
-    }
-
-    static func bedtimeQuest(triggeredAt: Date, settings: EmergencySettings, isTest: Bool = false) -> EmergencyQuest {
-        EmergencyQuest(
-            kind: .bedtimeLockdown,
-            dayKey: QuestDay.key(for: triggeredAt),
-            startedAt: triggeredAt,
-            deadline: releaseWindow(triggeredAt: triggeredAt, lockdownMinutes: settings.lockdownMinutes).end,
-            isTest: isTest
-        )
     }
 
     /// The step check never runs before the earliest start.
@@ -128,19 +83,13 @@ enum EmergencyRules {
         max(settings.stepCheckTime, settings.earliestStart)
     }
 
-    /// Bedtime is clamped to the earliest start, so a lockdown never begins in the afternoon.
-    static func effectiveBedtimeStart(_ settings: EmergencySettings) -> Int {
-        max(settings.bedtimeStart, settings.earliestStart)
-    }
-
-    /// One low-steps quest per day, between the check time and bedtime, and never while another emergency runs.
+    /// One low-steps quest per day, after the check time, and never while another emergency runs.
     static func shouldTriggerLowSteps(now: Date, stepsToday: Int?, settings: EmergencySettings,
                                       lastTriggeredDayKey: String?, active: EmergencyQuest?) -> Bool {
         guard settings.stepsEnabled, active == nil, let stepsToday else { return false }
         guard lastTriggeredDayKey != QuestDay.key(for: now) else { return false }
         let minute = minuteOfDay(now)
         guard minute >= stepCheckMinute(settings) else { return false }
-        if settings.bedtimeEnabled, isBedtime(now, settings: settings) { return false }
         return stepsToday < settings.minimumSteps
     }
 
@@ -166,7 +115,6 @@ enum EmergencyRules {
         guard lastTriggeredDayKey != QuestDay.key(for: now) else { return false }
         let minute = minuteOfDay(now)
         guard minute >= stretchCheckMinute(settings) else { return false }
-        if settings.bedtimeEnabled, isBedtime(now, settings: settings) { return false }
         return true
     }
 
@@ -180,14 +128,12 @@ enum EmergencyRules {
         )
     }
 
-    /// Bedtime ends at its deadline. A walk completes at its step target and fails at its deadline.
+    /// A walk completes at its step target and fails at its deadline.
     /// A stretch completes when the daily Stretching quest completes from tracked minutes, and fails at its deadline.
     static func resolve(_ quest: EmergencyQuest, now: Date, stepsSinceStart: Int?, stretchDone: Bool = false) -> EmergencyQuest {
         guard quest.status == .active else { return quest }
         var next = quest
         switch quest.kind {
-        case .bedtimeLockdown:
-            if now >= quest.deadline { next.status = .completed }
         case .lowSteps:
             if let steps = stepsSinceStart { next.progressSteps = max(next.progressSteps, steps) }
             if next.progressSteps >= quest.targetSteps {
@@ -218,34 +164,10 @@ enum EmergencyRules {
         func at(_ hour: Int, _ minute: Int) -> Date {
             QuestDay.calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day) ?? day
         }
-        let morning = at(9, 0), check = at(14, 0), afternoon = at(14, 30), late = at(18, 30), night = at(23, 30), early = at(5, 0)
+        let morning = at(9, 0), afternoon = at(14, 30), late = at(18, 30)
         var settings = EmergencySettings()
-        settings.bedtimeEnabled = true
         settings.stepsEnabled = true
 
-        if !isBedtime(night, settings: settings) || !isBedtime(early, settings: settings) || isBedtime(morning, settings: settings) {
-            errors.append("a 23:00–06:30 bedtime should cover 23:30 and 05:00 but not 09:00")
-        }
-        var evening = settings
-        evening.bedtimeStart = 19 * 60
-        evening.wakeTime = 21 * 60
-        if !isBedtime(at(20, 0), settings: evening) || isBedtime(night, settings: evening) {
-            errors.append("a window that does not cross midnight should not wrap")
-        }
-        var afternoonBed = settings
-        afternoonBed.bedtimeStart = 13 * 60
-        if isBedtime(check, settings: afternoonBed) || !isBedtime(at(18, 0), settings: afternoonBed) {
-            errors.append("a bedtime before 6 PM should be clamped to 6 PM")
-        }
-
-        let window = releaseWindow(triggeredAt: night, lockdownMinutes: 10)
-        if window.end.timeIntervalSince(night) != 600 || window.end.timeIntervalSince(window.start) < 15 * 60 {
-            errors.append("a 10-minute lockdown should end in 10 minutes inside a 15-minute schedule, got \(window)")
-        }
-        let long = releaseWindow(triggeredAt: night, lockdownMinutes: 30)
-        if long.start != night || long.end.timeIntervalSince(night) != 1800 {
-            errors.append("a 30-minute lockdown should start now, got \(long)")
-        }
 
         if shouldTriggerLowSteps(now: morning, stepsToday: 200, settings: settings, lastTriggeredDayKey: nil, active: nil) {
             errors.append("low steps must not trigger before the check time")
@@ -267,11 +189,8 @@ enum EmergencyRules {
         if shouldTriggerLowSteps(now: late, stepsToday: nil, settings: settings, lastTriggeredDayKey: nil, active: nil) {
             errors.append("no Health data must not trigger a walk")
         }
-        if shouldTriggerLowSteps(now: night, stepsToday: 100, settings: settings, lastTriggeredDayKey: nil, active: nil) {
-            errors.append("low steps must not trigger after bedtime")
-        }
-        let bedtime = bedtimeQuest(triggeredAt: night, settings: settings)
-        if shouldTriggerLowSteps(now: late, stepsToday: 100, settings: settings, lastTriggeredDayKey: nil, active: bedtime) {
+        let running = stretchQuest(now: late, settings: settings)
+        if shouldTriggerLowSteps(now: late, stepsToday: 100, settings: settings, lastTriggeredDayKey: nil, active: running) {
             errors.append("low steps must wait while another emergency is active")
         }
         var off = settings
@@ -304,16 +223,10 @@ enum EmergencyRules {
             errors.append("a test walk must never open a penalty")
         }
 
-        if resolve(bedtime, now: night.addingTimeInterval(599), stepsSinceStart: nil).status != .active
-            || resolve(bedtime, now: night.addingTimeInterval(600), stepsSinceStart: nil).status != .completed {
-            errors.append("bedtime lockdown should end exactly at 10 minutes")
-        }
-
         // Restore Flexibility: 9 PM check, one hour to log the day's stretching.
         let ninePM = at(21, 5)
         var stretch = settings
         stretch.stretchEnabled = true
-        stretch.bedtimeEnabled = false
         if shouldTriggerStretch(now: late, stretchDone: false, settings: stretch, lastTriggeredDayKey: nil, active: nil) {
             errors.append("stretch must not trigger before 9 PM")
         }
@@ -327,12 +240,6 @@ enum EmergencyRules {
         if shouldTriggerStretch(now: ninePM, stretchDone: false, settings: stretch, lastTriggeredDayKey: QuestDay.key(for: ninePM), active: nil) {
             errors.append("stretch should trigger at most once per day")
         }
-        var stretchBed = stretch
-        stretchBed.bedtimeEnabled = true
-        stretchBed.bedtimeStart = 21 * 60
-        if shouldTriggerStretch(now: ninePM, stretchDone: false, settings: stretchBed, lastTriggeredDayKey: nil, active: nil) {
-            errors.append("stretch must not trigger after bedtime")
-        }
         let stiff = stretchQuest(now: ninePM, settings: stretch)
         if stiff.deadline.timeIntervalSince(ninePM) != 3600 {
             errors.append("a stretch quest should allow one hour, got \(stiff)")
@@ -345,9 +252,10 @@ enum EmergencyRules {
             errors.append("a completed Stretching quest should complete the emergency")
         }
 
-        let partial = Data(#"{"bedtimeEnabled":true,"minimumSteps":2000}"#.utf8)
+        // An old save still holds the removed bedtime keys. They are ignored.
+        let partial = Data(#"{"bedtimeEnabled":true,"lockdownMinutes":30,"minimumSteps":2000}"#.utf8)
         if let decoded = try? JSONDecoder().decode(EmergencySettings.self, from: partial) {
-            if !decoded.bedtimeEnabled || decoded.minimumSteps != 2_000 || decoded.walkSteps != 1_500 || decoded.lockdownMinutes != 10 {
+            if decoded.minimumSteps != 2_000 || decoded.walkSteps != 1_500 || decoded.stepsEnabled {
                 errors.append("partial settings should keep defaults for missing keys, got \(decoded)")
             }
         } else {

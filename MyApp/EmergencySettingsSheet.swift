@@ -12,17 +12,7 @@ struct EmergencySettingsSheet: View {
             QuestSheet(title: "Emergency quests") {
                 VStack(alignment: .leading, spacing: 12) {
                     timePicker("Earliest start", minutes: $settings.earliestStart)
-                    note("No emergency quest starts before this time. Bedtime starts at this time or later.")
-                }
-
-                QuestSectionTitle(text: "Lights Out")
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle("Bedtime lockdown", isOn: $settings.bedtimeEnabled)
-                    timePicker("Bedtime", minutes: $settings.bedtimeStart)
-                    timePicker("Wake time", minutes: $settings.wakeTime)
-                    Stepper("Use allowed: \(settings.bedtimeGraceMinutes) min", value: $settings.bedtimeGraceMinutes, in: 1...30)
-                    Stepper("Lockdown: \(settings.lockdownMinutes) min", value: $settings.lockdownMinutes, in: 5...60, step: 5)
-                    note(bedtimeFooter)
+                    note("No emergency quest starts before this time.")
                 }
 
                 QuestSectionTitle(text: "Movement")
@@ -46,7 +36,6 @@ struct EmergencySettingsSheet: View {
                 QuestSectionTitle(text: "Test")
                 VStack(alignment: .leading, spacing: 12) {
                     VStack(spacing: 10) {
-                        testButton("Test Lights Out") { store.startEmergencyTest(.bedtimeLockdown) }
                         testButton("Test Movement") { store.startEmergencyTest(.lowSteps) }
                         testButton("Test Restore Flexibility") { store.startEmergencyTest(.skippedStretch) }
                     }
@@ -72,16 +61,6 @@ struct EmergencySettingsSheet: View {
                 store.updateEmergencySettings(next)
             }
         }
-    }
-
-    private var bedtimeFooter: String {
-        let start = Self.timeString(EmergencyRules.effectiveBedtimeStart(settings))
-        let wake = Self.timeString(settings.wakeTime)
-        var text = "From \(start) to \(wake), \(settings.bedtimeGraceMinutes) min on your distractor apps locks every app for \(settings.lockdownMinutes) min. Calls and emergency SOS stay open."
-        if !store.snapshot.hasDistractorSelection {
-            text += " Choose your distractor apps first (Status → Penalty Zone). To watch all phone use, select every category there."
-        }
-        return text
     }
 
     private func note(_ text: String) -> some View {

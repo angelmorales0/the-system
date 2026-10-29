@@ -81,7 +81,7 @@ final class GameStore: ObservableObject {
         refreshIntegrations(now: .now)
         enforcePenalty()
         if persistence == .standard {
-            EmergencyEnforcement.syncMonitoring(emergencySettings)
+            EmergencyEnforcement.removeBedtime()
             ScreenTimeEnforcement.syncMonitoring()
             #if os(iOS)
             FocusTracking.syncMonitoring()
@@ -123,10 +123,6 @@ final class GameStore: ObservableObject {
         snapshot.hasDistractorSelection = PenaltySelectionStore.hasSelection
         persist()
         enforcePenalty()
-        // The bedtime watch counts use of the selected apps, so a new selection restarts it.
-        if persistence == .standard {
-            EmergencyEnforcement.syncMonitoring(emergencySettings)
-        }
     }
 
     // MARK: - Emergency quests
@@ -154,13 +150,11 @@ final class GameStore: ObservableObject {
     }
 
     func updateEmergencySettings(_ settings: EmergencySettings) {
-        let turnedOn = (settings.bedtimeEnabled && !emergencySettings.bedtimeEnabled)
-            || (settings.stepsEnabled && !emergencySettings.stepsEnabled)
+        let turnedOn = (settings.stepsEnabled && !emergencySettings.stepsEnabled)
             || (settings.stretchEnabled && !emergencySettings.stretchEnabled)
         emergencySettings = settings
         guard persistence == .standard else { return }
         EmergencyStore.save(settings)
-        EmergencyEnforcement.syncMonitoring(settings)
         if turnedOn {
             EmergencyEnforcement.requestNotificationPermission()
         }
@@ -172,7 +166,6 @@ final class GameStore: ObservableObject {
         guard emergency == nil else { return }
         let quest: EmergencyQuest
         switch kind {
-        case .bedtimeLockdown: quest = EmergencyRules.bedtimeQuest(triggeredAt: now, settings: emergencySettings, isTest: true)
         case .lowSteps: quest = EmergencyRules.lowStepsQuest(now: now, settings: emergencySettings, isTest: true)
         case .skippedStretch: quest = EmergencyRules.stretchQuest(now: now, settings: emergencySettings, isTest: true)
         }
@@ -212,7 +205,6 @@ final class GameStore: ObservableObject {
         case .completed:
             let message: String
             switch resolved.kind {
-            case .bedtimeLockdown: message = "Emergency quest complete: the lockdown has ended."
             case .lowSteps: message = "Emergency quest complete: \(resolved.progressSteps.formatted()) steps walked."
             case .skippedStretch: message = "Emergency quest complete: \(Int(DailyStretch.minutes)) minutes stretched."
             }
@@ -234,7 +226,7 @@ final class GameStore: ObservableObject {
         settle(EmergencyRules.resolve(quest, now: now, stepsSinceStart: nil))
     }
 
-    /// Reads the bedtime trigger and Health steps, then starts, advances, or ends an emergency.
+    /// Reads Health steps and the Stretching quest, then starts, advances, or ends an emergency.
     private func evaluateEmergencies(now: Date) {
         guard persistence == .standard, !evaluatingEmergency else { return }
         evaluatingEmergency = true
@@ -242,15 +234,6 @@ final class GameStore: ObservableObject {
             guard let self else { return }
             defer { self.evaluatingEmergency = false }
             let settings = self.emergencySettings
-
-            if let triggered = EmergencyStore.takeBedtimeTrigger(), self.emergency == nil {
-                let quest = EmergencyRules.bedtimeQuest(triggeredAt: triggered, settings: settings)
-                if quest.deadline > now {
-                    // The monitor already locked the apps and posted the alert.
-                    self.emergency = quest
-                    EmergencyStore.save(quest)
-                }
-            }
 
             if let quest = self.emergency {
                 var steps: Int?
@@ -267,9 +250,9 @@ final class GameStore: ObservableObject {
                 let stretchDone = quest.kind == .skippedStretch && DailyStretch.isDone(in: self.snapshot.bundle) == true
                 let resolved = EmergencyRules.resolve(quest, now: now, stepsSinceStart: steps, stretchDone: stretchDone)
                 self.settle(resolved)
-                if resolved.status == .active, resolved.kind != .bedtimeLockdown,
+                if resolved.status == .active,
                    EmergencyGroup.defaults.string(forKey: EmergencyGroup.lockdownKindKey) == nil {
-                    // A bedtime release may have cleared the shared store. Put the distractor shields back.
+                    // Something cleared the shared store. Put the distractor shields back.
                     EmergencyEnforcement.applyLockdown(for: resolved)
                 }
                 self.ensureEmergencyTicker()
@@ -303,7 +286,7 @@ final class GameStore: ObservableObject {
         }
     }
 
-    /// While an emergency runs, re-check every 15 seconds: steps for a walk, the clock for a lockdown.
+    /// While an emergency runs, re-check every 15 seconds: steps for a walk, stretch minutes for a stretch.
     private func ensureEmergencyTicker() {
         guard emergency != nil else {
             emergencyTicker?.invalidate()

@@ -67,7 +67,7 @@ struct EmergencyQuestView: View {
                     .shadow(color: QuestLight.cyan.opacity(0.6), radius: 5)
                     .frame(minHeight: 44)
                 HStack {
-                    Text(quest.kind == .bedtimeLockdown ? "Lockdown ends in" : "Time left")
+                    Text("Time left")
                     Spacer()
                     Text(Self.clock(remaining))
                         .monospacedDigit()
@@ -98,7 +98,7 @@ struct EmergencyQuestView: View {
         }
     }
 
-    /// `[Emergency Quest: Lights Out.]`, with the quest name in bold italic, as the System writes it.
+    /// `[Emergency Quest: Movement.]`, with the quest name in bold italic, as the System writes it.
     private var headlineView: some View {
         Text("[Emergency Quest: \(Text(quest.title).bold().italic()).]")
             .font(.subheadline)
@@ -109,8 +109,6 @@ struct EmergencyQuestView: View {
 
     private var threat: String {
         switch quest.kind {
-        case .bedtimeLockdown:
-            return "It is past the Player's bedtime, and the Player is still awake. A body without rest grows weak. Put the phone down and sleep. Every app is locked until the lockdown ends."
         case .lowSteps:
             return "The Player has barely moved today. A body left still begins to waste away. Stand up and walk now, before the time runs out. Your distractor apps stay locked until the walk is done."
         case .skippedStretch:
@@ -122,11 +120,6 @@ struct EmergencyQuestView: View {
     private func goalRow(remaining: TimeInterval) -> some View {
         HStack(spacing: 11) {
             switch quest.kind {
-            case .bedtimeLockdown:
-                Text("Put the phone down")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                QuestCheckbox(checked: remaining == 0)
-                    .frame(width: 16, height: 17)
             case .lowSteps:
                 Text("Walk")
                     .frame(maxWidth: .infinity, alignment: .leading)
