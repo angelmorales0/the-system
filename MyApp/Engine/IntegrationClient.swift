@@ -35,7 +35,10 @@ enum IntegrationClient {
         async let hevyReading = HevyClient.snapshot(dayKey: dayKey)
         async let stravaReading = StravaClient.snapshot(dayKey: dayKey)
         async let whoopReading = WhoopClient.snapshot(dayKey: dayKey)
+        async let codeforcesReading = CodeforcesClient.snapshot()
         guard let base else {
+            let codeforces = await codeforcesReading
+            record(.codeforces, configured: codeforces.configured, available: codeforces.available, reason: codeforces.reason)
             let whoop = await whoopReading
             record(.whoop, configured: whoop.configured, available: whoop.available, reason: whoop.reason)
             let hevy = await hevyReading
@@ -47,19 +50,18 @@ enum IntegrationClient {
                 strava: strava,
                 mercury: .disconnected(dayKey: dayKey, reason: "TODO: Mercury is not connected. Set QUEST_GENERATE_BASE_URL to the backend."),
                 hevy: hevy,
-                codeforces: .disconnected(reason: "TODO: Codeforces is not connected. Set QUEST_GENERATE_BASE_URL to the backend."),
+                codeforces: codeforces,
                 financeMonths: []
             )
         }
         async let mercury = fetch(MercuryDayReading.self, base: base, path: "v1/integrations/mercury/snapshot", dayKey: dayKey)
             ?? .disconnected(dayKey: dayKey, reason: "TODO: Mercury snapshot failed. Check MERCURY_API_TOKEN on the backend.")
-        async let codeforces = fetch(CodeforcesReading.self, base: base, path: "v1/integrations/codeforces/snapshot", dayKey: dayKey)
-            ?? .disconnected(reason: "TODO: Codeforces snapshot failed. Check CODEFORCES_HANDLE on the backend.")
         let months = financeMonthKeys(dayKey: dayKey)
         async let lastMonth = fetch(MercuryMonthResponse.self, base: base, path: "v1/integrations/mercury/month", dayKey: dayKey, query: [URLQueryItem(name: "month", value: months.last)])
         async let thisMonth = fetch(MercuryMonthResponse.self, base: base, path: "v1/integrations/mercury/month", dayKey: dayKey, query: [URLQueryItem(name: "month", value: months.this)])
-        let readings = await (whoopReading, stravaReading, mercury, hevyReading, codeforces)
+        let readings = await (whoopReading, stravaReading, mercury, hevyReading, codeforcesReading)
         record(.whoop, configured: readings.0.configured, available: readings.0.available, reason: readings.0.reason)
+        record(.codeforces, configured: readings.4.configured, available: readings.4.available, reason: readings.4.reason)
         record(.strava, configured: readings.1.configured, available: readings.1.available, reason: readings.1.reason)
         record(.hevy, configured: readings.3.configured, available: readings.3.available, reason: readings.3.reason)
         let financeMonths = await [lastMonth, thisMonth].compactMap { $0?.financeMonth }
