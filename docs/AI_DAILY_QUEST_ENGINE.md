@@ -75,7 +75,7 @@ Mode selection is **deterministic rules first**, LLM fills quests inside the cho
 ### 1.3 Optional Quests
 
 - **Sunday Easy Quest** (default): low difficulty, ~10–20 min, verify soft or manual.
-- On complete → `full_recovery_bank += 1` (cap e.g. 3).
+- On complete → `full_recovery_bank += 1` (no cap).
 - Other optionals (future): double-XP weekend challenge — keep schema ready (`reward: { type, amount }`).
 
 ### 1.4 Penalty Quests

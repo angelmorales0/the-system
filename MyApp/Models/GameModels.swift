@@ -398,8 +398,6 @@ struct StatValues: Codable, Equatable {
 }
 
 struct PlayerState: Codable, Equatable {
-    static let fullRecoveryCap = 3
-
     var displayName: String
     var level: Int
     var xp: Int
@@ -433,11 +431,9 @@ struct PlayerState: Codable, Equatable {
         }
     }
 
-    @discardableResult
-    mutating func depositRecoveryToken() -> Bool {
-        guard fullRecoveryBank < Self.fullRecoveryCap else { return false }
+    /// The bank has no cap.
+    mutating func depositRecoveryToken() {
         fullRecoveryBank += 1
-        return true
     }
 
     mutating func withdrawRecoveryToken() {

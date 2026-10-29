@@ -412,7 +412,8 @@ struct GameSnapshot: Codable, Equatable {
         player.stats[quest.stat] += statGain
         var grantedToken = false
         if quest.kind == .optional && quest.reward?.type == .fullRecoveryToken {
-            grantedToken = player.depositRecoveryToken()
+            player.depositRecoveryToken()
+            grantedToken = true
         }
         quest.grantedXP = xpGain
         quest.grantedStatPoints = statGain

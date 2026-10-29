@@ -11,7 +11,7 @@ struct HiddenQuestUnlock: Codable, Equatable, Identifiable {
     var achieved: Double
     var required: Double
     var unit: String
-    /// False when the Full Recovery bank was already full.
+    /// False only on unlocks saved while the bank had a cap of 3.
     var grantedToken: Bool
     /// True after the player closes the reveal window.
     var seen: Bool
@@ -69,7 +69,7 @@ extension GameSnapshot {
         for quest in bundle.quests where quest.status == .completed && HiddenQuests.isEligible(quest) {
             guard let workout = HiddenQuests.completingWorkout(for: quest, in: integrations.workouts),
                   let result = HiddenQuests.beyondTheLimit(quest: quest, workout: workout) else { continue }
-            let granted = player.depositRecoveryToken()
+            player.depositRecoveryToken()
             let unlock = HiddenQuestUnlock(
                 hiddenId: HiddenQuests.beyondTheLimitId,
                 title: HiddenQuests.beyondTheLimitTitle,
@@ -79,7 +79,7 @@ extension GameSnapshot {
                 achieved: result.achieved,
                 required: result.required,
                 unit: "km",
-                grantedToken: granted,
+                grantedToken: true,
                 seen: false,
                 unlockedAt: now
             )
@@ -235,11 +235,11 @@ enum HiddenQuestRules {
             errors.append("only the workout that completed the quest may unlock Beyond the Limit")
         }
 
-        // A full bank still records the unlock, without a token.
-        var full = day([run(km: 15)], bank: PlayerState.fullRecoveryCap)
-        let fullUnlock = full.0.checkHiddenQuests(integrations: full.1, now: now)
-        if fullUnlock == nil || fullUnlock?.grantedToken != false || full.0.player.fullRecoveryBank != PlayerState.fullRecoveryCap {
-            errors.append("a full bank should unlock without a token, got \(String(describing: fullUnlock)) bank \(full.0.player.fullRecoveryBank)")
+        // The bank has no cap: a large bank still gets a token.
+        var large = day([run(km: 15)], bank: 7)
+        let largeUnlock = large.0.checkHiddenQuests(integrations: large.1, now: now)
+        if largeUnlock == nil || largeUnlock?.grantedToken != true || large.0.player.fullRecoveryBank != 8 {
+            errors.append("a bank of 7 should unlock with a token, got \(String(describing: largeUnlock)) bank \(large.0.player.fullRecoveryBank)")
         }
         return errors
     }
