@@ -217,6 +217,8 @@ struct ConnectionExtras: View {
             OAuthSignIn(provider: .strava, onMessage: onMessage)
         case .whoop:
             OAuthSignIn(provider: .whoop, onMessage: onMessage)
+        case .mercury:
+            MercurySettingsView()
         default:
             EmptyView()
         }
@@ -302,5 +304,47 @@ enum ConnectionHelp {
         case .claude:
             "console.anthropic.com → API Keys. The key plans each morning's quests on this phone."
         }
+    }
+}
+
+/// Mercury budget, tax reserve, settle hour, income filter, and category map. The backend read these from its environment.
+struct MercurySettingsView: View {
+    @State private var settings = MercurySettings.load()
+    @State private var budget = MercurySettings.load().budget.map { String(format: "%.0f", $0) } ?? ""
+    @State private var categories = MercurySettings.load().categoryText
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            QuestSectionTitle(text: "FIN settings")
+            TextField("Monthly budget (USD)", text: $budget)
+                .keyboardType(.decimalPad)
+            Stepper("Tax reserve: \(Int((settings.taxReserveRate * 100).rounded()))%", value: $settings.taxReserveRate, in: 0...0.6, step: 0.05)
+            Stepper("Day settles at \(settings.settleHour):00 (Los Angeles)", value: $settings.settleHour, in: 0...23)
+            TextField("Income counterparty regex (empty = all)", text: $settings.incomeCounterpartyRegex)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            TextField("Category map: Restaurants=necessary, one per line", text: $categories, axis: .vertical)
+                .lineLimit(2...6)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            TextField("API base URL (empty = production)", text: $settings.baseURL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+            Text("Tags: necessary, discretionary, transfer, income, ignore. The phone polls Mercury every 15 minutes while open and keeps transaction summaries on this device only.")
+                .font(.footnote)
+                .foregroundStyle(SystemTheme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .onChange(of: settings) { _, _ in save() }
+        .onChange(of: budget) { _, _ in save() }
+        .onChange(of: categories) { _, _ in save() }
+    }
+
+    private func save() {
+        var next = settings
+        next.monthlyBudgetUsd = Double(budget.trimmingCharacters(in: .whitespaces))
+        next.categoryMap = MercurySettings.categoryMap(from: categories)
+        next.save()
     }
 }

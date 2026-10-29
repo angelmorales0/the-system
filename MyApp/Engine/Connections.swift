@@ -44,12 +44,13 @@ nonisolated enum Connection: String, CaseIterable, Identifiable {
     }
 
     /// Removes every saved value for this service, tokens included.
-    func forget() {
+    @MainActor func forget() {
         for field in typedSecrets { SecretStore.delete(field.item) }
         switch self {
         case .strava: SecretStore.delete(.stravaTokens)
         case .whoop: SecretStore.delete(.whoopTokens)
         case .codeforces: CodeforcesSettings.handle = nil
+        case .mercury: MercuryClient.deleteLedger()
         default: break
         }
         ConnectionStatusStore.clear(self)

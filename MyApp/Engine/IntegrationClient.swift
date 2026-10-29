@@ -10,68 +10,28 @@ struct RemoteDayReadings: Equatable {
     var financeMonths: [FinanceMonth]
 }
 
-/// `/v1/integrations/mercury/month` adds connection fields around a `FinanceMonth`.
-private nonisolated struct MercuryMonthResponse: Decodable {
-    var available: Bool
-    var month: String
-    var postTaxIncomeUsd: Double
-    var spendingUsd: Double
-    var budgetUsd: Double?
-    var complete: Bool
-
-    var financeMonth: FinanceMonth? {
-        guard available else { return nil }
-        return FinanceMonth(month: month, postTaxIncomeUsd: postTaxIncomeUsd, spendingUsd: spendingUsd, budgetUsd: budgetUsd, complete: complete)
-    }
-}
-
-/// Reads WHOOP, Strava, Mercury, Hevy, and Codeforces summaries. Hevy is read on the phone with the Keychain key.
+/// Reads WHOOP, Strava, Mercury, Hevy, and Codeforces on the phone, with the keys in the Keychain. No server is needed.
 enum IntegrationClient {
     static func load(dayKey: String) async -> RemoteDayReadings {
-        let base = QuestGenerateClient.resolvedBase(
-            environment: ProcessInfo.processInfo.environment,
-            defaults: UserDefaults.standard.string(forKey: QuestGenerateClient.defaultsKey)
-        )
+        let months = financeMonthKeys(dayKey: dayKey)
         async let hevyReading = HevyClient.snapshot(dayKey: dayKey)
         async let stravaReading = StravaClient.snapshot(dayKey: dayKey)
         async let whoopReading = WhoopClient.snapshot(dayKey: dayKey)
         async let codeforcesReading = CodeforcesClient.snapshot()
-        guard let base else {
-            let codeforces = await codeforcesReading
-            record(.codeforces, configured: codeforces.configured, available: codeforces.available, reason: codeforces.reason)
-            let whoop = await whoopReading
-            record(.whoop, configured: whoop.configured, available: whoop.available, reason: whoop.reason)
-            let hevy = await hevyReading
-            let strava = await stravaReading
-            record(.hevy, configured: hevy.configured, available: hevy.available, reason: hevy.reason)
-            record(.strava, configured: strava.configured, available: strava.available, reason: strava.reason)
-            return RemoteDayReadings(
-                whoop: whoop,
-                strava: strava,
-                mercury: .disconnected(dayKey: dayKey, reason: "TODO: Mercury is not connected. Set QUEST_GENERATE_BASE_URL to the backend."),
-                hevy: hevy,
-                codeforces: codeforces,
-                financeMonths: []
-            )
-        }
-        async let mercury = fetch(MercuryDayReading.self, base: base, path: "v1/integrations/mercury/snapshot", dayKey: dayKey)
-            ?? .disconnected(dayKey: dayKey, reason: "TODO: Mercury snapshot failed. Check MERCURY_API_TOKEN on the backend.")
-        let months = financeMonthKeys(dayKey: dayKey)
-        async let lastMonth = fetch(MercuryMonthResponse.self, base: base, path: "v1/integrations/mercury/month", dayKey: dayKey, query: [URLQueryItem(name: "month", value: months.last)])
-        async let thisMonth = fetch(MercuryMonthResponse.self, base: base, path: "v1/integrations/mercury/month", dayKey: dayKey, query: [URLQueryItem(name: "month", value: months.this)])
-        let readings = await (whoopReading, stravaReading, mercury, hevyReading, codeforcesReading)
-        record(.whoop, configured: readings.0.configured, available: readings.0.available, reason: readings.0.reason)
-        record(.codeforces, configured: readings.4.configured, available: readings.4.available, reason: readings.4.reason)
-        record(.strava, configured: readings.1.configured, available: readings.1.available, reason: readings.1.reason)
-        record(.hevy, configured: readings.3.configured, available: readings.3.available, reason: readings.3.reason)
-        let financeMonths = await [lastMonth, thisMonth].compactMap { $0?.financeMonth }
+        async let mercuryReading = MercuryClient.load(dayKey: dayKey, months: [months.last, months.this])
+        let (whoop, strava, mercury, hevy, codeforces) = await (whoopReading, stravaReading, mercuryReading, hevyReading, codeforcesReading)
+        record(.whoop, configured: whoop.configured, available: whoop.available, reason: whoop.reason)
+        record(.strava, configured: strava.configured, available: strava.available, reason: strava.reason)
+        record(.mercury, configured: mercury.day.configured, available: mercury.day.available, reason: mercury.day.reason)
+        record(.hevy, configured: hevy.configured, available: hevy.available, reason: hevy.reason)
+        record(.codeforces, configured: codeforces.configured, available: codeforces.available, reason: codeforces.reason)
         return RemoteDayReadings(
-            whoop: readings.0,
-            strava: readings.1,
-            mercury: readings.2,
-            hevy: readings.3,
-            codeforces: readings.4,
-            financeMonths: financeMonths
+            whoop: whoop,
+            strava: strava,
+            mercury: mercury.day,
+            hevy: hevy,
+            codeforces: codeforces,
+            financeMonths: mercury.months
         )
     }
 
@@ -88,32 +48,5 @@ enum IntegrationClient {
         let (year, month) = (parts[0], parts[1])
         let last = month == 1 ? (year - 1, 12) : (year, month - 1)
         return (String(format: "%04d-%02d", year, month), String(format: "%04d-%02d", last.0, last.1))
-    }
-
-    private static func fetch<T: Decodable>(_ type: T.Type, base: URL, path: String, dayKey: String, query: [URLQueryItem] = []) async -> T? {
-        guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return nil }
-        let extra = path.split(separator: "/").map(String.init)
-        components.path = "/" + (components.path.split(separator: "/").map(String.init) + extra).joined(separator: "/")
-        var items = components.queryItems ?? []
-        items.append(URLQueryItem(name: "day", value: dayKey))
-        items.append(URLQueryItem(name: "tz", value: QuestDay.timeZone.identifier))
-        items.append(contentsOf: query)
-        components.queryItems = items
-        guard let url = components.url else { return nil }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = QuestGenerateClient.timeout
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = QuestGenerateClient.timeout
-        configuration.timeoutIntervalForResource = QuestGenerateClient.timeout
-        do {
-            let (data, response) = try await URLSession(configuration: configuration).data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return try decoder.decode(T.self, from: data)
-        } catch {
-            return nil
-        }
     }
 }

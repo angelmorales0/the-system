@@ -16,6 +16,8 @@ enum ConnectionTester {
             outcome = await WhoopClient.test()
         case .codeforces:
             outcome = await CodeforcesClient.test()
+        case .mercury:
+            outcome = await MercuryClient.test()
         default:
             outcome = (false, "\(connection.title) is not on the phone yet.")
         }

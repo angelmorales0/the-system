@@ -171,6 +171,12 @@ enum OnDeviceTime {
         let fractional = ISO8601DateFormatter()
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let date = fractional.date(from: value) { return date }
+        // Microseconds and other long fractions: drop the fraction.
+        if let range = value.range(of: #"\.\d+"#, options: .regularExpression) {
+            var trimmed = value
+            trimmed.removeSubrange(range)
+            if let date = plain.date(from: trimmed) { return date }
+        }
         // No zone: read as UTC.
         let bare = DateFormatter()
         bare.locale = Locale(identifier: "en_US_POSIX")
