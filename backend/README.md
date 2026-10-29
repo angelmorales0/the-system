@@ -1,3 +1,5 @@
+> **Legacy. The app no longer needs this backend.** Hevy, Strava, WHOOP, Codeforces, Mercury, and the Claude quest plan now run on the iPhone. See [docs/ON_DEVICE_SETUP.md](../docs/ON_DEVICE_SETUP.md). This directory stays for reference only.
+
 # Quest generation stub
 
 Local stand-in for `POST /v1/quests/generate`. It checks the morning-context shape, then returns a quest bundle from templates. Before it plans, it reads 30 days of Hevy, Strava, and WHOOP data (`history.py`). If `ANTHROPIC_API_KEY` is set in the environment, it asks Claude Opus 5.5 (`claude-opus-5-5` unless `CLAUDE_MODEL` overrides it) and keeps the reply only when that reply passes the same safety checks and training limits. Otherwise it serves the template.

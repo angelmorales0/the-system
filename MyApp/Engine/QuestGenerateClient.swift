@@ -19,46 +19,14 @@ extension QuestGenerating {
     }
 }
 
-enum QuestGenerateError: Error {
-    case rejected
-    case transport
-}
-
-/// Picks the mock client unless a local http(s) base URL is configured.
+/// Makes the quest generator. Planning runs on the phone; no server or base URL is needed.
 enum QuestGenerateClient {
-    static let defaultsKey = "com.angelmorales.thesystem.questGenerateBaseURL"
-    static let environmentKey = "QUEST_GENERATE_BASE_URL"
-    /// The backend reads 30 days of Hevy, Strava, and WHOOP, and Claude thinks at high effort over all of it,
-    /// with up to 100 seconds for retries. The catalog quests stay on screen while it runs.
+    /// Claude thinks at high effort over 30 days of training, with up to 100 seconds for retries.
+    /// The catalog quests stay on screen while it runs. Other short calls use this as their upper bound too.
     static let timeout: TimeInterval = 150
 
     static func make(catalog: FallbackCatalog) -> any QuestGenerating {
-        let base = resolvedBase(
-            environment: ProcessInfo.processInfo.environment,
-            defaults: UserDefaults.standard.string(forKey: defaultsKey)
-        )
-        if let base {
-            return HTTPQuestGenerateClient(baseURL: base, catalog: catalog)
-        }
-        return OnDeviceQuestGenerateClient(catalog: catalog)
-    }
-
-    static func resolvedBase(environment: [String: String], defaults: String?) -> URL? {
-        let raw = environment[environmentKey] ?? defaults
-        guard let raw, !raw.isEmpty, let url = URL(string: raw),
-              let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else {
-            return nil
-        }
-        return url
-    }
-
-    static func endpoint(base: URL) -> URL {
-        if base.path.contains("quests/generate") { return base }
-        return base
-            .appendingPathComponent("v1")
-            .appendingPathComponent("quests")
-            .appendingPathComponent("generate")
+        OnDeviceQuestGenerateClient(catalog: catalog)
     }
 }
 
@@ -81,61 +49,6 @@ struct MockQuestGenerateClient: QuestGenerating {
             return accepted
         }
         return catalogFallback(context: context, now: now)
-    }
-}
-
-struct HTTPQuestGenerateClient: QuestGenerating {
-    var baseURL: URL
-    var catalog: FallbackCatalog
-    var session: URLSession = HTTPQuestGenerateClient.makeSession()
-
-    func generate(context: MorningContext) async -> QuestBundle {
-        let now = Date()
-        for _ in 0..<3 {
-            do {
-                let decoded = try await post(context)
-                if let accepted = QuestSafety.accepting(decoded, context: context, assignedAt: now) {
-                    return accepted
-                }
-            } catch QuestGenerateError.rejected {
-                continue
-            } catch {
-                break
-            }
-        }
-        return MockQuestGenerateClient(catalog: catalog).catalogFallback(context: context, now: now)
-    }
-
-    private func post(_ context: MorningContext) async throws -> QuestBundle {
-        var request = URLRequest(url: QuestGenerateClient.endpoint(base: baseURL))
-        request.httpMethod = "POST"
-        request.timeoutInterval = QuestGenerateClient.timeout
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        request.httpBody = try encoder.encode(context)
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw QuestGenerateError.transport
-        }
-        guard let http = response as? HTTPURLResponse else { throw QuestGenerateError.transport }
-        if http.statusCode == 422 { throw QuestGenerateError.rejected }
-        guard (200..<300).contains(http.statusCode) else { throw QuestGenerateError.transport }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(QuestBundle.self, from: data)
-    }
-
-    private static func makeSession() -> URLSession {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = QuestGenerateClient.timeout
-        configuration.timeoutIntervalForResource = QuestGenerateClient.timeout
-        configuration.waitsForConnectivity = false
-        return URLSession(configuration: configuration)
     }
 }
 

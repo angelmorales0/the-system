@@ -130,21 +130,8 @@ enum QuestGenerationRules {
             errors.append("model JSON without status should decode")
         }
 
-        let base = QuestGenerateClient.resolvedBase(
-            environment: [QuestGenerateClient.environmentKey: "http://127.0.0.1:8787"],
-            defaults: "https://example.invalid"
-        )
-        if base?.absoluteString != "http://127.0.0.1:8787" {
-            errors.append("environment base URL should win")
-        }
-        if QuestGenerateClient.resolvedBase(environment: [:], defaults: "ftp://files.example") != nil {
-            errors.append("non-http base URL should be ignored")
-        }
-        if QuestGenerateClient.resolvedBase(environment: [:], defaults: nil) != nil {
-            errors.append("missing base URL should use the mock")
-        }
-        if let base, !QuestGenerateClient.endpoint(base: base).path.hasSuffix("/v1/quests/generate") {
-            errors.append("generate endpoint path mismatch")
+        if !(QuestGenerateClient.make(catalog: catalog) is OnDeviceQuestGenerateClient) {
+            errors.append("quest planning should run on the phone with no base URL")
         }
 
         var remembered = GameSnapshot.fresh(catalog: catalog, now: now)
