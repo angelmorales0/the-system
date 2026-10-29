@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The System's STATUS window: level, job and title, HP and fatigue, the seven stats, and Full Recovery points.
-/// HP turns red when injured; the fatigue meter turns red at 80 or more.
+/// HP turns red when critical; the fatigue meter turns red at 80 or more.
 struct StatusSheetView: View {
     @EnvironmentObject private var store: GameStore
 
@@ -90,7 +90,7 @@ private struct StatusSheetContent: View {
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                    .shadow(color: QuestLight.cyan, radius: 10)
+                    .shadow(color: QuestLight.cyan.opacity(0.5), radius: 6)
                 Text("LEVEL")
                     .font(.footnote.weight(.medium))
                     .tracking(2)
@@ -133,16 +133,15 @@ private struct StatusSheetContent: View {
                 HPBar(current: hp.current, max: hp.max)
             }
         }
-        .foregroundStyle(light.ink)
-        .shadow(color: light.glow.opacity(0.8), radius: 5)
+        .foregroundStyle(light.ink.opacity(0.8))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("HP")
-        .accessibilityValue(HitPoints.isInjured(current: hp.current, max: hp.max) ? "\(hp.current) of \(hp.max), injured" : "\(hp.current) of \(hp.max)")
+        .accessibilityValue(HitPoints.isCritical(current: hp.current, max: hp.max) ? "\(hp.current) of \(hp.max), critical" : "\(hp.current) of \(hp.max)")
     }
 
     private var fatigueMeter: some View {
         let red = Fatigue.isRed(fatigue)
-        let light: HPLight = red ? .injured : .normal
+        let light: HPLight = red ? .critical : .normal
         let fraction = Double(fatigue) / Fatigue.maxValue
         return HStack(spacing: 8) {
             FatigueRing(fraction: fraction, light: light)
@@ -157,8 +156,7 @@ private struct StatusSheetContent: View {
                 GlowBar(fraction: fraction, light: light)
             }
         }
-        .foregroundStyle(light.ink)
-        .shadow(color: light.glow.opacity(0.8), radius: 5)
+        .foregroundStyle(light.ink.opacity(0.8))
         .animation(.easeInOut(duration: 0.4), value: red)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Fatigue")
@@ -176,7 +174,7 @@ private struct StatusTitleBox: View {
             .frame(height: 42)
             .background(QuestLight.cyan.opacity(0.04))
             .overlay { Rectangle().stroke(QuestLight.ink.opacity(0.55), lineWidth: 0.8) }
-            .shadow(color: QuestLight.cyan.opacity(0.85), radius: 7)
+            .shadow(color: QuestLight.cyan.opacity(0.35), radius: 4)
             .frame(maxWidth: .infinity)
             .accessibilityAddTraits(.isHeader)
     }
@@ -192,10 +190,7 @@ private struct StatusFrame<Content: View>: View {
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity)
             .background(QuestLight.cyan.opacity(0.03))
-            .overlay {
-                Rectangle().stroke(QuestLight.cyan.opacity(0.35), lineWidth: 3).blur(radius: 3)
-                Rectangle().stroke(QuestLight.ink.opacity(0.5), lineWidth: 0.7)
-            }
+            .overlay { Rectangle().stroke(QuestLight.ink.opacity(0.35), lineWidth: 0.7) }
     }
 }
 
@@ -206,13 +201,11 @@ private struct FatigueRing: View {
 
     var body: some View {
         ZStack {
-            Circle().stroke(light.ink.opacity(0.3), lineWidth: 2.5)
+            Circle().stroke(light.ink.opacity(0.2), lineWidth: 2)
             Circle()
                 .trim(from: 0, to: min(max(fraction, 0), 1))
-                .stroke(LinearGradient(colors: [light.ink, light.glow], startPoint: .top, endPoint: .bottom),
-                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .stroke(light.glow.opacity(light.fill + 0.1), style: StrokeStyle(lineWidth: 2, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .shadow(color: light.glow, radius: 4)
         }
         .padding(1.5)
     }

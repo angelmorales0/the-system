@@ -52,7 +52,7 @@ struct HPWorkout: Equatable {
 ///   Drain       minutes × a sport rate (Hevy: 0.2%/min plus 0.5% per working set), at most 60% per session
 ///   Regen       max / 48 h, times 0.5 + recovery/100 (no WHOOP reading: × 1)
 ///   Red WHOOP   recovery under 34 costs 30% + 1.5% per point under 34, once per WHOOP day
-///   Injured     at or below 20% of max
+///   Critical    at or below 20% of max
 enum HitPoints {
     static let baseHP = 1_000
     static let hpPerLevel = 20
@@ -65,12 +65,12 @@ enum HitPoints {
     static let redRecoveryBelow = 34
     static let redHitBase = 0.30
     static let redHitPerPoint = 0.015
-    /// At or below this share of max HP, the player is injured and the HP window turns red.
-    static let injuredFraction = 0.20
+    /// At or below this share of max HP, HP is critical and the HP window turns red.
+    static let criticalFraction = 0.20
 
-    static func isInjured(current: Int, max: Int) -> Bool {
+    static func isCritical(current: Int, max: Int) -> Bool {
         guard max > 0 else { return false }
-        return Double(current) <= Double(max) * injuredFraction
+        return Double(current) <= Double(max) * criticalFraction
     }
 
     /// Grows with the level and the body stats.
@@ -181,8 +181,8 @@ enum HitPoints {
         if maxHP(for: stronger) <= maxHP(for: .starter) {
             errors.append("max HP should grow with the level")
         }
-        if isInjured(current: 721, max: 3_600) || !isInjured(current: 720, max: 3_600) || isInjured(current: 0, max: 0) {
-            errors.append("the player should be injured at or below 20% of max")
+        if isCritical(current: 721, max: 3_600) || !isCritical(current: 720, max: 3_600) || isCritical(current: 0, max: 0) {
+            errors.append("HP should be critical at or below 20% of max")
         }
 
         let empty = HitPointState(current: 0, max: 1_000, updatedAt: start)
