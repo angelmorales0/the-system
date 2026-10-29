@@ -416,15 +416,6 @@ struct PlayerState: Codable, Equatable {
         return (trimmed.isEmpty ? "Angel" : trimmed).uppercased()
     }
 
-    var xpProgress: Double {
-        guard xpToNext > 0 else { return 0 }
-        return min(max(Double(xp) / Double(xpToNext), 0), 1)
-    }
-
-    var xpLabel: String {
-        "XP     \(Self.grouped(xp)) / \(Self.grouped(xpToNext))"
-    }
-
     mutating func addXP(_ amount: Int) {
         guard amount > 0 else { return }
         xp += amount
@@ -444,13 +435,6 @@ struct PlayerState: Codable, Equatable {
 
     mutating func withdrawRecoveryToken() {
         if fullRecoveryBank > 0 { fullRecoveryBank -= 1 }
-    }
-
-    private static func grouped(_ value: Int) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.locale = Locale(identifier: "en_US")
-        return formatter.string(from: NSNumber(value: value)) ?? String(value)
     }
 }
 
@@ -518,13 +502,6 @@ enum QuestDay {
         components.day = parts[2]
         components.hour = 12
         return calendar.date(from: components)
-    }
-
-    /// Inclusive day count. `2026-10-01` through `2026-10-14` is 14.
-    static func daySpan(from start: String, to end: String) -> Int {
-        guard let startDate = date(from: start), let endDate = date(from: end) else { return 1 }
-        let days = calendar.dateComponents([.day], from: startDate, to: endDate).day ?? 0
-        return max(days + 1, 1)
     }
 
     static func key(byAddingDays days: Int, to key: String) -> String {

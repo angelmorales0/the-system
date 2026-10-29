@@ -10,29 +10,6 @@ struct ReadinessSnapshot: Codable, Equatable {
     var capturedOn: String
 }
 
-/// Rolling placeholder for long-term recovery capacity.
-/// Today's `recoveryScore` is never copied into `PlayerState.stats.REC`.
-struct RecoveryComposite: Codable, Equatable {
-    var scoresByDay: [String: Int] = [:]
-
-    var sampleCount: Int { scoresByDay.count }
-
-    /// Nil until a week of scores exists. The radar REC stat stays XP-driven until then.
-    var rollingAverage: Double? {
-        guard scoresByDay.count >= 7 else { return nil }
-        let total = scoresByDay.values.reduce(0, +)
-        return Double(total) / Double(scoresByDay.count)
-    }
-
-    mutating func record(score: Int, on dayKey: String) {
-        scoresByDay[dayKey] = min(max(score, 0), 100)
-        let overflow = scoresByDay.keys.sorted().dropLast(28)
-        for key in overflow {
-            scoresByDay.removeValue(forKey: key)
-        }
-    }
-}
-
 extension ReadinessBand {
     /// WHOOP bands: green 67–100, yellow 34–66, red 0–33.
     static func from(recoveryScore score: Int) -> ReadinessBand {

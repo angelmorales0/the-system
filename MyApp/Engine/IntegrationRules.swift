@@ -61,9 +61,6 @@ enum IntegrationRules {
         if snapshot.readiness?.band != .green || snapshot.readiness?.recoveryScore != 80 {
             errors.append("readiness should store the WHOOP score separately")
         }
-        if snapshot.recoveryComposite.rollingAverage != nil {
-            errors.append("one score is not a rolling REC composite")
-        }
         player.stats.REC = rec
         if ReadinessBand.from(recoveryScore: 50) != .yellow || ReadinessBand.from(recoveryScore: 20) != .red {
             errors.append("WHOOP bands should be green/yellow/red at 67 and 34")

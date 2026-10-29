@@ -119,8 +119,8 @@ struct StatLevelSet: Equatable {
         if history.days.count != 2 || history.days["2026-10-01"]?["INT"] != StatLevel.maxLevel {
             errors.append("history should keep the newest reading per day, got \(history.days)")
         }
-        if history.series(for: .INT).map(\.level) != [StatLevel.maxLevel, 0] || history.latest?[.INT] != 0 {
-            errors.append("history series should run oldest to newest, got \(history.series(for: .INT))")
+        if history.latest?[.INT] != 0 {
+            errors.append("the newest day should be the latest reading, got \(String(describing: history.latest))")
         }
         for day in 1...130 {
             history.record(none, on: String(format: "2027-%02d-%02d", (day - 1) / 28 + 1, (day - 1) % 28 + 1))
@@ -156,7 +156,7 @@ struct StatLevelSet: Equatable {
     }
 }
 
-/// One saved reading of every stat level per local day, for the history charts. Newest reading of a day wins.
+/// One saved reading of every stat level per local day. Launch shows the newest one until fresh data arrives. Newest reading of a day wins.
 struct StatLevelHistory: Codable, Equatable {
     static let keepDays = 120
     /// v2: stat levels on the 0...350 scale. v1 readings were on 0...146 and are not mixed in.
@@ -170,11 +170,6 @@ struct StatLevelHistory: Codable, Equatable {
         for key in days.keys.sorted().dropLast(Self.keepDays) {
             days.removeValue(forKey: key)
         }
-    }
-
-    /// Oldest to newest.
-    func series(for stat: Stat) -> [(dayKey: String, level: Int)] {
-        days.keys.sorted().map { (dayKey: $0, level: days[$0]?[stat.rawValue] ?? 0) }
     }
 
     /// The newest saved levels, shown at launch until fresh data arrives.

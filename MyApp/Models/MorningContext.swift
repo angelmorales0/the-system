@@ -47,13 +47,6 @@ struct MorningWhoop: Codable, Equatable {
     var readinessBand: ReadinessBand
 }
 
-struct MorningGoalBias: Codable, Equatable {
-    var id: String
-    var title: String
-    var statHint: String
-    var progress: Double
-}
-
 struct MorningNutrition: Codable, Equatable {
     var source: String
     var available: Bool
@@ -193,7 +186,6 @@ struct MorningContext: Codable, Equatable {
     var player: MorningPlayer
     var modeDecision: MorningModeDecision
     var whoop: MorningWhoop
-    var goalsBias: [MorningGoalBias]
     var nutrition: MorningNutrition
     var mercury: MorningMercury
     var focus: MorningFocus

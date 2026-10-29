@@ -35,7 +35,6 @@ enum ContextBuilder {
                 dayStrainYesterday: nil,
                 readinessBand: snapshot.signals.readinessBand
             ),
-            goalsBias: [],
             nutrition: MorningNutrition(
                 source: "placeholder",
                 available: false,

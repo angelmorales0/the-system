@@ -286,9 +286,6 @@ enum QuestGenerationRules {
         if context.goals?.bodyWeight.targetLb != 145 || context.goals?.bodyWeight.latestLb != 154.3 || context.goals?.bodyWeight.source != "MacroFactor" {
             errors.append("body weight should carry the 145 lb target and the newest weigh-in, got \(String(describing: context.goals?.bodyWeight))")
         }
-        if !context.goalsBias.isEmpty {
-            errors.append("placeholder goals with made-up progress must not reach the model")
-        }
         return errors
     }
 
@@ -319,7 +316,6 @@ enum QuestGenerationRules {
                 dayStrainYesterday: nil,
                 readinessBand: band
             ),
-            goalsBias: [],
             nutrition: MorningNutrition(source: "placeholder", available: false, proteinG: nil, proteinTargetG: 150, calories: nil, calorieTarget: nil, asOf: nil),
             mercury: MorningMercury(available: false, spendTodayUsd: nil, softDailyCapUsd: nil, discretionary7dUsd: nil, state: "unavailable"),
             focus: MorningFocus(screenTimeAvailable: false, distractingMinutesYesterday: nil, deepWorkMinutesYesterday: nil, pickupCountYesterday: nil),

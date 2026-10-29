@@ -18,7 +18,6 @@ struct GameSnapshot: Codable, Equatable {
     /// Today's WHOOP recovery. Not copied into `player.stats.REC`.
     var readiness: ReadinessSnapshot?
     /// Rolling recovery-capacity placeholder. The radar REC stat stays XP-driven.
-    var recoveryComposite: RecoveryComposite = RecoveryComposite()
     /// Mercury aggregates for the quest day. Not a dollar balance.
     var finance: FinanceSnapshot?
     /// FIN points already added from `FinanceProjection`. Quest grants sit on top of this.
@@ -330,7 +329,6 @@ struct GameSnapshot: Codable, Equatable {
         if let sleep = reading.sleepPerformance {
             signals.sleepPerformance = sleep
         }
-        recoveryComposite.record(score: score, on: reading.dayKey)
         player.stats.REC = previousREC
         let nextDecision = ModePicker.decide(modeInput(now: now))
         let quiet = runningTimers.isEmpty && !bundle.quests.contains { $0.status == .completed }
@@ -446,7 +444,7 @@ struct GameSnapshot: Codable, Equatable {
 extension GameSnapshot {
     private enum CodingKeys: String, CodingKey {
         case version, player, signals, bundle, evidenceLog, runningTimers
-        case recentQuestTitles, generationAttemptDayKey, generatedBundle, readiness, recoveryComposite
+        case recentQuestTitles, generationAttemptDayKey, generatedBundle, readiness
         case finance, appliedFinProjection
         case fullRecoveryDayKey, queuedFullRecoveryDayKey, hasDistractorSelection
         case hiddenUnlocks
@@ -465,7 +463,6 @@ extension GameSnapshot {
         runningTimers = try container.decodeIfPresent([TimerRun].self, forKey: .runningTimers) ?? []
         recentQuestTitles = try container.decodeIfPresent([String].self, forKey: .recentQuestTitles) ?? []
         readiness = try container.decodeIfPresent(ReadinessSnapshot.self, forKey: .readiness)
-        recoveryComposite = try container.decodeIfPresent(RecoveryComposite.self, forKey: .recoveryComposite) ?? RecoveryComposite()
         finance = try container.decodeIfPresent(FinanceSnapshot.self, forKey: .finance)
         appliedFinProjection = try container.decodeIfPresent(Int.self, forKey: .appliedFinProjection) ?? 0
         fullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .fullRecoveryDayKey)
@@ -490,7 +487,6 @@ extension GameSnapshot {
         try container.encode(runningTimers, forKey: .runningTimers)
         try container.encode(recentQuestTitles, forKey: .recentQuestTitles)
         try container.encodeIfPresent(readiness, forKey: .readiness)
-        try container.encode(recoveryComposite, forKey: .recoveryComposite)
         try container.encodeIfPresent(finance, forKey: .finance)
         try container.encode(appliedFinProjection, forKey: .appliedFinProjection)
         try container.encodeIfPresent(fullRecoveryDayKey, forKey: .fullRecoveryDayKey)

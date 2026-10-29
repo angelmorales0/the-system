@@ -41,7 +41,6 @@ struct ContentView: View {
 
 enum SystemTheme {
     static let background = Color(red: 0.008, green: 0.014, blue: 0.038)
-    static let panel = Color(red: 0.015, green: 0.06, blue: 0.13)
     static let accent = Color(red: 0.12, green: 0.70, blue: 1.0)
     static let cyan = Color(red: 0.12, green: 0.70, blue: 1.0)
     static let ink = Color(red: 0.94, green: 0.97, blue: 1.0)
