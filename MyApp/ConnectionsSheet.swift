@@ -219,6 +219,8 @@ struct ConnectionExtras: View {
             OAuthSignIn(provider: .whoop, onMessage: onMessage)
         case .mercury:
             MercurySettingsView()
+        case .claude:
+            ClaudeSettingsView()
         default:
             EmptyView()
         }
@@ -346,5 +348,30 @@ struct MercurySettingsView: View {
         next.monthlyBudgetUsd = Double(budget.trimmingCharacters(in: .whitespaces))
         next.categoryMap = MercurySettings.categoryMap(from: categories)
         next.save()
+    }
+}
+
+/// The model that plans the quests. Empty uses the default.
+struct ClaudeSettingsView: View {
+    @State private var model = UserDefaults.standard.string(forKey: QuestPlanner.modelKey) ?? ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            TextField("Model (empty = \(QuestPlanner.defaultModel))", text: $model)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .onChange(of: model) { _, value in
+                    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.isEmpty {
+                        UserDefaults.standard.removeObject(forKey: QuestPlanner.modelKey)
+                    } else {
+                        UserDefaults.standard.set(trimmed, forKey: QuestPlanner.modelKey)
+                    }
+                }
+            Text("Planning runs when the app opens in the morning and can take up to two minutes. The catalog quests stay on screen until a valid plan arrives. If the app leaves the screen before it finishes, it tries again on the next open (up to 3 times a day).")
+                .font(.footnote)
+                .foregroundStyle(SystemTheme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

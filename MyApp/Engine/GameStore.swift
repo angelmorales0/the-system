@@ -46,6 +46,7 @@ final class GameStore: ObservableObject {
             + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
             + NoGymDayRules.check() + SecretStore.check() + ConnectionStatusStore.check()
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MercuryClient.check()
+            + TrainingHistory.check() + QuestPlanner.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -126,7 +127,23 @@ final class GameStore: ObservableObject {
 
     /// After the owner saves or removes a key in Status → Connections: read the services again.
     func connectionsChanged() {
+        allowGenerationAfterNewKey(now: .now)
         refreshIntegrations(now: .now)
+    }
+
+    /// A Claude key saved after this morning's offline plan: plan today again, if nothing is done yet.
+    private func allowGenerationAfterNewKey(now: Date) {
+        let dayKey = QuestDay.key(for: now)
+        guard OnDeviceQuestGenerateClient.hasKey, snapshot.bundle.dayKey == dayKey,
+              snapshot.generationAttemptDayKey == dayKey,
+              ["mock", "fallback"].contains(snapshot.bundle.generatedBy),
+              !snapshot.bundle.quests.contains(where: { $0.status == .completed }),
+              snapshot.runningTimers.isEmpty else { return }
+        var next = snapshot
+        next.generationAttemptDayKey = nil
+        next.generatedBundle = nil
+        snapshot = next
+        persist()
     }
 
     func saveDistractorSelection() {
@@ -526,7 +543,9 @@ final class GameStore: ObservableObject {
         next.generationAttemptDayKey = dayKey
         snapshot = next
         let finished = snapshot.bundle.quests.contains { $0.status == .completed } || !snapshot.runningTimers.isEmpty
-        let alreadyGenerated = ["mock", "llm", "template"].contains(snapshot.bundle.generatedBy)
+        // An offline mock plan does not count once a Claude key is saved.
+        let author = snapshot.bundle.generatedBy
+        let alreadyGenerated = ["llm", "template"].contains(author) || (author == "mock" && !OnDeviceQuestGenerateClient.hasKey)
         if finished || alreadyGenerated {
             if alreadyGenerated, snapshot.generatedBundle == nil {
                 snapshot.generatedBundle = snapshot.bundle.strippingModelCompletion(assignedAt: now)
@@ -541,8 +560,19 @@ final class GameStore: ObservableObject {
         }
     }
 
+    /// Tries per local day when the planner gets no reply. Each later app open or refresh tries again.
+    private static let generationRetriesPerDay = 3
+
     private func runGeneration(context: MorningContext, dayKey: String) async {
-        let bundle = await generator.generate(context: context)
+        // Planning can take two minutes. Ask iOS for time to finish if the app goes to the background.
+        let background = GenerationBackgroundTask.begin()
+        defer { GenerationBackgroundTask.end(background) }
+        let result = await generator.generateResult(context: context)
+        let bundle = result.bundle
+        if result.retryLater {
+            allowGenerationRetry(dayKey: dayKey)
+            return
+        }
         guard bundle.generatedBy != "fallback" else { return }
         let now = Date()
         guard snapshot.bundle.dayKey == dayKey, snapshot.generationAttemptDayKey == dayKey else { return }
@@ -557,6 +587,18 @@ final class GameStore: ObservableObject {
         next.bundle = next.finished(prepared, catalog: catalog, now: now)
         snapshot = next
         runningTimersRemoveMissing()
+        persist()
+    }
+
+    /// No reply came back: clear today's attempt so the next open or refresh plans again, up to the daily limit.
+    private func allowGenerationRetry(dayKey: String) {
+        let key = "com.angelmorales.thesystem.generationRetries.\(dayKey)"
+        let used = UserDefaults.standard.integer(forKey: key)
+        guard used < Self.generationRetriesPerDay, snapshot.generationAttemptDayKey == dayKey else { return }
+        UserDefaults.standard.set(used + 1, forKey: key)
+        var next = snapshot
+        next.generationAttemptDayKey = nil
+        snapshot = next
         persist()
     }
 

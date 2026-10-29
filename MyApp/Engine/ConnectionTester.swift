@@ -18,8 +18,8 @@ enum ConnectionTester {
             outcome = await CodeforcesClient.test()
         case .mercury:
             outcome = await MercuryClient.test()
-        default:
-            outcome = (false, "\(connection.title) is not on the phone yet.")
+        case .claude:
+            outcome = await QuestPlanner.test()
         }
         ConnectionStatusStore.record(connection, ok: outcome.ok, message: outcome.message)
         return outcome
