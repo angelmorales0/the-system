@@ -11,7 +11,7 @@ struct ScreenTimeSheet: View {
     #if os(iOS)
     @State private var selection = PhoneScreenGroup.load()
     #endif
-    @State private var message = "Choose All Apps & Categories so every app on this phone counts toward the daily cap. Phone 1.5 h and work 7 h turn red when over; only the 8.5 h total fails the quest and opens a penalty."
+    @State private var message = "Choose All Apps & Categories so every app on this phone counts toward the daily cap. Phone 1.5 h and work 7 h turn red when over; only the 8 h 20 m total fails the quest and opens a penalty."
 
     var body: some View {
         NavigationStack {

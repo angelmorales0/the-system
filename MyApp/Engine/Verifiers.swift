@@ -56,7 +56,7 @@ enum VerifierRegistry {
         case .screenTimeLimit:
             // The row moves from Screen Time threshold events (phone) and the backend (work), not from a verifier.
             // It completes when the day ends under the cap, and fails as soon as the total goes over.
-            return IncompleteVerifier(method: method, reason: "Screen Time updates from your phone and Mac readings. It completes when the day ends under 8.5 hours.")
+            return IncompleteVerifier(method: method, reason: "Screen Time updates from your phone and Mac readings. It completes when the day ends under 8 h 20 m.")
         }
     }
 }

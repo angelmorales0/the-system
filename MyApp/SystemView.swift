@@ -123,7 +123,7 @@ struct SystemView: View {
         }
     }
 
-    /// Screen Time is yellow from the 8.5 h cap through the grace, and red once it fails.
+    /// Screen Time is yellow from the 8 h 20 m cap through the grace, and red once it fails.
     private func screenTimeInk(_ quest: Quest) -> Color? {
         guard quest.id == ScreenTime.questId else { return nil }
         if quest.status == .failed { return QuestLight.penalty }
