@@ -438,7 +438,7 @@ enum QuestPlanner {
         cleaned["generatedBy"] = .string(["llm", "template", "mock"].contains(author) ? author : "template")
         let quests: [JSONValue] = (cleaned["quests"]?.arrayValue ?? []).compactMap { quest in
             guard var row = quest.objectValue else { return nil }
-            for field in ["completed", "status", "evidence", "grantedXP", "grantedStatPoints", "grantedRecoveryToken", "assignedAt"] { row[field] = nil }
+            for field in ["completed", "status", "evidence", "grantedXP", "grantedStatPoints", "grantedRecoveryToken", "assignedAt", "skippedWithPotion"] { row[field] = nil }
             if let mode, modes.contains(mode) { row["mode"] = .string(mode) }
             if let day {
                 // The app decodes a deadline and expects day-scoped ids, as the template writes them.

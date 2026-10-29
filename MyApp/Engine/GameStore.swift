@@ -42,7 +42,7 @@ final class GameStore: ObservableObject {
         let problems = VerificationFixtures.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check() + RecoveryLevel.check()
             + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check() + MacScreenClient.check()
-            + HiddenQuestRules.check() + RecoveryHolidayRules.check()
+            + HiddenQuestRules.check() + RecoveryHolidayRules.check() + ShopRules.check()
             + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
             + NoGymDayRules.check() + PenaltyDecay.check() + SecretStore.check() + ConnectionStatusStore.check()
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MercuryClient.check()
@@ -108,6 +108,25 @@ final class GameStore: ObservableObject {
     func spendFullRecovery(now: Date = .now) {
         var next = snapshot
         let message = next.spendFullRecovery(catalog: catalog, now: now)
+        snapshot = next
+        verificationNote = message
+        clock = now
+        persist()
+        enforcePenalty()
+    }
+
+    func buy(_ item: ShopItem, now: Date = .now) {
+        var next = snapshot
+        let message = next.buy(item)
+        snapshot = next
+        verificationNote = message
+        clock = now
+        persist()
+    }
+
+    func drinkPotion(_ potion: Potion, questId: String, now: Date = .now) {
+        var next = snapshot
+        let message = next.drinkPotion(potion, questId: questId)
         snapshot = next
         verificationNote = message
         clock = now
@@ -381,6 +400,7 @@ final class GameStore: ObservableObject {
     }
 
     func accessibilityValue(for quest: Quest) -> String {
+        if quest.skippedWithPotion { return "Skipped with a potion" }
         if quest.status == .completed { return "Completed" }
         if snapshot.runningTimers.contains(where: { $0.questId == quest.id }) { return "Timer running" }
         switch quest.verification.method {

@@ -44,6 +44,12 @@ struct GameSnapshot: Codable, Equatable {
     var emergencyFailedDayKey: String?
     /// Quest day the player marked "No gym today". Lifts become a second 10K on that day only.
     var noGymDayKey: String?
+    /// Earned on perfect days. Spent in `Shop`.
+    var gold: Int = 0
+    /// Unused potions, keyed by `Potion.rawValue`.
+    var potions: [String: Int] = [:]
+    /// Gold from the last day that ended. Nil when that day earned none.
+    var lastGoldReward: GoldReward?
 
     static func fresh(
         catalog: FallbackCatalog,
@@ -64,6 +70,7 @@ struct GameSnapshot: Codable, Equatable {
         guard key > bundle.dayKey else { return }
         grantHolidayRecovery(previousKey: bundle.dayKey, key: key)
         settleScreenTime()
+        awardDayGold()
         recordQuestDay()
         recordMissedDayIfNeeded()
         let previousTitles = bundle.quests.map(\.title)
@@ -98,7 +105,8 @@ struct GameSnapshot: Codable, Equatable {
                     target: quest.progress.target,
                     done: quest.progress.current,
                     unit: quest.progress.unit,
-                    status: quest.status
+                    // A potion skip is not real work, so split rotation and progression ignore it.
+                    status: quest.skippedWithPotion ? .expired : quest.status
                 )
             }
         )
@@ -449,6 +457,7 @@ extension GameSnapshot {
         case hiddenUnlocks
         case emergencyFailedDayKey, noGymDayKey
         case questHistory, screenTime
+        case gold, potions, lastGoldReward
     }
 
     init(from decoder: Decoder) throws {
@@ -474,6 +483,9 @@ extension GameSnapshot {
         generatedBundle = try container.decodeIfPresent(QuestBundle.self, forKey: .generatedBundle)
         questHistory = try container.decodeIfPresent([QuestDayRecord].self, forKey: .questHistory) ?? []
         screenTime = try container.decodeIfPresent(ScreenTimeDay.self, forKey: .screenTime)
+        gold = try container.decodeIfPresent(Int.self, forKey: .gold) ?? 0
+        potions = try container.decodeIfPresent([String: Int].self, forKey: .potions) ?? [:]
+        lastGoldReward = try container.decodeIfPresent(GoldReward.self, forKey: .lastGoldReward)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -498,6 +510,9 @@ extension GameSnapshot {
         try container.encodeIfPresent(screenTime, forKey: .screenTime)
         try container.encodeIfPresent(generationAttemptDayKey, forKey: .generationAttemptDayKey)
         try container.encodeIfPresent(generatedBundle, forKey: .generatedBundle)
+        try container.encode(gold, forKey: .gold)
+        try container.encode(potions, forKey: .potions)
+        try container.encodeIfPresent(lastGoldReward, forKey: .lastGoldReward)
     }
 }
 
