@@ -1,0 +1,49 @@
+{
+  "stress_state": "RELAXED",
+  "calibration_text_display": null,
+  "gauge": {
+    "gauge_score_display": "0.6",
+    "gauge_subtext_display": "LOW",
+    "gauge_min_display": "0.0",
+    "gauge_max_display": "3.0"
+  },
+  "stress_graph": {
+    "graph": {
+      "plots": [
+        {
+          "plot": {
+            "segments": [
+              {
+                "points": [
+                  {
+                    "data_scrubber_details": {
+                      "primary_contextual_display": "9:00 AM",
+                      "value_display": "0.4",
+                      "secondary_contextual_display": "LOW"
+                    }
+                  },
+                  {
+                    "data_scrubber_details": {
+                      "primary_contextual_display": "12:00 PM",
+                      "value_display": "1.2",
+                      "secondary_contextual_display": "MODERATE"
+                    }
+                  },
+                  {
+                    "data_scrubber_details": {
+                      "primary_contextual_display": "3:30 PM",
+                      "value_display": "0.8",
+                      "secondary_contextual_display": "LOW"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "metadata": {},
+  "title": "Stress"
+}

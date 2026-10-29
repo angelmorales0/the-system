@@ -1,0 +1,29 @@
+{
+  "metadata": {},
+  "header": {},
+  "sections": [
+    {
+      "items": [
+        {
+          "type": "SCORE_GAUGE",
+          "content": {
+            "id": "RECOVERY_SCORE_GAUGE",
+            "score_display": "67"
+          }
+        },
+        {
+          "type": "CONTRIBUTORS_TILE",
+          "content": {
+            "id": "RECOVERY_CONTRIBUTORS_TILE",
+            "metrics": [
+              {"id": "CONTRIBUTORS_TILE_HRV", "status": "62"},
+              {"id": "CONTRIBUTORS_TILE_RHR", "status": "51"},
+              {"id": "CONTRIBUTORS_TILE_RESPIRATORY_RATE", "status": "14.2"},
+              {"id": "CONTRIBUTORS_TILE_SLEEP_PERFORMANCE", "status": "88"}
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
