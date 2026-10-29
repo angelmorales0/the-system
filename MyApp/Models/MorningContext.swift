@@ -144,6 +144,12 @@ struct MorningStrengthTarget: Codable, Equatable {
     var targetLb: Double?
     var targetReps: Int?
     var unit: String
+    /// Holds: seconds in one set.
+    var targetSeconds: Double? = nil
+    /// True for a goal the player added. Nil (left out of the JSON) for the built-in targets.
+    var custom: Bool? = nil
+    /// Custom goals: the split day name that trains it.
+    var splitDay: String? = nil
 }
 
 /// One END target the player kept, in words.

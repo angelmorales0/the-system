@@ -257,6 +257,7 @@ def lift_summaries(workouts: list[dict[str, Any]], today: date, zone: ZoneInfo) 
                     "bestReps": max((item.get("reps") or 0 for item in sets), default=0),
                     "totalReps": sum(item.get("reps") or 0 for item in sets),
                     "seconds": sum(item.get("durationSec") or 0 for item in sets) or None,
+                    "bestSeconds": max((item.get("durationSec") or 0 for item in sets), default=0) or None,
                 }
             )
     for entry in lifts.values():
@@ -449,25 +450,36 @@ def rounded(value: Any, digits: int = 0) -> float | int | None:
 
 
 def strength_targets(targets: list[dict[str, Any]], lifts: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    """Each STR target the player kept, with the best matching lift in the window and the gap left."""
+    """Each STR target the player kept, with the best matching lift in the window and the gap left.
+    Weight goals compare e1RM (gapLb), rep goals the best set (gapReps), and holds the longest set (gapSeconds).
+    The player's own goals ("custom": true) are scored the same way and keep their flag and split day."""
     rows = []
     for target in targets:
         aliases = {str(alias).lower() for alias in target.get("aliases") or []}
         matches = [entry for name, entry in lifts.items() if name.replace("-", " ") in aliases]
-        row = {key: target[key] for key in ("category", "goal", "targetLb", "targetReps", "unit") if key in target}
+        keys = ("category", "goal", "targetLb", "targetReps", "targetSeconds", "unit", "custom", "splitDay")
+        row = {key: target[key] for key in keys if target.get(key) is not None}
         best = max((entry["bestE1rmLb"] or 0 for entry in matches), default=0)
         reps = max((session["bestReps"] for entry in matches for session in entry["sessions"]), default=0)
+        seconds = max((session.get("bestSeconds") or 0 for entry in matches for session in entry["sessions"]), default=0)
+        weight_goal = isinstance(target.get("targetLb"), (int, float)) and isinstance(target.get("targetReps"), (int, float))
         if matches:
             row["matchedExercises"] = [entry["exercise"] for entry in matches]
             row["lastTrained"] = max(entry["lastDate"] for entry in matches)
         if best:
             row["bestE1rmLb"] = best
-            if isinstance(target.get("targetLb"), (int, float)) and isinstance(target.get("targetReps"), (int, float)):
+            if weight_goal:
                 goal_e1rm = e1rm(float(target["targetLb"]), int(target["targetReps"]))
                 row["goalE1rmLb"] = round(goal_e1rm)
                 row["gapLb"] = max(0, round(goal_e1rm - best))
         elif reps:
             row["bestRepsInASet"] = reps
+        if not weight_goal and isinstance(target.get("targetReps"), (int, float)) and reps:
+            row["bestRepsInASet"] = reps
+            row["gapReps"] = max(0, int(target["targetReps"]) - reps)
+        if isinstance(target.get("targetSeconds"), (int, float)) and seconds:
+            row["bestSecondsInASet"] = round(seconds)
+            row["gapSeconds"] = max(0, round(float(target["targetSeconds"]) - seconds))
         if not matches:
             row["status"] = "not trained in 30 days"
         rows.append(row)
@@ -661,6 +673,37 @@ def self_check() -> None:
     target = history["strengthTargets"][0]
     if target.get("bestE1rmLb") != 309 or target.get("gapLb") != 6 or target.get("lastTrained") != "2026-10-20":
         raise SystemExit(f"squat target should show a 6 lb gap, got {target}")
+
+    # The player's own goals: a weight goal shows its e1RM gap, a rep goal its rep gap, a hold its seconds gap.
+    def timed(day: int, title: str, sets: list[dict[str, Any]]) -> dict[str, Any]:
+        return {"id": f"{title}-{day}", "title": "Workout", "start": f"2026-10-{day:02d}T17:00:00Z", "end": f"2026-10-{day:02d}T18:00:00Z",
+                "exercises": [{"title": title, "templateId": None, "sets": [{"type": "normal", "rpe": None, **item} for item in sets]}]}
+
+    own = [
+        {"category": "Hip Thrust", "goal": "225 lb × 5", "aliases": ["hip thrust"], "targetLb": 225, "targetReps": 5, "unit": "lb", "custom": True, "splitDay": "Deadlift Day"},
+        {"category": "Muscle Up", "goal": "10 reps in one set", "aliases": ["muscle up"], "targetReps": 10, "unit": "reps", "custom": True, "splitDay": "Arms Day"},
+        {"category": "L-Sit", "goal": "30 sec in one hold", "aliases": ["l sit"], "targetSeconds": 30, "unit": "seconds", "custom": True, "splitDay": "Arms Day"},
+        {"category": "Sled Push", "goal": "300 lb × 10", "aliases": ["sled push"], "targetLb": 300, "targetReps": 10, "unit": "lb", "custom": True, "splitDay": "Squat Day"},
+    ]
+    own_lifts = lift_summaries(
+        [
+            lift(18, "Hip Thrust (Barbell)", [(80, 5), (85, 5)]),
+            timed(19, "Muscle-Up", [{"reps": 6, "weightKg": None, "durationSec": None}, {"reps": 4, "weightKg": None, "durationSec": None}]),
+            timed(20, "L-Sit", [{"reps": None, "weightKg": None, "durationSec": 12}, {"reps": None, "weightKg": None, "durationSec": 20}]),
+        ],
+        today,
+        zone,
+    )
+    thrust, muscle_up, l_sit, sled = strength_targets(own, own_lifts)
+    # 85 kg × 5 is 187 lb, e1RM 219 lb; the goal 225 lb × 5 is e1RM 262 lb: a 44 lb gap.
+    if not thrust.get("custom") or thrust.get("splitDay") != "Deadlift Day" or thrust.get("bestE1rmLb") != 219 or thrust.get("gapLb") != 44:
+        raise SystemExit(f"a custom weight goal should show its e1RM gap, got {thrust}")
+    if muscle_up.get("bestRepsInASet") != 6 or muscle_up.get("gapReps") != 4:
+        raise SystemExit(f"a custom rep goal should show a 4-rep gap, got {muscle_up}")
+    if l_sit.get("bestSecondsInASet") != 20 or l_sit.get("gapSeconds") != 10:
+        raise SystemExit(f"a custom hold should show a 10 sec gap, got {l_sit}")
+    if sled.get("status") != "not trained in 30 days" or sled.get("goal") != "300 lb × 10":
+        raise SystemExit(f"an untrained custom goal should still be listed, got {sled}")
 
     # The lift limits below are checked without the run window; the window has its own check at the end.
     history = {key: value for key, value in history.items() if key != "runWindow"}

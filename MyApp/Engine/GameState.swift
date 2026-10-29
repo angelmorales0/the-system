@@ -384,7 +384,8 @@ struct GameSnapshot: Codable, Equatable {
             now: now
         )
         // Offline, the day still follows the split: its exercises without loads.
-        let split = GymSplit.apply(GymSplit.today(history: questHistory, dayKey: dayKey), to: catalogDay, band: decision.trainingBand, now: now)
+        let today = GymSplit.today(history: questHistory, dayKey: dayKey, goals: catalog.strengthGoals)
+        let split = GymSplit.apply(today, to: catalogDay, band: decision.trainingBand, now: now)
         bundle = finished(split, catalog: catalog, now: now)
     }
 

@@ -72,7 +72,7 @@ enum ContextBuilder {
             split: MorningSplit(
                 name: GymSplit.name,
                 rotation: GymSplit.rotation.map(\.name),
-                today: GymSplit.today(history: snapshot.questHistory, dayKey: dayKey),
+                today: GymSplit.today(history: snapshot.questHistory, dayKey: dayKey, goals: targets.custom),
                 lastDone: GymSplit.lastDone(history: snapshot.questHistory)
             )
         )
@@ -88,9 +88,9 @@ enum ContextBuilder {
         return copy
     }
 
-    /// The real goals: every STR and END target the player kept, the 7-day running km, and body weight.
+    /// The real goals: every STR and END target the player kept, the player's own STR goals, the 7-day running km, and body weight.
     static func goals(targets: StatTargets, bodyMass: BodyMassReading?) -> MorningGoals {
-        func goal(_ category: String) -> String { StatTargets.goals[category] ?? category }
+        func goal(_ category: String) -> String { targets.goal(for: category) ?? category }
         var strength = StrengthLevel.lifts.map { lift in
             MorningStrengthTarget(
                 category: lift.category,
@@ -107,8 +107,22 @@ enum ContextBuilder {
         strength += [
             MorningStrengthTarget(category: "Pistol squats", goal: goal("Pistol squats"), aliases: StrengthLevel.pistolAliases, targetLb: nil, targetReps: Int(StrengthLevel.pistolBand.target), unit: "reps per leg"),
             MorningStrengthTarget(category: "Farmer's carry", goal: goal("Farmer's carry"), aliases: StrengthLevel.farmerAliases, targetLb: nil, targetReps: nil, unit: "lb per hand for time"),
-            MorningStrengthTarget(category: "Dead hang", goal: goal("Dead hang"), aliases: StrengthLevel.hangAliases, targetLb: nil, targetReps: nil, unit: "seconds"),
+            MorningStrengthTarget(category: "Dead hang", goal: goal("Dead hang"), aliases: StrengthLevel.hangAliases, targetLb: nil, targetReps: nil, unit: "seconds",
+                                  targetSeconds: StrengthLevel.hangBand.target),
         ]
+        strength += targets.custom.map { custom in
+            MorningStrengthTarget(
+                category: custom.category,
+                goal: custom.goal,
+                aliases: [custom.alias],
+                targetLb: custom.kind == .weightReps ? custom.targetLb : nil,
+                targetReps: custom.kind == .hold ? nil : custom.targetReps,
+                unit: custom.kind == .weightReps ? "lb" : custom.kind == .reps ? "reps" : "seconds",
+                targetSeconds: custom.kind == .hold ? custom.targetSeconds : nil,
+                custom: true,
+                splitDay: GymSplit.day(id: custom.day)?.name
+            )
+        }
         let endurance = EnduranceLevel.evaluate(efforts: [], swims: [], vo2: [], zoneTwo: [], now: .now).requirements
             .map(\.category)
             .filter { !targets.isRemoved($0, from: .END) && $0 != "Body weight" }
