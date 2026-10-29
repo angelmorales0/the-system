@@ -23,12 +23,12 @@ The monitor's `intervalDidEnd` re-asserts shields when `penaltyActive` is still 
 
 1. Open `system.xcodeproj` on a Mac with Xcode. Select the **MyApp** scheme and an iPhone destination. Family Controls does not run in the simulator.
 2. Keep the placeholder bundle ids unless you register different ones. With `PROJECT_UNIQUE_VALUE` `HDDJMVMX` they are:
-   - `devplaceholder.HDDJMVMX.MyApp`
-   - `devplaceholder.HDDJMVMX.MyApp.PenaltyMonitor`
-   - `devplaceholder.HDDJMVMX.MyApp.PenaltyShieldConfig`
-   - `devplaceholder.HDDJMVMX.MyApp.PenaltyShieldAction`
-   - `devplaceholder.HDDJMVMX.MyApp.PenaltyActivity`
-3. On each of those App IDs, add the App Group `group.devplaceholder.HDDJMVMX.thesystem`. The same string is in `PenaltyGroup.suiteName` and in each extension file (`PenaltyMonitorGroup` is the copy inside the monitor). If the portal id changes, change every copy.
+   - `com.angelmorales.thesystem`
+   - `com.angelmorales.thesystem.PenaltyMonitor`
+   - `com.angelmorales.thesystem.PenaltyShieldConfig`
+   - `com.angelmorales.thesystem.PenaltyShieldAction`
+   - `com.angelmorales.thesystem.PenaltyActivity`
+3. On each of those App IDs, add the App Group `group.com.angelmorales.thesystem`. The same string is in `PenaltyGroup.suiteName` and in each extension file (`PenaltyMonitorGroup` is the copy inside the monitor). If the portal id changes, change every copy.
 4. Turn on the Family Controls capability for MyApp, PenaltyMonitor, PenaltyShieldConfig, and PenaltyShieldAction. The iOS entitlements file is `MyApp-iOS.entitlements` (HealthKit plus Family Controls plus the App Group). `MyApp.entitlements` stays HealthKit-only so visionOS is unchanged. The Live Activity extension only has the App Group; it does not call Family Controls.
 5. Request **Family Controls (Distribution)** from Apple for each App ID that carries that entitlement before TestFlight or the App Store. A development build can use the boolean entitlement after the capability is on the App ID. Distribution approval is still open.
 6. Confirm the four extension targets embed in MyApp. The project uses an Embed Foundation Extensions phase with `platformFilter = ios`, so a Mac build skips the appex files. Extension targets are iOS-only (`iphoneos` and `iphonesimulator`). If a Mac scheme still tries to compile them, uncheck those targets for the macOS destination.

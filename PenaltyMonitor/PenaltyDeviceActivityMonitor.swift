@@ -46,7 +46,7 @@ class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
 
 /// Mirrors `PenaltyGroup` and `QuestDay.startHour` in the app. Keep the strings in step.
 enum PenaltyMonitorGroup {
-    static let suiteName = "group.devplaceholder.HDDJMVMX.thesystem"
+    static let suiteName = "group.com.angelmorales.thesystem"
     static let penaltyActiveKey = "penaltyActive"
     static let startedAtKey = "penaltyStartedAt"
     static let openDayKey = "penaltyOpenDayKey"

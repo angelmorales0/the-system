@@ -9,7 +9,7 @@ import ManagedSettings
 
 /// App Group shared with the Screen Time extensions. Replace this in every extension if the portal id changes.
 enum PenaltyGroup {
-    static let suiteName = "group.devplaceholder.HDDJMVMX.thesystem"
+    static let suiteName = "group.com.angelmorales.thesystem"
     static let penaltyActiveKey = "penaltyActive"
     static let selectionKey = "familyActivitySelection"
     /// Apps that stay open during a penalty: The System, Strava, and Spotify, picked by the player.

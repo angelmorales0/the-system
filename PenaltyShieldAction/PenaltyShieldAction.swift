@@ -24,7 +24,7 @@ class PenaltyShieldAction: ShieldActionDelegate {
 
 enum PenaltyOpenNotice {
     /// Mirrors `PenaltyGroup` and `EmergencyGroup` in the app. Keep the strings in step.
-    static let suiteName = "group.devplaceholder.HDDJMVMX.thesystem"
+    static let suiteName = "group.com.angelmorales.thesystem"
     static let lockdownKindKey = "emergencyLockdownKind"
     static let shieldLineKey = "penaltyShieldLine"
 

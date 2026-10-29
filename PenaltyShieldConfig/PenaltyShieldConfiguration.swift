@@ -23,7 +23,7 @@ class PenaltyShieldConfiguration: ShieldConfigurationDataSource {
 
 enum PenaltyShieldCopy {
     /// Mirrors `EmergencyGroup` in the app. Keep the strings in step.
-    static let suiteName = "group.devplaceholder.HDDJMVMX.thesystem"
+    static let suiteName = "group.com.angelmorales.thesystem"
     static let lockdownKindKey = "emergencyLockdownKind"
     static let lockdownEndsAtKey = "emergencyLockdownEndsAt"
     /// Mirrors `PenaltyGroup.shieldLineKey`.

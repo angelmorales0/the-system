@@ -6,7 +6,7 @@
 	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.devplaceholder.HDDJMVMX.thesystem</string>
+		<string>group.com.angelmorales.thesystem</string>
 	</array>
 </dict>
 </plist>
