@@ -9,10 +9,10 @@ struct GoldReward: Codable, Equatable {
 /// A perfect day pays a varied amount of gold. Ten perfect days always buy one Full Recovery.
 /// A potion clears one quest and costs 1/8 of a Full Recovery, about one quest of a full day.
 enum Gold {
-    static let fullRecoveryPrice = 1_000
+    static let fullRecoveryPrice = 10_000
     static let potionPrice = fullRecoveryPrice / 8
     /// The low end times 10 equals the Full Recovery price, so any 10 perfect days are enough.
-    static let perfectDayRange = 100...140
+    static let perfectDayRange = 1_000...1_400
 
     /// The same day always pays the same amount, so a reload cannot reroll it.
     static func reward(for dayKey: String) -> Int {
