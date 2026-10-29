@@ -46,7 +46,7 @@ final class GameStore: ObservableObject {
             + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
             + NoGymDayRules.check() + PenaltyDecay.check() + SecretStore.check() + ConnectionStatusStore.check()
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MercuryClient.check()
-            + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check()
+            + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -389,6 +389,18 @@ final class GameStore: ObservableObject {
         #endif
         return (current, maxHP)
     }
+
+    /// Fatigue for the status sheet, 0...100. Before the first refresh: 0.
+    var fatigue: Int {
+        var value = snapshot.fatigue.map { Int($0.value.rounded()) } ?? 0
+        #if DEBUG
+        // Launch with `-fatigueDebug 85` to see the meter at that value. Nothing is saved.
+        if let debug = UserDefaults.standard.string(forKey: "fatigueDebug").flatMap(Double.init) {
+            value = Int(min(max(debug, 0), Fatigue.maxValue).rounded())
+        }
+        #endif
+        return value
+    }
     /// A hidden quest unlocked and not yet acknowledged. The quest screen shows its reveal window.
     var pendingHiddenReveal: HiddenQuestUnlock? { snapshot.pendingHiddenReveal }
 
@@ -533,6 +545,8 @@ final class GameStore: ObservableObject {
             )
             // After today's readiness, so a red recovery hits HP and sets the regeneration speed.
             next.applyHitPoints(integrations: day, now: now)
+            // After today's screen time too, so only the new minutes add fatigue.
+            next.applyFatigue(integrations: day, now: now)
             self.snapshot = next
             self.integrations = day
             self.statInputs = (remote.codeforces, remote.financeMonths, bodyMass, focusDays)

@@ -21,8 +21,17 @@ struct HPBar: View {
     let max: Int
 
     var body: some View {
-        let light = HPLight.of(current: current, max: max)
-        let fraction = max > 0 ? min(Swift.max(Double(current) / Double(max), 0), 1) : 0
+        GlowBar(fraction: max > 0 ? Double(current) / Double(max) : 0, light: HPLight.of(current: current, max: max))
+    }
+}
+
+/// The HP bar's pill for any 0...1 share, in the given light. The fatigue meter uses it too.
+struct GlowBar: View {
+    let fraction: Double
+    let light: HPLight
+
+    var body: some View {
+        let fraction = min(Swift.max(fraction, 0), 1)
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 Capsule().fill(.black.opacity(0.45))
@@ -113,7 +122,7 @@ struct HPWindow: View {
 }
 
 /// A plus sign drawn as an outlined, glowing cross.
-private struct HPCross: View {
+struct HPCross: View {
     let light: HPLight
 
     var body: some View {

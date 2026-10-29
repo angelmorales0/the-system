@@ -16,9 +16,16 @@ struct ContentView: View {
             StatusView()
                 .environment(\.isPageVisible, selectedPage == 1)
                 .tag(1)
+            StatusSheetView()
+                .environment(\.isPageVisible, selectedPage == 2)
+                .tag(2)
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .ignoresSafeArea()
+        #if DEBUG
+        // A paged TabView ignores its first selection, so the start page is set once it is on screen.
+        .task { selectedPage = Self.startPage }
+        #endif
         // Every page draws its own backdrop on top, so this one never needs to move.
         .background { SystemBackground(animated: false) }
         // An active emergency quest covers every page until it ends.
@@ -44,6 +51,16 @@ struct ContentView: View {
                 store.refreshForToday()
             }
         }
+    }
+
+    /// The first page. Launch with `-startPage 2` in DEBUG to open on another page.
+    private static var startPage: Int {
+        #if DEBUG
+        let page = UserDefaults.standard.integer(forKey: "startPage")
+        return (0...2).contains(page) ? page : 0
+        #else
+        return 0
+        #endif
     }
 }
 
