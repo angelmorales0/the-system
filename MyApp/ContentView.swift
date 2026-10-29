@@ -29,6 +29,14 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: store.emergency?.id)
+        // An open penalty covers every page until its run is verified.
+        .overlay {
+            if let penalty = store.openPenaltyQuest {
+                PenaltyQuestView(quest: penalty, startedAt: store.penaltyStartedAt)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.4), value: store.openPenaltyQuest?.id)
         .tint(SystemTheme.accent)
         .preferredColorScheme(.dark)
         .onChange(of: scenePhase) { _, phase in

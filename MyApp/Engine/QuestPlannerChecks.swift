@@ -45,6 +45,21 @@ extension QuestPlanner {
     }
 
     static func check() -> [String] {
+        var threatErrors: [String] = []
+        let goodThreat = "Neglect has taken hold and is wearing the Player down. " + PenaltyDecay.threatEnding
+        for good in [nil, JSONValue.string(goodThreat), .string(QuestPlanner.threatFor(band: "green")), .string(QuestPlanner.threatFor(band: "red"))]
+            where !QuestPlanner.threatProblems(good).isEmpty {
+            threatErrors.append("a good threat line should pass: \(String(describing: good))")
+        }
+        let badThreats: [JSONValue] = [
+            .string(PenaltyDecay.threatEnding), .string("You are lazy! " + PenaltyDecay.threatEnding),
+            .string("The penalty grows. " + PenaltyDecay.threatEnding), .string("Laziness is present and is damaging the Player. Run 10 km now."),
+            .string(String(repeating: "x", count: 150) + " " + PenaltyDecay.threatEnding), .number(7),
+        ]
+        for bad in badThreats where QuestPlanner.threatProblems(bad).isEmpty {
+            threatErrors.append("a bad threat line should be rejected: \(bad)")
+        }
+        if !threatErrors.isEmpty { return threatErrors }
         var errors: [String] = []
         let day = "2026-10-01"
         let training = "performance_training"

@@ -87,6 +87,7 @@ QUEST_BUNDLE_SCHEMA: dict[str, Any] = {
         "mode": {"type": "string", "enum": sorted(MODES)},
         "headerLine": {"type": "string"},
         "narrative": {"type": "string"},
+        "threat": {"type": "string", "description": "the penalty screen's two sentences, see the system prompt"},
         "quests": {
             "type": "array",
             "items": {
@@ -174,11 +175,12 @@ App rules:
 - Use kind daily or optional only. Never write penalty quests: the app adds them from player.penaltyTier.
 - Required quests (kind other than optional) <= constraints.maxRequiredQuests. Optional quests <= constraints.maxOptionalQuests. Total quests <= 9.
 - Titles are at most 48 characters. The narrative, at most 280 characters, says why today looks the way it does.
+- threat: two sentences for the penalty screen, at most 160 characters, in the voice of the System's urgent quest window. Sentence 1 names the fault behind a missed day as a presence that harms the Player: pick it from the data (missed quest days in trainingHistory.week, skipped stretching, high screen time, low readiness, few runs). Vary the noun: laziness, neglect, bad habits, complacency, weakness, avoidance. Sentence 2 is exactly "Run 10 km and ensure your safety." Cold, short, third person, no names, no advice, no exclamation marks, and never the word penalty. Examples: "Laziness is present and is damaging the Player. Run 10 km and ensure your safety." / "Neglect has taken hold and is wearing the Player down. Run 10 km and ensure your safety."
 - No run longer than 90 minutes when trainingBand is yellow.
 - Do not invent medical diagnoses or extreme deficits. Do not suggest calories under 1500.
 - Never use the phrases starve, all-nighter, ignore injury, or max debt.
 - Do not include completed, status, evidence, grantedXP, or assignedAt.
-- Output ONLY valid JSON with schemaVersion, dayKey, mode, headerLine, quests, and narrative.
+- Output ONLY valid JSON with schemaVersion, dayKey, mode, headerLine, quests, narrative, and threat.
 """
 
 
@@ -515,6 +517,7 @@ def validate_bundle(bundle: dict[str, Any], context: dict[str, Any]) -> list[str
     narrative = bundle.get("narrative") or ""
     if not isinstance(narrative, str) or len(narrative) > 280:
         problems.append("narrative is missing or too long")
+    problems.extend(threat_problems(bundle.get("threat")))
     quests = bundle.get("quests") or []
     if not isinstance(quests, list) or not quests:
         problems.append("bundle has no quests")
@@ -686,6 +689,7 @@ def template_bundle(context: dict[str, Any]) -> dict[str, Any]:
         "mode": mode,
         "headerLine": header,
         "narrative": narrative_for(mode, band),
+        "threat": threat_for(band),
         "quests": (required + optional)[:9],
         "warnings": ["Failure to complete\nthe daily quest will result\nin a penalty."],
         "generatedBy": "template",
@@ -774,6 +778,35 @@ def header_for(mode: str) -> str:
         "full_recovery": "Full Recovery Day",
     }
     return names.get(mode, "Daily Quest")
+
+
+THREAT_ENDING = "Run 10 km and ensure your safety."
+THREAT_MAX_CHARS = 160
+
+
+def threat_problems(threat: Any) -> list[str]:
+    """The penalty screen's line. Missing is fine (the app has its own); present, it must keep the System's voice."""
+    if threat is None:
+        return []
+    if not isinstance(threat, str):
+        return ["threat must be text"]
+    text = threat.strip()
+    if len(text) > THREAT_MAX_CHARS:
+        return ["threat is too long"]
+    if "penalty" in text.lower():
+        return ["threat must not say penalty"]
+    if not text.endswith(THREAT_ENDING) or len(text) <= len(THREAT_ENDING):
+        return [f'threat must be a sentence about the Player, then "{THREAT_ENDING}"']
+    if "player" not in text.lower() or "!" in text:
+        return ["threat must speak of the Player, without exclamation marks"]
+    return []
+
+
+def threat_for(band: str) -> str:
+    """The template's line. Claude writes a sharper one from the data when it plans the day."""
+    if band in ("yellow", "red"):
+        return f"Weakness is present and is damaging the Player. {THREAT_ENDING}"
+    return f"Laziness is present and is damaging the Player. {THREAT_ENDING}"
 
 
 def narrative_for(mode: str, band: str) -> str:
@@ -967,6 +1000,13 @@ def self_check() -> None:
     integrations.self_check()
     mercury.self_check()
     history.self_check()
+    good = "Neglect has taken hold and is wearing the Player down. " + THREAT_ENDING
+    if threat_problems(None) or threat_problems(good) or threat_problems(threat_for("green")) or threat_problems(threat_for("red")):
+        raise SystemExit("a good threat line should pass")
+    for bad in ("Run 10 km and ensure your safety.", "You are lazy! " + THREAT_ENDING, "The penalty grows. " + THREAT_ENDING,
+                "Laziness is present and is damaging the Player. Run 10 km now.", "x" * 150 + " " + THREAT_ENDING, 7):
+        if not threat_problems(bad):
+            raise SystemExit(f"a bad threat line should be rejected: {bad!r}")
     source = open(__file__, encoding="utf-8").read()
     if "api." + "openai.com" in source:
         raise SystemExit("openai endpoint is not the quest author")

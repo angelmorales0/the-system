@@ -62,6 +62,7 @@ enum QuestPlanner {
                 "mode": .object(["type": .string("string"), "enum": strings(modes)]),
                 "headerLine": .object(["type": .string("string")]),
                 "narrative": .object(["type": .string("string")]),
+                "threat": .object(["type": .string("string"), "description": .string("the penalty screen's two sentences, see the system prompt")]),
                 "quests": .object([
                     "type": .string("array"),
                     "items": .object([
@@ -154,11 +155,12 @@ enum QuestPlanner {
     - Use kind daily or optional only. Never write penalty quests: the app adds them from player.penaltyTier.
     - Required quests (kind other than optional) <= constraints.maxRequiredQuests. Optional quests <= constraints.maxOptionalQuests. Total quests <= 9.
     - Titles are at most 48 characters. The narrative, at most 280 characters, says why today looks the way it does.
+    - threat: two sentences for the penalty screen, at most 160 characters, in the voice of the System's urgent quest window. Sentence 1 names the fault behind a missed day as a presence that harms the Player: pick it from the data (missed quest days in trainingHistory.week, skipped stretching, high screen time, low readiness, few runs). Vary the noun: laziness, neglect, bad habits, complacency, weakness, avoidance. Sentence 2 is exactly "Run 10 km and ensure your safety." Cold, short, third person, no names, no advice, no exclamation marks, and never the word penalty. Examples: "Laziness is present and is damaging the Player. Run 10 km and ensure your safety." / "Neglect has taken hold and is wearing the Player down. Run 10 km and ensure your safety."
     - No run longer than 90 minutes when trainingBand is yellow.
     - Do not invent medical diagnoses or extreme deficits. Do not suggest calories under 1500.
     - Never use the phrases starve, all-nighter, ignore injury, or max debt.
     - Do not include completed, status, evidence, grantedXP, or assignedAt.
-    - Output ONLY valid JSON with schemaVersion, dayKey, mode, headerLine, quests, and narrative.
+    - Output ONLY valid JSON with schemaVersion, dayKey, mode, headerLine, quests, narrative, and threat.
 
     """
 
@@ -480,6 +482,7 @@ enum QuestPlanner {
             if other.truthy { problems.append("narrative is missing or too long") }
         }
         if length(narrative) > 280 { problems.append("narrative is missing or too long") }
+        problems += threatProblems(bundle["threat"])
         var quests = bundle["quests"]?.arrayValue ?? []
         if quests.isEmpty {
             problems.append("bundle has no quests")
@@ -626,6 +629,7 @@ enum QuestPlanner {
             "mode": .string(mode),
             "headerLine": .string(header),
             "narrative": .string(narrativeFor(band: band)),
+            "threat": .string(threatFor(band: band)),
             "quests": .array(Array((required + optional).prefix(9))),
             "warnings": .array([.string(defaultWarning)]),
             "generatedBy": .string("template"),
@@ -711,6 +715,29 @@ enum QuestPlanner {
 
     static func headerFor(_ mode: String) -> String {
         ["performance_training": "Training", "full_recovery": "Full Recovery Day"][mode] ?? "Daily Quest"
+    }
+
+    /// The penalty screen's line. Missing is fine (the app has its own); present, it must keep the System's voice.
+    static func threatProblems(_ value: JSONValue?) -> [String] {
+        guard let value, value != .null else { return [] }
+        guard let threat = value.stringValue else { return ["threat must be text"] }
+        let text = threat.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ending = PenaltyDecay.threatEnding
+        if length(text) > PenaltyDecay.threatMaxCharacters { return ["threat is too long"] }
+        if text.lowercased().contains("penalty") { return ["threat must not say penalty"] }
+        if !text.hasSuffix(ending) || length(text) <= length(ending) {
+            return ["threat must be a sentence about the Player, then \"\(ending)\""]
+        }
+        if !text.lowercased().contains("player") || text.contains("!") {
+            return ["threat must speak of the Player, without exclamation marks"]
+        }
+        return []
+    }
+
+    /// The template's line. Claude writes a sharper one from the data when it plans the day.
+    static func threatFor(band: String) -> String {
+        let fault = band == "yellow" || band == "red" ? "Weakness" : "Laziness"
+        return "\(fault) is present and is damaging the Player. \(PenaltyDecay.threatEnding)"
     }
 
     static func narrativeFor(band: String) -> String {

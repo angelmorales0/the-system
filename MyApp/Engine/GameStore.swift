@@ -44,7 +44,7 @@ final class GameStore: ObservableObject {
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check() + MacScreenClient.check()
             + HiddenQuestRules.check()
             + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
-            + NoGymDayRules.check() + SecretStore.check() + ConnectionStatusStore.check()
+            + NoGymDayRules.check() + PenaltyDecay.check() + SecretStore.check() + ConnectionStatusStore.check()
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MercuryClient.check()
             + TrainingHistory.check() + QuestPlanner.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
@@ -532,6 +532,18 @@ final class GameStore: ObservableObject {
             value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
         }
         return "\(quest.title) [\(number(quest.progress.current))/\(number(quest.progress.target))\(quest.progress.unit)]"
+    }
+
+    /// The penalty row still open today, or nil. While it exists, `PenaltyQuestView` covers every page.
+    var openPenaltyQuest: Quest? {
+        guard snapshot.player.penaltyTier > 0 else { return nil }
+        return PenaltyQuests.rows(in: snapshot.bundle).first { $0.status != .completed }
+    }
+
+    /// When the open penalty started, as the enforcement saved it. Now, if it has not been saved yet.
+    var penaltyStartedAt: Date {
+        let saved = PenaltyGroup.defaults.double(forKey: PenaltyGroup.startedAtKey)
+        return saved > 0 ? Date(timeIntervalSince1970: saved) : .now
     }
 
     /// One attempt per local day. The catalog bundle stays on screen until a valid bundle returns.
