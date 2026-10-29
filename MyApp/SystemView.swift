@@ -9,17 +9,12 @@ struct SystemView: View {
             QuestBackdrop()
             GeometryReader { proxy in
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 16) {
-                        // HP sits above the daily quest, so it is always in view on this page.
-                        HPWindow(current: store.hitPoints.current, max: store.hitPoints.max)
-                            .padding(.horizontal, 4)
-                        QuestHologram {
-                            questContent
-                                .padding(.horizontal, 34)
-                                .padding(.top, 36)
-                                .padding(.bottom, 30)
-                                .frame(minHeight: typeSize.isAccessibilitySize ? 900 : max(620, min(proxy.size.height * 0.80, 710)))
-                        }
+                    QuestHologram {
+                        questContent
+                            .padding(.horizontal, 34)
+                            .padding(.top, 36)
+                            .padding(.bottom, 30)
+                            .frame(minHeight: typeSize.isAccessibilitySize ? 900 : max(620, min(proxy.size.height * 0.87, 710)))
                     }
                     .frame(maxWidth: 460)
                     .padding(.horizontal, 18)
