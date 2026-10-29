@@ -50,6 +50,8 @@ struct GameSnapshot: Codable, Equatable {
     var potions: [String: Int] = [:]
     /// Gold from the last day that ended. Nil when that day earned none.
     var lastGoldReward: GoldReward?
+    /// Nil until the first integration refresh. Then `HitPoints` moves it on every refresh.
+    var hitPoints: HitPointState?
 
     static func fresh(
         catalog: FallbackCatalog,
@@ -458,6 +460,7 @@ extension GameSnapshot {
         case emergencyFailedDayKey, noGymDayKey
         case questHistory, screenTime
         case gold, potions, lastGoldReward
+        case hitPoints
     }
 
     init(from decoder: Decoder) throws {
@@ -486,6 +489,7 @@ extension GameSnapshot {
         gold = try container.decodeIfPresent(Int.self, forKey: .gold) ?? 0
         potions = try container.decodeIfPresent([String: Int].self, forKey: .potions) ?? [:]
         lastGoldReward = try container.decodeIfPresent(GoldReward.self, forKey: .lastGoldReward)
+        hitPoints = try container.decodeIfPresent(HitPointState.self, forKey: .hitPoints)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -513,6 +517,7 @@ extension GameSnapshot {
         try container.encode(gold, forKey: .gold)
         try container.encode(potions, forKey: .potions)
         try container.encodeIfPresent(lastGoldReward, forKey: .lastGoldReward)
+        try container.encodeIfPresent(hitPoints, forKey: .hitPoints)
     }
 }
 

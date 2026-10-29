@@ -46,7 +46,7 @@ final class GameStore: ObservableObject {
             + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
             + NoGymDayRules.check() + PenaltyDecay.check() + SecretStore.check() + ConnectionStatusStore.check()
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MercuryClient.check()
-            + TrainingHistory.check() + QuestPlanner.check()
+            + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -376,6 +376,19 @@ final class GameStore: ObservableObject {
     }
 
     var player: PlayerState { snapshot.player }
+
+    /// HP for the HP window. Before the first refresh: full, at the player's max.
+    var hitPoints: (current: Int, max: Int) {
+        let maxHP = snapshot.hitPoints?.max ?? HitPoints.maxHP(for: snapshot.player)
+        var current = snapshot.hitPoints.map { Int($0.current.rounded(.down)) } ?? maxHP
+        #if DEBUG
+        // Launch with `-hpDebugPercent 15` to see the window at that share of max HP. Nothing is saved.
+        if let percent = UserDefaults.standard.string(forKey: "hpDebugPercent").flatMap(Double.init) {
+            current = Int((Double(maxHP) * min(max(percent, 0), 100) / 100).rounded(.down))
+        }
+        #endif
+        return (current, maxHP)
+    }
     /// A hidden quest unlocked and not yet acknowledged. The quest screen shows its reveal window.
     var pendingHiddenReveal: HiddenQuestUnlock? { snapshot.pendingHiddenReveal }
 
@@ -511,14 +524,17 @@ final class GameStore: ObservableObject {
                 overlapMinutes: Self.screenOverlap(dayKey: next.bundle.dayKey, macScreen: macScreen)
             )
             next.applyFinance(remote.mercury)
-            self.snapshot = next
-            self.integrations = DayIntegrationSnapshot.make(
+            let day = DayIntegrationSnapshot.make(
                 whoop: remote.whoop,
                 strava: remote.strava,
                 health: health,
                 mercury: remote.mercury,
                 hevy: remote.hevy
             )
+            // After today's readiness, so a red recovery hits HP and sets the regeneration speed.
+            next.applyHitPoints(integrations: day, now: now)
+            self.snapshot = next
+            self.integrations = day
             self.statInputs = (remote.codeforces, remote.financeMonths, bodyMass, focusDays)
             self.recomputeStatLevels(now: now)
             if rebuilt {
