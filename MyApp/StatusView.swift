@@ -7,6 +7,7 @@ struct StatusView: View {
     @State private var showScreenTime = false
     @State private var showAppIcon = false
     @State private var showEmergency = false
+    @State private var showConnections = false
     @State private var selectedStat: Stat?
 
     /// Overall level 146 = all seven stats at 350.
@@ -117,6 +118,16 @@ struct StatusView: View {
                         }
                         .buttonStyle(.plain)
                         Button {
+                            showConnections = true
+                        } label: {
+                            Text("CONNECTIONS")
+                                .font(.caption2.weight(.semibold))
+                                .tracking(1.1)
+                                .foregroundStyle(SystemTheme.muted)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        Button {
                             showAppIcon = true
                         } label: {
                             Text("APP ICON")
@@ -145,6 +156,9 @@ struct StatusView: View {
                 }
                 .sheet(isPresented: $showEmergency) {
                     EmergencySettingsSheet()
+                }
+                .sheet(isPresented: $showConnections) {
+                    ConnectionsSheet()
                 }
                 .sheet(item: $selectedStat) { stat in
                     StatTargetsSheet(stat: stat)

@@ -44,7 +44,7 @@ final class GameStore: ObservableObject {
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check() + MacScreenClient.check()
             + HiddenQuestRules.check()
             + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
-            + NoGymDayRules.check()
+            + NoGymDayRules.check() + SecretStore.check() + ConnectionStatusStore.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -121,6 +121,11 @@ final class GameStore: ObservableObject {
         clock = now
         persist()
         enforcePenalty()
+    }
+
+    /// After the owner saves or removes a key in Status → Connections: read the services again.
+    func connectionsChanged() {
+        refreshIntegrations(now: .now)
     }
 
     func saveDistractorSelection() {

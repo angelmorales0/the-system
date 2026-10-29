@@ -2,7 +2,7 @@ import Foundation
 
 /// Assembles the JSON the quest generator sees. Secrets and raw feeds never go in.
 enum ContextBuilder {
-    private static let secretMarkers = ["sk-", "xai-", "bearer ", "api_key", "api-key", "apikey", "secret-token"]
+    nonisolated private static let secretMarkers = ["sk-", "xai-", "bearer ", "api_key", "api-key", "apikey", "secret-token"]
 
     /// `targets` are the stat targets the player kept. `bodyMass` is the newest Apple Health weigh-in.
     static func make(snapshot: GameSnapshot, now: Date = .now, targets: StatTargets = StatTargets(), bodyMass: BodyMassReading? = nil) -> MorningContext {
@@ -143,7 +143,7 @@ enum ContextBuilder {
     }
 
     /// Replaces token-shaped text before it can leave the device.
-    static func redact(_ value: String) -> String {
+    nonisolated static func redact(_ value: String) -> String {
         let lower = value.lowercased()
         if secretMarkers.contains(where: { lower.contains($0) }) {
             return "redacted"
