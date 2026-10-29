@@ -24,7 +24,7 @@ cd "$ROOT"
 echo "== Archive (Release)"
 xcodebuild -project system.xcodeproj -scheme FocusTracker -configuration Release \
     -destination 'generic/platform=macOS' -archivePath "$OUT/FocusTracker.xcarchive" \
-    DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic -allowProvisioningUpdates \
+    DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Developer ID Application" \
     archive > "$OUT/archive.log" 2>&1 || { tail -30 "$OUT/archive.log"; exit 1; }
 
 echo "== Export with Developer ID"
@@ -35,7 +35,7 @@ cat > "$OUT/ExportOptions.plist" <<PLIST
 <dict>
     <key>method</key><string>developer-id</string>
     <key>teamID</key><string>$TEAM_ID</string>
-    <key>signingStyle</key><string>automatic</string>
+    <key>signingStyle</key><string>manual</string><key>signingCertificate</key><string>Developer ID Application</string>
 </dict>
 </plist>
 PLIST
