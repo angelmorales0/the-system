@@ -47,6 +47,8 @@ enum GymSplit {
         /// A support exercise: it trains what the running and the shoulders need, but no STR target.
         /// Its `target` names the muscle instead.
         var support = false
+        /// A goal the player added (see `CustomStrengthGoal`). Its `target` is the goal's STR target.
+        var custom = false
     }
 
     struct Day: Codable, Equatable {
@@ -152,14 +154,97 @@ enum GymSplit {
         rotation.first { $0.id == id }
     }
 
-    /// The next day in the rotation after the newest past day whose lifts were started.
+    /// The next day in the rotation after the newest past day whose lifts were started, with the player's own goals on it.
     /// `history` is newest first. With no lifting yet, the split starts at Bench Day.
-    static func today(history: [QuestDayRecord], dayKey: String) -> Day {
+    static func today(history: [QuestDayRecord], dayKey: String, goals: [CustomStrengthGoal] = []) -> Day {
         let done = history.first { record in
             record.dayKey < dayKey && record.splitDay != nil && record.quests.contains { $0.stat == .STR && $0.status == .completed }
         }
-        guard let id = done?.splitDay, let index = rotation.firstIndex(where: { $0.id == id }) else { return rotation[0] }
-        return rotation[(index + 1) % rotation.count]
+        guard let id = done?.splitDay, let index = rotation.firstIndex(where: { $0.id == id }) else { return adding(goals, to: rotation[0]) }
+        return adding(goals, to: rotation[(index + 1) % rotation.count])
+    }
+
+    // MARK: - Custom goals
+
+    /// The rotation with the player's own goals on their days.
+    static func rotation(with goals: [CustomStrengthGoal]) -> [Day] {
+        rotation.map { adding(goals, to: $0) }
+    }
+
+    /// Puts each custom goal of this day on it, oldest goal first, as a scored STR exercise.
+    ///
+    /// Full-day rule: a day holds at most `maxExercisesPerDay` exercises, so the day fits the quest limits
+    /// (`QuestSafety.maxQuests`, `MorningConstraints.maxRequiredQuests`). A goal takes a free place first, before
+    /// the optional row. On a full day, it takes the place of a support exercise: the one with the same name, else the
+    /// last support exercise still on the day. A goal never cuts a scored STR target, a focus target, an optional row,
+    /// or another custom goal. A day with no free place and no support exercise left has no room:
+    /// `StatTargets.add` refuses the goal and the sheet tells the player. Today every day is full, so the room is
+    /// Squat Day 2, Deadlift Day 3, Arms Day 1, Bench Day 0, and Press Day 0.
+    static func adding(_ goals: [CustomStrengthGoal], to day: Day) -> Day {
+        var copy = day
+        for goal in goals where goal.day == day.id {
+            let row = exercise(for: goal)
+            if copy.exercises.count < maxExercisesPerDay {
+                copy.exercises.insert(row, at: copy.exercises.firstIndex(where: \.optional) ?? copy.exercises.count)
+            } else if let index = copy.exercises.firstIndex(where: { $0.support && names(of: $0).contains(goal.alias) })
+                        ?? copy.exercises.lastIndex(where: \.support) {
+                copy.exercises[index] = row
+            }
+            // Else the day has no room. `StatTargets.add` never saves such a goal, so the day stays as it is.
+        }
+        return copy
+    }
+
+    /// The support exercise that a new goal would cut from its day. Nil when it takes a free place or the day has no room.
+    static func replaced(by goal: CustomStrengthGoal, goals: [CustomStrengthGoal]) -> Exercise? {
+        guard let splitDay = Self.day(id: goal.day) else { return nil }
+        let before = adding(goals, to: splitDay).exercises
+        let after = adding(goals + [goal], to: splitDay).exercises
+        return before.first { old in old.support && !after.contains(old) }
+    }
+
+    /// How many more custom goals the day can take: free places plus support exercises still on it.
+    static func room(on day: Day, goals: [CustomStrengthGoal]) -> Int {
+        let adapted = adding(goals, to: day)
+        return max(0, maxExercisesPerDay - adapted.exercises.count) + adapted.exercises.filter(\.support).count
+    }
+
+    /// "Auto": the upper-body or lower-body day with the most room, the first in the rotation on a tie. Nil when none has room.
+    static func autoDay(lowerBody: Bool, goals: [CustomStrengthGoal]) -> Day? {
+        rotation.enumerated()
+            .filter { $0.element.lowerBody == lowerBody && room(on: $0.element, goals: goals) > 0 }
+            .min { lhs, rhs in
+                let left = room(on: lhs.element, goals: goals), right = room(on: rhs.element, goals: goals)
+                return left != right ? left > right : lhs.offset < rhs.offset
+            }?.element
+    }
+
+    /// The split row of a custom goal: an accessory that trains toward the goal.
+    /// Weight × reps: 3 sets in double progression from the goal's reps up to 4 more.
+    /// Reps: a max-effort set, then sets at about 60%. Holds: 3 holds at half the goal time.
+    static func exercise(for goal: CustomStrengthGoal) -> Exercise {
+        let name = goal.exercise
+        switch goal.kind {
+        case .weightReps:
+            let low = min(max(goal.targetReps, 1), 20)
+            return Exercise(exercise: name, aliases: [goal.alias], role: .accessory, sets: 3, minReps: low, maxReps: low + 4, target: goal.category,
+                            note: "Your goal: \(goal.goal). Double progression: add reps until every set reaches \(low + 4), then add the smallest weight step and go back to \(low).",
+                            custom: true)
+        case .reps:
+            let target = max(goal.targetReps, 1)
+            return Exercise(exercise: name, aliases: [goal.alias], role: .accessory, sets: 4, minReps: max(1, target / 4), maxReps: target, target: goal.category,
+                            note: "Your goal: \(goal.goal). First set as many strict reps as you can, stopping 1 rep short of failure. Then 3 sets at about 60% of that number.",
+                            custom: true)
+        case .hold:
+            let seconds = min(goal.targetSeconds, max(10, (goal.targetSeconds / 2).rounded()))
+            return Exercise(exercise: name, aliases: [goal.alias], role: .accessory, sets: 3, minReps: 0, maxReps: 0, secondsPerSet: seconds, target: goal.category,
+                            note: "Your goal: \(goal.goal). Hold 3 sets of \(Int(seconds)) sec. Add 5 sec to each set once all 3 feel easy.",
+                            custom: true)
+        }
+    }
+
+    private static func names(of exercise: Exercise) -> Set<String> {
+        Set(([exercise.exercise] + exercise.aliases).map { StrengthLevel.normalizedName($0) })
     }
 
     /// The newest day each split day was done, by name, so the generator sees how the rotation went.
@@ -378,6 +463,119 @@ enum GymSplit {
         _ = noGym.setNoGym(false, catalog: catalog, now: now)
         if noGym.bundle.headerLine != "Bench Day" {
             errors.append("turning no gym off should bring back Bench Day, got \(noGym.bundle.headerLine)")
+        }
+        errors += customGoalChecks(catalog: catalog, now: now)
+        return errors
+    }
+
+    /// Custom goals land on their split day, follow the full-day rule, and reach the offline day, the context,
+    /// the generated bundle, and the Hevy check.
+    private static func customGoalChecks(catalog: FallbackCatalog, now: Date) -> [String] {
+        var errors: [String] = []
+        let hipThrust = CustomStrengthGoal(exercise: "Hip Thrust", kind: .weightReps, targetLb: 225, targetReps: 5, day: "deadlift")
+        let lSit = CustomStrengthGoal(exercise: "L-Sit", kind: .hold, targetSeconds: 30, day: "arms")
+
+        // The goal lands on its day in place of the last support exercise; every scored target stays.
+        let withThrust = adding([hipThrust], to: deadlift)
+        let names = withThrust.exercises.map(\.exercise)
+        if names != ["Deadlift", "Squat", "Incline Bench Press", "Skullcrusher", "Hip Thrust", "Farmers Walk"]
+            || withThrust.exercises.first(where: \.custom)?.target != "Hip Thrust" {
+            errors.append("Hip Thrust should take the Lying Leg Curl's place on Deadlift Day, got \(names)")
+        }
+        if replaced(by: hipThrust, goals: [])?.exercise != "Lying Leg Curl" {
+            errors.append("the sheet should say Hip Thrust replaces the Lying Leg Curl")
+        }
+        if rotation(with: [hipThrust]).filter({ $0.id != "deadlift" }) != rotation.filter({ $0.id != "deadlift" }) {
+            errors.append("a goal should change only its own day")
+        }
+        let row = exercise(for: hipThrust)
+        if row.role != .accessory || row.minReps != 5 || row.maxReps != 9 || row.sets != 3 || row.note == nil || row.support {
+            errors.append("a weight × reps goal should be a 3×5-9 accessory with a note, got \(row)")
+        }
+        let hold = exercise(for: lSit)
+        if hold.secondsPerSet != 15 || hold.note == nil {
+            errors.append("a 30 sec hold goal should train 3 holds of 15 sec, got \(hold)")
+        }
+
+        // Full-day rule: never more than the day limit, never a scored or focus target cut, and no room means refused.
+        let three = ["Glute Bridge", "Back Extension", "Nordic Curl"].map {
+            CustomStrengthGoal(exercise: $0, kind: .reps, targetReps: 15, day: "deadlift")
+        }
+        let packed = adding([hipThrust] + three, to: deadlift)
+        let scored = deadlift.exercises.filter { !$0.support }.map(\.target)
+        if packed.exercises.count > maxExercisesPerDay || packed.exercises.contains(where: \.support)
+            || !Set(scored).isSubset(of: packed.exercises.map(\.target))
+            || packed.exercises.filter(\.custom).map(\.exercise) != ["Back Extension", "Glute Bridge", "Hip Thrust"] {
+            errors.append("Deadlift Day should take 3 goals in place of its 3 support exercises and no more, got \(packed.exercises.map(\.exercise))")
+        }
+        if room(on: deadlift, goals: [hipThrust] + three) != 0 || room(on: bench, goals: []) != 0 || room(on: squat, goals: []) != 2 {
+            errors.append("room should be 0 on a full day, 0 on Bench Day, and 2 on Squat Day")
+        }
+        var targets = StatTargets()
+        for goal in [hipThrust] + three.prefix(2) where targets.add(goal) != nil {
+            errors.append("\(goal.exercise) should fit on Deadlift Day")
+        }
+        if targets.add(three[2]) == nil || targets.custom.count != 3 {
+            errors.append("a fourth goal on a full Deadlift Day should be refused")
+        }
+        for day in rotation(with: targets.custom) {
+            if day.exercises.count > maxExercisesPerDay {
+                errors.append("\(day.name) should stay at \(maxExercisesPerDay) exercises or fewer")
+            }
+            for focus in focusTargets where (rotation.first { $0.id == day.id }?.exercises.contains { $0.target == focus } ?? false)
+                && !day.exercises.contains(where: { $0.target == focus }) {
+                errors.append("a goal must never cut the focus target \(focus) from \(day.name)")
+            }
+        }
+        // A goal named like a support exercise takes that one's place.
+        let calves = CustomStrengthGoal(exercise: "Standing Calf Raise", kind: .weightReps, targetLb: 300, targetReps: 10, day: "squat")
+        if replaced(by: calves, goals: [])?.exercise != "Standing Calf Raise" {
+            errors.append("a goal with a support exercise's name should replace that exercise")
+        }
+
+        // Auto picks the day of that body half with the most room: Deadlift Day for lower body, Arms Day for upper body.
+        if autoDay(lowerBody: true, goals: [])?.id != "deadlift" || autoDay(lowerBody: false, goals: [])?.id != "arms"
+            || autoDay(lowerBody: true, goals: targets.custom)?.id != "squat" || autoDay(lowerBody: false, goals: [lSit]) != nil {
+            errors.append("auto should pick Deadlift Day, Arms Day, then Squat Day, and nil when no upper day has room")
+        }
+
+        // The offline day, the context, and the mock generator all carry the goal on Deadlift Day.
+        var snapshot = GameSnapshot.fresh(catalog: catalog, now: now)
+        let pressDone = QuestRecord(title: "Overhead Press 4×1-5", kind: .daily, stat: .STR, method: .hevySets, params: [:],
+                                    target: 4, done: 4, unit: "sets", status: .completed)
+        snapshot.questHistory = [QuestDayRecord(dayKey: "2026-10-04", mode: .performanceTraining, trainingBand: .green, noGym: false,
+                                                splitDay: "press", generatedBy: "mock", missedRequired: false, quests: [pressDone])]
+        var goalCatalog = catalog
+        goalCatalog.strengthGoals = [hipThrust]
+        snapshot.rebuildBundle(catalog: goalCatalog, now: now)
+        let titles = snapshot.bundle.quests.map(\.title)
+        if snapshot.bundle.headerLine != "Deadlift Day" || !titles.contains("Hip Thrust 3×5-9") || titles.contains(where: { $0.hasPrefix("Lying Leg Curl") }) {
+            errors.append("the offline Deadlift Day should train Hip Thrust in place of the leg curl, got \(snapshot.bundle.headerLine) \(titles)")
+        }
+        var kept = StatTargets()
+        _ = kept.add(hipThrust)
+        let context = ContextBuilder.make(snapshot: snapshot, now: now, targets: kept)
+        let target = context.goals?.strength.first { $0.category == "Hip Thrust" }
+        if context.split?.today.exercises.contains(where: { $0.exercise == "Hip Thrust" && $0.custom }) != true
+            || target?.targetLb != 225 || target?.targetReps != 5 || target?.custom != true || target?.aliases != ["hip thrust"]
+            || target?.splitDay != "Deadlift Day" || target?.goal != "225 lb × 5" {
+            errors.append("the context should carry Hip Thrust as a strength target and on today's split day, got \(String(describing: target))")
+        }
+        let mock = MockQuestGenerateClient(catalog: catalog).bundle(for: context, now: now)
+        guard let thrustRow = mock.quests.first(where: { $0.verification.params["exercise"]?.stringValue == "Hip Thrust" }) else {
+            errors.append("the generated bundle should keep the Hip Thrust row, got \(mock.quests.map(\.title))")
+            return errors
+        }
+
+        // The Hevy check finds the goal's sets by name, with the equipment in brackets.
+        var lifted = DayIntegrationSnapshot.empty(dayKey: mock.dayKey)
+        let sets = Array(repeating: StrengthLevel.workingSet(lb: 185, reps: 6), count: 3)
+        lifted.hevy = HevyDayReading(available: true, configured: true, reason: "", dayKey: mock.dayKey,
+                                     workouts: [StrengthLevel.workout([HevyExercise(title: "Hip Thrust (Barbell)", sets: sets)], daysAgo: 0, now: now)])
+        let verification = VerificationContext(now: now, dayKey: mock.dayKey, assignedAt: now, manualConfirmsToday: 0, claimedKeys: [],
+                                               timerElapsedSec: nil, userConfirmed: false, integrations: lifted)
+        if case .completed = HevySetsVerifier().evaluate(quest: thrustRow, context: verification) {} else {
+            errors.append("the Hevy check should complete Hip Thrust 3×5-9 from 3 sets of \"Hip Thrust (Barbell)\"")
         }
         return errors
     }

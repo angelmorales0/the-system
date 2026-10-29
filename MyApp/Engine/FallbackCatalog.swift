@@ -30,6 +30,8 @@ struct PenaltyEntry: Codable, Equatable {
 struct FallbackCatalog {
     private var table: [QuestMode: [ReadinessBand: CatalogEntry]]
     private var penaltyTable: [ReadinessBand: [QuestTemplate]] = [:]
+    /// The player's own STR goals (`StatTargets.custom`), so the offline split day trains them too. The store sets them.
+    var strengthGoals: [CustomStrengthGoal] = []
 
     init(data: Data) throws {
         let file = try JSONDecoder().decode(CatalogFile.self, from: data)

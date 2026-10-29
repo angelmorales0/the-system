@@ -127,7 +127,8 @@ QUEST_BUNDLE_SCHEMA: dict[str, Any] = {
 SYSTEM_PROMPT = """You are The System, a strength and running coach. Write today's quests as JSON matching QuestBundle.
 
 Goals, in order:
-1. Reach the strength targets in trainingHistory.strengthTargets (goal, bestE1rmLb, gapLb). Spend the most work on the biggest gaps that were not trained recently.
+1. Reach the strength targets in trainingHistory.strengthTargets (goal, bestE1rmLb, gapLb; gapReps for rep goals, gapSeconds for holds). Spend the most work on the biggest gaps that were not trained recently.
+   Targets with "custom": true are goals the player added. They are real strength targets: train them on their splitDay like the built-in ones.
 2. Keep at least goals.runKmPer7Days km of running in every 7-day window, today included. trainingHistory.runWindow says what today needs: runsToday lists the runs to write (5K and 10K quests).
    goals.focus lists the targets to put first right now (pull-ups first: 20 strict reps is the main goal; then lateral raises and biceps). The split trains them 3 times a rotation with the most sets: never drop them for time or readiness, and progress them first.
 3. Reach the body weight target in goals.bodyWeight. Do not write nutrition quests for it; it only informs how hard to push.
@@ -151,6 +152,7 @@ Gym split (split in the context):
 - Roles: "main" is the day's heavy lift (top set at RPE 8, then back-offs). "light" is a main lift on its light day: keep every set under 80% of the lift's best e1RM and above 6 reps. "accessory" uses double progression in minReps-maxReps. secondsPerSet exercises are timed: params minDurationSec is the total seconds (sets × secondsPerSet), unit "min".
 - An exercise with "optional": true is written with kind "optional"; the player may skip it. An exercise's "note" says how to run it today and overrides its role's default progression. Follow it.
 - Use each exercise's Hevy name from trainingHistory.lifts when the player has logged it under one of its aliases; otherwise use split.today exercise.
+- An exercise with "custom": true is the player's own goal (its target is in goals.strength and trainingHistory.strengthTargets). The app put it on this day in place of a support exercise. Treat it as a strength target: cut support exercises before it, and follow its note.
 - You may drop other accessories or a set when readiness or recovery calls for it, but keep the goals.focus exercises. Do not add exercises from other days.
 - If splitAdvice says today's heavy lift would break the heavy-leg limits, make today a run-only day: write no lifts and headerLine "Training". The same split day comes back next time.
 
@@ -1209,6 +1211,27 @@ def split_checks() -> None:
     blocked = {**blocked, "splitAdvice": split_advice(blocked)}
     if "run-only" not in blocked["splitAdvice"] or any(row["stat"] == "STR" for row in template_bundle(blocked)["quests"]):
         raise SystemExit(f"a blocked leg day should become run-only, got {blocked['splitAdvice']}")
+
+    # The player's own goal on today's split day: the template writes it, and validation lets it and its Hevy name through.
+    custom_day = json.loads(json.dumps(SAMPLE_SPLIT_DAY))
+    custom_day["exercises"].insert(2, {"exercise": "Hip Thrust", "aliases": ["hip thrust"], "role": "accessory", "sets": 3, "minReps": 5, "maxReps": 9,
+                                       "target": "Hip Thrust", "custom": True, "note": "Your goal: 225 lb × 5."})
+    own = dict(body, split=dict(body["split"], today=custom_day))
+    own["goals"] = {"runKmPer7Days": 50, "strength": [{"category": "Hip Thrust", "goal": "225 lb × 5", "aliases": ["hip thrust"], "targetLb": 225, "targetReps": 5, "unit": "lb", "custom": True, "splitDay": "Squat Day"}]}
+    own_day = template_bundle(own)
+    if "Hip Thrust 3x5-9" not in [row["title"] for row in own_day["quests"]]:
+        raise SystemExit(f"the template should write the custom goal's exercise, got {[row['title'] for row in own_day['quests']]}")
+    if validate_bundle(sanitize(own_day, own), own):
+        raise SystemExit(f"a split day with a custom goal should pass, got {validate_bundle(sanitize(own_day, own), own)}")
+    renamed_own = json.loads(json.dumps(own_day))
+    next(row for row in renamed_own["quests"] if row["title"].startswith("Hip Thrust"))["verification"]["params"]["exercise"] = "Hip Thrust (Barbell)"
+    if validate_bundle(renamed_own, own):
+        raise SystemExit("the custom goal's Hevy name with equipment should pass")
+    if not any("not part of Squat Day" in problem for problem in validate_bundle(own_day, body)):
+        raise SystemExit("the custom exercise should count only on the day that carries it")
+    targets = history.strength_targets(own["goals"]["strength"], {})
+    if targets[0].get("custom") is not True or targets[0].get("goal") != "225 lb × 5":
+        raise SystemExit(f"a custom goal should reach trainingHistory.strengthTargets, got {targets}")
 
 
 if __name__ == "__main__":

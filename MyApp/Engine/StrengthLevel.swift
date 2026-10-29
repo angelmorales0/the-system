@@ -72,10 +72,51 @@ enum StrengthLevel {
     static let hangAliases = ["dead hang", "hang"]
     static let hangBand = StatLevel.Band(floor: 0, target: 120) // seconds
 
-    static func evaluate(workouts: [HevyWorkout], now: Date) -> StatLevelReport {
+    /// Every built-in STR target, alias, and category, normalized. A custom goal may not use one of these names.
+    static let builtInNames: Set<String> = {
+        let aliases = lifts.flatMap(\.aliases) + [pullUps, handstandPushUps, toesToBar].flatMap(\.aliases)
+            + pistolAliases + farmerAliases + hangAliases
+        let categories = evaluate(workouts: [], now: Date(timeIntervalSince1970: 0)).requirements.map(\.category)
+        return Set((aliases + categories).map { normalizedName($0) })
+    }()
+
+    /// `custom` are the player's own goals. Each one scores from the same Hevy sets as the built-in targets:
+    /// weight × reps by the Epley e1RM (floor: a third of the target weight), reps by the best set, holds by the longest set.
+    /// Weights: each custom goal first gets the average built-in weight; then all weights scale back to 100 in the same ratio.
+    /// The max level needs every target passed, custom goals too.
+    static func evaluate(workouts: [HevyWorkout], custom: [CustomStrengthGoal] = [], now: Date) -> StatLevelReport {
         let start = now.addingTimeInterval(-Double(windowDays) * 86_400)
         let recent = workouts.filter { $0.start >= start && $0.start <= now }
-        return StatLevelReport(stat: .STR, requirements: [
+        let builtIn = builtInRequirements(recent)
+        return StatLevelReport(stat: .STR, requirements: withCustom(builtIn, custom.map { customGoal($0, recent) }))
+    }
+
+    /// Gives each custom requirement the average built-in weight, then scales every weight so they add to 100.
+    /// 15 built-in targets at 6.67 and one custom goal: 16 targets at 6.25. Two custom goals: 17 at 5.88.
+    static func withCustom(_ builtIn: [StatRequirement], _ custom: [StatRequirement]) -> [StatRequirement] {
+        guard !custom.isEmpty, !builtIn.isEmpty else { return builtIn + custom }
+        let average = builtIn.reduce(0) { $0 + $1.weight } / Double(builtIn.count)
+        let all = builtIn + custom.map { requirement in
+            var weighted = requirement
+            weighted.weight = average
+            return weighted
+        }
+        let total = all.reduce(0) { $0 + $1.weight }
+        return all.map { requirement in
+            var scaled = requirement
+            scaled.weight = requirement.weight * 100 / total
+            return scaled
+        }
+    }
+
+    private static func customGoal(_ goal: CustomStrengthGoal, _ workouts: [HevyWorkout]) -> StatRequirement {
+        if let rule = goal.lift { return lift(rule, workouts) }
+        if let rule = goal.repRule { return repRule(rule, workouts) }
+        return hold(goal.category, aliases: [goal.alias], band: StatLevel.Band(floor: 0, target: goal.targetSeconds), workouts)
+    }
+
+    private static func builtInRequirements(_ recent: [HevyWorkout]) -> [StatRequirement] {
+        [
             lift(squat, recent),
             lift(deadlift, recent),
             lift(bench, recent),
@@ -90,8 +131,8 @@ enum StrengthLevel {
             lift(lateralRaise, recent),
             lift(curl, recent),
             repRule(toesToBar, recent),
-            deadHang(recent),
-        ])
+            hold("Dead hang", aliases: hangAliases, band: hangBand, recent),
+        ]
     }
 
     // MARK: - Exercise matching
@@ -232,14 +273,14 @@ enum StrengthLevel {
         )
     }
 
-    /// Strict rule and progress: longest single hang.
-    private static func deadHang(_ workouts: [HevyWorkout]) -> StatRequirement {
-        let durations = workingSets(hangAliases, workouts).compactMap(\.durationSec).filter { $0 > 0 }
-        guard let best = durations.max() else { return missing("Dead hang") }
+    /// Strict rule and progress: longest single hold (the dead hang, or a custom hold goal).
+    private static func hold(_ category: String, aliases: [String], band: StatLevel.Band, _ workouts: [HevyWorkout]) -> StatRequirement {
+        let durations = workingSets(aliases, workouts).compactMap(\.durationSec).filter { $0 > 0 }
+        guard let best = durations.max() else { return missing(category) }
         return StatRequirement(
-            category: "Dead hang",
-            passed: best >= hangBand.target,
-            progress: hangBand.progress(best),
+            category: category,
+            passed: best >= band.target,
+            progress: band.progress(best),
             weight: weight,
             detail: "best \(format(best)) sec"
         )
@@ -448,6 +489,55 @@ enum StrengthLevel {
         failsOnly("Pull-ups", edited("Pull Up", newTitle: "Chin Up"))
         if row("Pull-ups", edited("Pull Up", newTitle: "Pull-Up (Weighted)"))?.passed != true {
             errors.append("\"Pull-Up (Weighted)\" should match pull-ups")
+        }
+
+        // Custom goals: each one gets the average built-in weight (100/15), then every weight scales back to 100.
+        // One goal: 16 targets at 6.25. Two goals: 17 targets at 5.88.
+        let hipThrust = CustomStrengthGoal(exercise: "Hip Thrust", kind: .weightReps, targetLb: 225, targetReps: 5, day: "deadlift")
+        let lSit = CustomStrengthGoal(exercise: "L-Sit", kind: .hold, targetSeconds: 30, day: "arms")
+        let muscleUp = CustomStrengthGoal(exercise: "Muscle Up", kind: .reps, targetReps: 10, day: "arms")
+        for goals in [[hipThrust], [hipThrust, lSit]] {
+            let custom = evaluate(workouts: perfect, custom: goals, now: now)
+            let count = 15 + goals.count
+            let weights = custom.requirements.map(\.weight)
+            if weights.count != count || abs(weights.reduce(0, +) - 100) > 0.001
+                || weights.contains(where: { abs($0 - 100 / Double(count)) > 0.001 }) {
+                errors.append("\(goals.count) custom goal(s) should give \(count) targets at \(100 / Double(count)), got \(weights)")
+            }
+        }
+
+        // The max level needs the custom goals passed too. Without their sets, 15 of 18 targets give level 291.
+        let withGoal = evaluate(workouts: perfect, custom: [hipThrust, lSit, muscleUp], now: now)
+        if withGoal.isMaxLevel || withGoal.level != 291
+            || withGoal.failing.map(\.category) != ["Hip Thrust", "L-Sit", "Muscle Up"] {
+            errors.append("unlogged custom goals should block the max level, got \(withGoal.level) failing \(withGoal.failing.map(\.category))")
+        }
+        var done = perfect
+        done[0].exercises += [
+            HevyExercise(title: "Hip Thrust (Barbell)", sets: [workingSet(lb: 225, reps: 5)]),
+            HevyExercise(title: "L Sit", sets: [workingSet(seconds: 30)]),
+            HevyExercise(title: "Muscle-Up", sets: [workingSet(reps: 10)]),
+        ]
+        let passedGoals = evaluate(workouts: done, custom: [hipThrust, lSit, muscleUp], now: now)
+        if !passedGoals.isMaxLevel || passedGoals.level != StatLevel.maxLevel {
+            errors.append("passed custom goals should reach the max level, got \(passedGoals.level) failing \(passedGoals.failing.map(\.category))")
+        }
+        // 205 lb × 5 on a 225 lb × 5 goal: e1RM 239 lb on the 87.5 → 262.5 lb band (floor 75 lb × 5).
+        var partialGoal = perfect
+        partialGoal[0].exercises.append(HevyExercise(title: "Hip Thrust (Barbell)", sets: [workingSet(lb: 205, reps: 5)]))
+        let thrust = evaluate(workouts: partialGoal, custom: [hipThrust], now: now).requirements.first { $0.category == "Hip Thrust" }
+        let thrustExpected = (StatLevel.estimatedOneRepMax(weight: 205, reps: 5) - StatLevel.estimatedOneRepMax(weight: 75, reps: 5))
+            / (StatLevel.estimatedOneRepMax(weight: 225, reps: 5) - StatLevel.estimatedOneRepMax(weight: 75, reps: 5))
+        if thrust?.passed != false || abs((thrust?.progress ?? 0) - thrustExpected) > 0.0001 {
+            errors.append("205 lb × 5 hip thrust should give progress \(thrustExpected) and fail, got \(String(describing: thrust))")
+        }
+        var halfHold = perfect
+        halfHold[0].exercises.append(HevyExercise(title: "L-Sit", sets: [workingSet(seconds: 15)]))
+        if abs((evaluate(workouts: halfHold, custom: [lSit], now: now).requirements.first { $0.category == "L-Sit" }?.progress ?? 0) - 0.5) > 0.0001 {
+            errors.append("a 15 sec L-sit should be half of a 30 sec goal")
+        }
+        if !builtInNames.contains("bench press") || !builtInNames.contains("dead hang") || builtInNames.contains("hip thrust") {
+            errors.append("built-in names should hold every STR alias and category only")
         }
         return errors
     }

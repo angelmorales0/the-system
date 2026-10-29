@@ -24,7 +24,8 @@ final class GameStore: ObservableObject {
     @Published private(set) var emergency: EmergencyQuest?
     @Published private(set) var emergencySettings: EmergencySettings = .standard
 
-    private let catalog: FallbackCatalog
+    /// Carries the player's own STR goals (`statTargets.custom`), so the offline split day trains them.
+    private var catalog: FallbackCatalog
     private let generator: any QuestGenerating
     private let persistence: GamePersistence
     private var ticker: Timer?
@@ -49,7 +50,10 @@ final class GameStore: ObservableObject {
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
         #endif
 
-        let catalog = FallbackCatalog.bundled()
+        // The targets load first: today's split day needs the player's own goals.
+        let targets = persistence == .standard ? StatTargets.load() : StatTargets()
+        var catalog = FallbackCatalog.bundled()
+        catalog.strengthGoals = targets.custom
         self.catalog = catalog
         self.generator = QuestGenerateClient.make(catalog: catalog)
         self.persistence = persistence
@@ -68,7 +72,7 @@ final class GameStore: ObservableObject {
         }
         if persistence == .standard {
             statHistory = StatLevelHistory.load()
-            statTargets = StatTargets.load()
+            statTargets = targets
             statLevels = statHistory.latest ?? .empty
             emergencySettings = EmergencyStore.loadSettings()
             emergency = EmergencyStore.loadQuest()
@@ -134,6 +138,31 @@ final class GameStore: ObservableObject {
     /// Adds a removed target back to a stat, or removes an active one, then recalculates the stat level.
     func toggleStatTarget(_ category: String, in stat: Stat) {
         statTargets.toggle(category, in: stat)
+        if persistence == .standard { statTargets.save() }
+        recomputeStatLevels(now: .now)
+        persist()
+    }
+
+    /// Adds the player's own STR goal. Returns why it was refused, or nil when it was saved.
+    /// The STR level is calculated again at once. The split day trains it from the next plan on;
+    /// today's quests stay as they are, so no logged set is lost.
+    func addStrengthGoal(_ goal: CustomStrengthGoal) -> String? {
+        var next = statTargets
+        if let problem = next.add(goal) { return problem }
+        saveStatTargets(next)
+        return nil
+    }
+
+    /// Deletes one of the player's own STR goals, then calculates the STR level again.
+    func deleteStrengthGoal(_ category: String) {
+        var next = statTargets
+        next.deleteCustom(category)
+        saveStatTargets(next)
+    }
+
+    private func saveStatTargets(_ targets: StatTargets) {
+        statTargets = targets
+        catalog.strengthGoals = targets.custom
         if persistence == .standard { statTargets.save() }
         recomputeStatLevels(now: .now)
         persist()
