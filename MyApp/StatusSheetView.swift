@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The System's STATUS window: level, job and title, HP and fatigue, the seven stats, and Full Recovery points.
+/// The System's STATUS window: level, job and title, HP and fatigue, the seven stats, and Full Recoveries.
 /// HP turns red when critical; the fatigue meter turns red at 80 or more.
 struct StatusSheetView: View {
     @EnvironmentObject private var store: GameStore
@@ -68,7 +68,7 @@ private struct StatusSheetContent: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Full Recovery Points:")
+                        Text("Full Recoveries:")
                             .font(.footnote)
                         Text(verbatim: "\(fullRecoveryPoints)")
                             .font(.subheadline.weight(.bold))
@@ -118,7 +118,7 @@ private struct StatusSheetContent: View {
     private var hpMeter: some View {
         let light = HPLight.of(current: hp.current, max: hp.max)
         return HStack(spacing: 8) {
-            HPCross(light: light)
+            HPCross(light: .normal)
                 .frame(width: 20, height: 20)
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
@@ -145,7 +145,7 @@ private struct StatusSheetContent: View {
         let fraction = Double(fatigue) / Fatigue.maxValue
         return HStack(spacing: 8) {
             FatigueRing(fraction: fraction, light: light)
-                .frame(width: 20, height: 20)
+                .frame(width: 24, height: 24)
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("FATIGUE:").font(.caption.weight(.bold)).tracking(0.6)
@@ -194,20 +194,36 @@ private struct StatusFrame<Content: View>: View {
     }
 }
 
-/// A ring that fills clockwise with the fatigue share.
+/// A ring of slanted slots, like a shutter, that lights up clockwise with the fatigue share.
+/// Drawn like the quest page's day timer, with fewer, longer, tilted dashes.
 private struct FatigueRing: View {
     let fraction: Double
     let light: HPLight
 
+    private static let slots = 12
+    /// Each slot leans this much off the radius, so the ring reads as a shutter.
+    private static let slant = Angle.degrees(32)
+
     var body: some View {
-        ZStack {
-            Circle().stroke(light.ink.opacity(0.2), lineWidth: 2)
-            Circle()
-                .trim(from: 0, to: min(max(fraction, 0), 1))
-                .stroke(light.glow.opacity(light.fill + 0.1), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                .rotationEffect(.degrees(-90))
+        let lit = Int((min(max(fraction, 0), 1) * Double(Self.slots)).rounded())
+        Canvas { context, size in
+            let radius = min(size.width, size.height) / 2
+            let length = radius * 0.46
+            for index in 0..<Self.slots {
+                var slot = context
+                slot.translateBy(x: size.width / 2, y: size.height / 2)
+                slot.rotate(by: .degrees(Double(index) * 360 / Double(Self.slots)))
+                // Move out to the middle of the ring's band, then tilt the dash around its own center.
+                slot.translateBy(x: 0, y: -radius + length / 2 + 0.5)
+                slot.rotate(by: Self.slant)
+                let rect = CGRect(x: -1.3, y: -length / 2, width: 2.6, height: length)
+                let path = Path(roundedRect: rect, cornerRadius: 0.7)
+                // Slot 0 is at 12 o'clock and the index runs clockwise.
+                let isLit = index < lit
+                slot.fill(path, with: .color(light.glow.opacity(isLit ? light.fill + 0.1 : 0.16)))
+                slot.stroke(path, with: .color(light.ink.opacity(isLit ? 0.5 : 0.25)), lineWidth: 0.4)
+            }
         }
-        .padding(1.5)
     }
 }
 

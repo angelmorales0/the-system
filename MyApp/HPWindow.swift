@@ -62,7 +62,7 @@ struct HPWindow: View {
         let light = HPLight.of(current: current, max: max)
         HStack(alignment: .center, spacing: 12) {
             VStack(spacing: 3) {
-                HPCross(light: light)
+                HPCross(light: .normal)
                     .frame(width: 16, height: 16)
                 Text("HP")
                     .font(.caption2.weight(.semibold))
@@ -120,7 +120,7 @@ struct HPCross: View {
 
 private struct CrossShape: Shape {
     func path(in rect: CGRect) -> Path {
-        let arm = rect.width * 0.34
+        let arm = rect.width * 0.26
         let near = (rect.width - arm) / 2
         let far = near + arm
         let points: [(CGFloat, CGFloat)] = [(near, 0), (far, 0), (far, near), (rect.width, near), (rect.width, far), (far, far),
