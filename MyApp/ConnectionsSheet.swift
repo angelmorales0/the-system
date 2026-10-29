@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 
 /// Status → Connections. One row per service the phone reads directly, with its state and a Test button.
@@ -211,7 +212,76 @@ struct ConnectionExtras: View {
     var onMessage: (String) -> Void
 
     var body: some View {
-        EmptyView()
+        switch connection {
+        case .strava:
+            OAuthSignIn(provider: .strava, onMessage: onMessage)
+        case .whoop:
+            OAuthSignIn(provider: .whoop, onMessage: onMessage)
+        default:
+            EmptyView()
+        }
+    }
+}
+
+/// Opens the service's sign-in page in a private browser sheet and catches `thesystem://localhost/...`.
+struct OAuthSignIn: View {
+    let provider: OAuthProvider
+    var onMessage: (String) -> Void
+    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
+    @State private var working = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                signIn()
+            } label: {
+                Text(working ? "SIGNING IN…" : SecretStore.has(provider.tokensItem) ? "SIGN IN AGAIN" : "SIGN IN TO \(provider.title.uppercased())")
+                    .font(.caption2.weight(.semibold))
+                    .tracking(0.8)
+                    .frame(maxWidth: .infinity, minHeight: 34)
+                    .overlay { Rectangle().stroke(SystemTheme.cyan.opacity(0.8), lineWidth: 0.8) }
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(working)
+            Text("Redirect: \(provider.redirectURI)")
+                .font(.caption2.monospaced())
+                .foregroundStyle(SystemTheme.muted)
+                .textSelection(.enabled)
+        }
+    }
+
+    private func signIn() {
+        guard let clientId = SecretStore.read(provider.clientIdItem), SecretStore.has(provider.clientSecretItem) else {
+            onMessage("Type and save the client ID and client secret first.")
+            return
+        }
+        let state = OAuthClient.newState()
+        guard let url = OAuthClient.authorizeURL(provider, clientId: clientId, state: state) else { return }
+        working = true
+        Task {
+            defer { working = false }
+            let callback: URL
+            do {
+                callback = try await webAuthenticationSession.authenticate(
+                    using: url,
+                    callbackURLScheme: OAuthProvider.callbackScheme,
+                    preferredBrowserSession: .ephemeral
+                )
+            } catch {
+                onMessage("Sign-in was cancelled.")
+                return
+            }
+            switch OAuthClient.code(from: callback, provider: provider, state: state) {
+            case .failure(let error):
+                ConnectionStatusStore.record(provider.connection, ok: false, message: error.text)
+                onMessage(error.text)
+            case .success(let code):
+                let outcome = await OAuthClient.exchange(provider, code: code)
+                ConnectionStatusStore.record(provider.connection, ok: outcome.ok, message: outcome.message)
+                onMessage(outcome.message)
+            }
+        }
     }
 }
 

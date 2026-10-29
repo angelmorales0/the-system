@@ -33,12 +33,15 @@ enum IntegrationClient {
             defaults: UserDefaults.standard.string(forKey: QuestGenerateClient.defaultsKey)
         )
         async let hevyReading = HevyClient.snapshot(dayKey: dayKey)
+        async let stravaReading = StravaClient.snapshot(dayKey: dayKey)
         guard let base else {
             let hevy = await hevyReading
+            let strava = await stravaReading
             record(.hevy, configured: hevy.configured, available: hevy.available, reason: hevy.reason)
+            record(.strava, configured: strava.configured, available: strava.available, reason: strava.reason)
             return RemoteDayReadings(
                 whoop: .disconnected(dayKey: dayKey, reason: "TODO: WHOOP is not connected. Set QUEST_GENERATE_BASE_URL to the backend."),
-                strava: .disconnected(dayKey: dayKey, reason: "TODO: Strava is not connected. Set QUEST_GENERATE_BASE_URL to the backend."),
+                strava: strava,
                 mercury: .disconnected(dayKey: dayKey, reason: "TODO: Mercury is not connected. Set QUEST_GENERATE_BASE_URL to the backend."),
                 hevy: hevy,
                 codeforces: .disconnected(reason: "TODO: Codeforces is not connected. Set QUEST_GENERATE_BASE_URL to the backend."),
@@ -47,8 +50,6 @@ enum IntegrationClient {
         }
         async let whoop = fetch(WhoopDayReading.self, base: base, path: "v1/integrations/whoop/snapshot", dayKey: dayKey)
             ?? .disconnected(dayKey: dayKey, reason: "TODO: WHOOP snapshot failed. Check the backend tokens.")
-        async let strava = fetch(StravaDayReading.self, base: base, path: "v1/integrations/strava/snapshot", dayKey: dayKey)
-            ?? .disconnected(dayKey: dayKey, reason: "TODO: Strava snapshot failed. Check the backend tokens.")
         async let mercury = fetch(MercuryDayReading.self, base: base, path: "v1/integrations/mercury/snapshot", dayKey: dayKey)
             ?? .disconnected(dayKey: dayKey, reason: "TODO: Mercury snapshot failed. Check MERCURY_API_TOKEN on the backend.")
         async let codeforces = fetch(CodeforcesReading.self, base: base, path: "v1/integrations/codeforces/snapshot", dayKey: dayKey)
@@ -56,7 +57,8 @@ enum IntegrationClient {
         let months = financeMonthKeys(dayKey: dayKey)
         async let lastMonth = fetch(MercuryMonthResponse.self, base: base, path: "v1/integrations/mercury/month", dayKey: dayKey, query: [URLQueryItem(name: "month", value: months.last)])
         async let thisMonth = fetch(MercuryMonthResponse.self, base: base, path: "v1/integrations/mercury/month", dayKey: dayKey, query: [URLQueryItem(name: "month", value: months.this)])
-        let readings = await (whoop, strava, mercury, hevyReading, codeforces)
+        let readings = await (whoop, stravaReading, mercury, hevyReading, codeforces)
+        record(.strava, configured: readings.1.configured, available: readings.1.available, reason: readings.1.reason)
         record(.hevy, configured: readings.3.configured, available: readings.3.available, reason: readings.3.reason)
         let financeMonths = await [lastMonth, thisMonth].compactMap { $0?.financeMonth }
         return RemoteDayReadings(

@@ -10,6 +10,8 @@ enum ConnectionTester {
         switch connection {
         case .hevy:
             outcome = await HevyClient.test()
+        case .strava:
+            outcome = await StravaClient.test()
         default:
             outcome = (false, "\(connection.title) is not on the phone yet.")
         }

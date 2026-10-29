@@ -45,7 +45,7 @@ final class GameStore: ObservableObject {
             + HiddenQuestRules.check()
             + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
             + NoGymDayRules.check() + SecretStore.check() + ConnectionStatusStore.check()
-            + HevyClient.check()
+            + HevyClient.check() + OAuthClient.check() + StravaClient.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
