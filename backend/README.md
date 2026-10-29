@@ -38,6 +38,10 @@ Launch the app with `QUEST_GENERATE_BASE_URL=http://127.0.0.1:8787` (Xcode schem
 
 Or set UserDefaults key `com.angelmorales.thesystem.questGenerateBaseURL` to `http://127.0.0.1:8787` and relaunch. Only `http` and `https` URLs are used. A timeout past 8 seconds, or a bundle that fails the on-device check, keeps the fallback catalog. The phone never sends an API key.
 
+## WHOOP private (iOS) API client
+
+`backend/whoop_private/` is a standalone client for WHOOP’s unofficial private iOS API (Cognito auth + BFF endpoints such as stress, deep dives, live HR). It is **not** wired into quest generation or the iOS app. See [`whoop_private/README.md`](whoop_private/README.md). The official OAuth developer API below is unchanged.
+
 ## WHOOP and Strava
 
 Secrets stay in the environment. Copy `backend/.env.example` to a gitignored `.env`, fill in the values from the developer portals, and export them in the shell before `python app.py`. The server writes refresh tokens to `backend/.secrets/` (also gitignored) and never returns them to the app.

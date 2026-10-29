@@ -1000,6 +1000,9 @@ def self_check() -> None:
     integrations.self_check()
     mercury.self_check()
     history.self_check()
+    import whoop_private
+
+    whoop_private.self_check()
     good = "Neglect has taken hold and is wearing the Player down. " + THREAT_ENDING
     if threat_problems(None) or threat_problems(good) or threat_problems(threat_for("green")) or threat_problems(threat_for("red")):
         raise SystemExit("a good threat line should pass")

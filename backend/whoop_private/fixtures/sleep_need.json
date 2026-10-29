@@ -1,0 +1,18 @@
+{
+  "alarm_schedule_state": "INACTIVE",
+  "next_schedule_day_label": "Tonight",
+  "eligible_for_smart_alarms": true,
+  "need_breakdown": {
+    "total": 28800000,
+    "baseline": 27000000,
+    "debt": 3600000,
+    "strain": 1800000,
+    "naps": 3600000
+  },
+  "recommended_time_in_bed_formatted": {
+    "85": {
+      "recommended_time_in_bed": 28800000,
+      "recommended_time_in_bed_time_string": "8:00"
+    }
+  }
+}

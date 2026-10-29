@@ -1,0 +1,34 @@
+{
+  "metadata": {},
+  "header": {},
+  "sections": [
+    {
+      "items": [
+        {
+          "type": "SCORE_GAUGE",
+          "content": {
+            "id": "STRAIN_SCORE_GAUGE",
+            "score_display": "12.4",
+            "score_target": 0.55,
+            "lower_optimal_percentage": 0.45,
+            "higher_optimal_percentage": 0.70
+          }
+        },
+        {
+          "type": "CONTRIBUTORS_TILE",
+          "content": {
+            "id": "STRAIN_CONTRIBUTORS_TILE",
+            "metrics": [
+              {"id": "CONTRIBUTORS_TILE_HR_ZONES_1_3", "status": "1:20"},
+              {"id": "CONTRIBUTORS_TILE_HR_ZONES_4_5", "status": "0:15"},
+              {"id": "CONTRIBUTORS_TILE_STRENGTH_TRAINING_TIME", "status": "0:45"},
+              {"id": "CONTRIBUTORS_TILE_STEPS", "status": "8,432"}
+            ]
+          }
+        },
+        {"type": "ACTIVITY", "score": "9.1", "title": "STRENGTH TRAINER", "content": {}},
+        {"type": "ACTIVITY", "score": "7.0", "title": "RUNNING", "content": {}}
+      ]
+    }
+  ]
+}
