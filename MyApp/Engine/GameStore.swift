@@ -115,21 +115,22 @@ final class GameStore: ObservableObject {
         enforcePenalty()
     }
 
-    func buy(_ item: ShopItem, now: Date = .now) {
+    func buyFullRecovery(now: Date = .now) {
         var next = snapshot
-        let message = next.buy(item)
+        let message = next.buyFullRecovery()
         snapshot = next
         verificationNote = message
         clock = now
         persist()
     }
 
-    func drinkPotion(_ potion: Potion, questId: String, now: Date = .now) {
+    func usePotion(_ potion: Potion, dose: PotionDose = .full, now: Date = .now) {
         var next = snapshot
-        let message = next.drinkPotion(potion, questId: questId)
+        let message = next.usePotion(potion, dose: dose)
         snapshot = next
         verificationNote = message
         clock = now
+        recomputeStatLevels(now: now)
         persist()
         enforcePenalty()
     }
@@ -215,6 +216,7 @@ final class GameStore: ObservableObject {
             bodyMass: statInputs.bodyMass.map { [$0] } ?? [],
             focusDays: statInputs.focusDays,
             targets: statTargets,
+            excuses: snapshot.potionExcuses,
             now: now
         )
         statHistory.record(statLevels, on: QuestDay.key(for: now))

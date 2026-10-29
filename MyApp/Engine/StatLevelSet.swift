@@ -54,16 +54,22 @@ struct StatLevelSet: Equatable {
         financeMonths: [FinanceMonth],
         bodyMass: [BodyMassReading] = [],
         focusDays: [FocusDay] = [],
+        recoveryDays: [RecoveryDay] = [],
         targets: StatTargets = StatTargets(),
+        excuses: PotionExcuses = .none,
         now: Date
     ) -> StatLevelSet {
+        // Potion days do not count against FOC, REC, or FIN.
+        let focusDays = focusDays.filter { !excuses.focusDayKeys.contains($0.dayKey) }
+        let recoveryDays = recoveryDays.filter { !excuses.recoveryDayKeys.contains($0.dayKey) }
+        let financeMonths = financeMonths.map(excuses.excusing)
         let reports: [Stat: StatLevelReport] = [
             .STR: StrengthLevel.evaluate(workouts: [], custom: targets.custom, now: now),
             .END: EnduranceLevel.evaluate(efforts: [], swims: [], vo2: [], zoneTwo: [], bodyMass: bodyMass, now: now),
             .INT: IntelligenceLevel.evaluate(codeforces),
             .AGI: AgilityLevel.evaluate(measurements: [], now: now),
             .FOC: FocusLevel.evaluate(days: focusDays),
-            .REC: RecoveryLevel.evaluate(days: []).statReport,
+            .REC: RecoveryLevel.evaluate(days: recoveryDays).statReport,
             .FIN: FinanceLevel.evaluate(months: financeMonths),
         ]
         return StatLevelSet(

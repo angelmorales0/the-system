@@ -46,8 +46,8 @@ struct GameSnapshot: Codable, Equatable {
     var noGymDayKey: String?
     /// Earned on perfect days. Spent in `Shop`.
     var gold: Int = 0
-    /// Unused potions, keyed by `Potion.rawValue`.
-    var potions: [String: Int] = [:]
+    /// Potions used, oldest first. Prices, cooldowns, and stat excuses read this.
+    var potionLog: [PotionUse] = []
     /// Gold from the last day that ended. Nil when that day earned none.
     var lastGoldReward: GoldReward?
     /// Nil until the first integration refresh. Then `HitPoints` moves it on every refresh.
@@ -461,7 +461,7 @@ extension GameSnapshot {
         case hiddenUnlocks
         case emergencyFailedDayKey, noGymDayKey
         case questHistory, screenTime
-        case gold, potions, lastGoldReward
+        case gold, potionLog, lastGoldReward
         case hitPoints, fatigue
     }
 
@@ -489,7 +489,7 @@ extension GameSnapshot {
         questHistory = try container.decodeIfPresent([QuestDayRecord].self, forKey: .questHistory) ?? []
         screenTime = try container.decodeIfPresent(ScreenTimeDay.self, forKey: .screenTime)
         gold = try container.decodeIfPresent(Int.self, forKey: .gold) ?? 0
-        potions = try container.decodeIfPresent([String: Int].self, forKey: .potions) ?? [:]
+        potionLog = try container.decodeIfPresent([PotionUse].self, forKey: .potionLog) ?? []
         lastGoldReward = try container.decodeIfPresent(GoldReward.self, forKey: .lastGoldReward)
         hitPoints = try container.decodeIfPresent(HitPointState.self, forKey: .hitPoints)
         fatigue = try container.decodeIfPresent(FatigueState.self, forKey: .fatigue)
@@ -518,7 +518,7 @@ extension GameSnapshot {
         try container.encodeIfPresent(generationAttemptDayKey, forKey: .generationAttemptDayKey)
         try container.encodeIfPresent(generatedBundle, forKey: .generatedBundle)
         try container.encode(gold, forKey: .gold)
-        try container.encode(potions, forKey: .potions)
+        try container.encode(potionLog, forKey: .potionLog)
         try container.encodeIfPresent(lastGoldReward, forKey: .lastGoldReward)
         try container.encodeIfPresent(hitPoints, forKey: .hitPoints)
         try container.encodeIfPresent(fatigue, forKey: .fatigue)
