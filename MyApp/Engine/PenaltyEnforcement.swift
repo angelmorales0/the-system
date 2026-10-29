@@ -12,6 +12,12 @@ enum PenaltyGroup {
     static let suiteName = "group.devplaceholder.HDDJMVMX.thesystem"
     static let penaltyActiveKey = "penaltyActive"
     static let selectionKey = "familyActivitySelection"
+    /// Apps that stay open during a penalty: The System, Strava, and Spotify, picked by the player.
+    static let allowedSelectionKey = "penaltyAllowedSelection"
+    /// Apps that leave the Home Screen during a penalty. Allowed apps are never hidden.
+    static let hiddenSelectionKey = "penaltyHiddenSelection"
+    /// The open penalty row with its progress, for the shield: "Penalty 10K [3.2/10km]".
+    static let shieldLineKey = "penaltyShieldLine"
     static let startedAtKey = "penaltyStartedAt"
     /// The quest day whose required set is still open. The monitor locks the phone at 5:00 when this day has ended.
     static let openDayKey = "penaltyOpenDayKey"
@@ -27,39 +33,43 @@ enum PenaltyGroup {
     }
 }
 
+/// `key` is the distractor selection by default, or `allowedSelectionKey` / `hiddenSelectionKey`.
 enum PenaltySelectionStore {
     static var hasSelection: Bool {
         PenaltyGroup.defaults.data(forKey: PenaltyGroup.selectionKey) != nil
     }
 
     #if os(iOS)
-    static func load() -> FamilyActivitySelection {
-        guard let data = PenaltyGroup.defaults.data(forKey: PenaltyGroup.selectionKey),
+    /// `entireCategory` makes a new, empty selection list every app of a picked category, so whole categories can be hidden.
+    static func load(key: String = PenaltyGroup.selectionKey, entireCategory: Bool = false) -> FamilyActivitySelection {
+        guard let data = PenaltyGroup.defaults.data(forKey: key),
               let selection = try? PropertyListDecoder().decode(FamilyActivitySelection.self, from: data) else {
-            return FamilyActivitySelection()
+            return FamilyActivitySelection(includeEntireCategory: entireCategory)
         }
         return selection
     }
 
-    static func save(_ selection: FamilyActivitySelection) {
+    static func save(_ selection: FamilyActivitySelection, key: String = PenaltyGroup.selectionKey) {
         guard let data = try? PropertyListEncoder().encode(selection) else { return }
         let empty = selection.applicationTokens.isEmpty && selection.categoryTokens.isEmpty && selection.webDomainTokens.isEmpty
         if empty {
-            PenaltyGroup.defaults.removeObject(forKey: PenaltyGroup.selectionKey)
+            PenaltyGroup.defaults.removeObject(forKey: key)
         } else {
-            PenaltyGroup.defaults.set(data, forKey: PenaltyGroup.selectionKey)
+            PenaltyGroup.defaults.set(data, forKey: key)
         }
     }
     #endif
 }
 
-/// A penalty locks every app and website. iOS keeps calls and emergency SOS open, and it does not let an app
-/// block the Lock Screen or the Settings app. The Live Activity is foreground-only: the monitor cannot reliably start one.
+/// A penalty locks every app and website except the allowed apps, and hides the hidden apps from the Home Screen.
+/// iOS keeps calls and emergency SOS open, and it does not let an app block the Lock Screen or the Settings app. The Live Activity is foreground-only: the monitor cannot reliably start one.
 enum PenaltyEnforcement {
     /// `openDayKey` is the quest day whose required set is still open, or nil when it is done or waived.
-    static func sync(penaltyVisible: Bool, tier: Int, questTitle: String, dayKey: String, openDayKey: String?) {
+    /// `shieldLine` is the open penalty row with its progress, shown on every shield.
+    static func sync(penaltyVisible: Bool, tier: Int, questTitle: String, shieldLine: String, dayKey: String, openDayKey: String?) {
         #if os(iOS)
         let defaults = PenaltyGroup.defaults
+        defaults.set(shieldLine, forKey: PenaltyGroup.shieldLineKey)
         if let openDayKey {
             defaults.set(openDayKey, forKey: PenaltyGroup.openDayKey)
         } else {
@@ -87,18 +97,22 @@ enum PenaltyEnforcement {
             await startOrUpdateLiveActivity(questTitle: questTitle, tier: tier, dayKey: dayKey, startedAt: started)
         }
         #else
-        _ = (penaltyVisible, tier, questTitle, dayKey, openDayKey)
+        _ = (penaltyVisible, tier, questTitle, shieldLine, dayKey, openDayKey)
         #endif
     }
 
     #if os(iOS)
-    /// Every app category and website, not only the distractor selection. The app cannot be deleted while it holds.
+    /// Every app category except the allowed apps, and every website. The hidden apps leave the Home Screen.
+    /// The app cannot be deleted while it holds. `PenaltyMonitorShields.lockEverything` repeats this rule.
     private static func applyShields() {
+        let allowed = PenaltySelectionStore.load(key: PenaltyGroup.allowedSelectionKey).applicationTokens
+        let hidden = PenaltySelectionStore.load(key: PenaltyGroup.hiddenSelectionKey).applicationTokens.subtracting(allowed)
         let store = ManagedSettingsStore(named: .init(PenaltyGroup.storeName))
         store.shield.applications = nil
         store.shield.webDomains = nil
-        store.shield.applicationCategories = .all()
+        store.shield.applicationCategories = .all(except: allowed)
         store.shield.webDomainCategories = .all()
+        store.application.blockedApplications = Set(hidden.map { Application(token: $0) })
         store.application.denyAppRemoval = true
     }
 

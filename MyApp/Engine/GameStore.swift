@@ -497,9 +497,18 @@ final class GameStore: ObservableObject {
             penaltyVisible: visible,
             tier: snapshot.player.penaltyTier,
             questTitle: title,
+            shieldLine: open.map(Self.shieldLine) ?? title,
             dayKey: snapshot.bundle.dayKey,
             openDayKey: snapshot.missesRequiredSet ? snapshot.bundle.dayKey : nil
         )
+    }
+
+    /// "Penalty 10K [3.2/10km]", like the quest row.
+    nonisolated static func shieldLine(_ quest: Quest) -> String {
+        func number(_ value: Double) -> String {
+            value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
+        }
+        return "\(quest.title) [\(number(quest.progress.current))/\(number(quest.progress.target))\(quest.progress.unit)]"
     }
 
     /// One attempt per local day. The catalog bundle stays on screen until a valid bundle returns.

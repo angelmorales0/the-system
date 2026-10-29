@@ -4,7 +4,7 @@ import FamilyControls
 import ManagedSettings
 import UserNotifications
 
-/// Re-asserts the all-app penalty lock while a penalty is active. It does not start a Live Activity.
+/// Re-asserts the penalty lock while a penalty is active. It does not start a Live Activity.
 /// At 5:00 it locks the phone if the quest day that just ended left its required set open, even when the app is closed.
 /// Interval end does not lift shields; only the main app clears them after the penalty quests are done.
 /// And it counts phone screen time: each threshold event of the daily count writes its minutes for the app to read.
@@ -50,6 +50,8 @@ enum PenaltyMonitorGroup {
     static let penaltyActiveKey = "penaltyActive"
     static let startedAtKey = "penaltyStartedAt"
     static let openDayKey = "penaltyOpenDayKey"
+    static let allowedSelectionKey = "penaltyAllowedSelection"
+    static let hiddenSelectionKey = "penaltyHiddenSelection"
     static let storeName = "penalty"
     static let dawnActivity = "penaltyDawn"
     static let dayStartHour = 5
@@ -81,20 +83,32 @@ enum PenaltyMonitorShields {
         guard !alreadyActive else { return }
         let content = UNMutableNotificationContent()
         content.title = "PENALTY QUEST"
-        content.body = "Yesterday's daily quest was not completed. Every app is locked until the penalty quest is cleared in The System."
+        content.body = "Yesterday's daily quest was not completed. Every app except your allowed apps is locked until the penalty quest is cleared in The System."
         content.sound = .default
         content.interruptionLevel = .timeSensitive
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "penalty-\(openDay)", content: content, trigger: nil))
     }
 
-    /// Every app category and website. iOS keeps calls and emergency SOS open.
+    /// Same rule as `PenaltyEnforcement.applyShields` in the app: every app category except the allowed apps,
+    /// every website, and the hidden apps off the Home Screen. iOS keeps calls and emergency SOS open.
     nonisolated private static func lockEverything() {
+        let defaults = UserDefaults(suiteName: PenaltyMonitorGroup.suiteName) ?? .standard
+        let allowed = apps(defaults, PenaltyMonitorGroup.allowedSelectionKey)
+        let hidden = apps(defaults, PenaltyMonitorGroup.hiddenSelectionKey).subtracting(allowed)
         let store = ManagedSettingsStore(named: .init(PenaltyMonitorGroup.storeName))
         store.shield.applications = nil
         store.shield.webDomains = nil
-        store.shield.applicationCategories = .all()
+        store.shield.applicationCategories = .all(except: allowed)
         store.shield.webDomainCategories = .all()
+        store.application.blockedApplications = Set(hidden.map { Application(token: $0) })
         store.application.denyAppRemoval = true
+    }
+
+    /// The app tokens of a selection the app saved, or none.
+    nonisolated private static func apps(_ defaults: UserDefaults, _ key: String) -> Set<ApplicationToken> {
+        guard let data = defaults.data(forKey: key),
+              let selection = try? PropertyListDecoder().decode(FamilyActivitySelection.self, from: data) else { return [] }
+        return selection.applicationTokens
     }
 
     /// Same rule as `QuestDay.key` in the app: before 5:00 is still the day before.
