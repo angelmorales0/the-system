@@ -414,7 +414,7 @@ struct PlayerState: Codable, Equatable {
         xp: 3420,
         xpToNext: 5000,
         stats: .starter,
-        fullRecoveryBank: 2,
+        fullRecoveryBank: 7,
         penaltyTier: 0
     )
 
