@@ -130,15 +130,10 @@ struct PenaltyQuestView: View {
         .foregroundStyle(QuestLight.ink)
     }
 
-    /// `Laziness is present and is damaging the Player. Run 10 km and ensure your safety.`
+    /// The generator's two sentences for today, or the app's own: `Laziness is present and is damaging the Player.
+    /// Run 10 km and ensure your safety.`
     private var threat: String {
-        "\(PenaltyDecay.threat(dayKey: store.snapshot.bundle.dayKey)) is present and is damaging the Player. \(task) and ensure your safety."
-    }
-
-    private var task: String {
-        let target = quest.progress.target
-        let amount = target == target.rounded() ? String(Int(target)) : String(target)
-        return "Run \(amount) \(quest.progress.unit)"
+        PenaltyDecay.threatLine(generated: store.snapshot.bundle.threat, dayKey: store.snapshot.bundle.dayKey)
     }
 
     private var progress: String {

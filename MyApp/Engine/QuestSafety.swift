@@ -26,6 +26,9 @@ enum QuestSafety {
         if bundle.headerLine.count > 80 {
             issues.append("headerLine is too long")
         }
+        if let threat = bundle.threat, threat.count > PenaltyDecay.threatMaxCharacters {
+            issues.append("threat is too long")
+        }
 
         let requiredCap = context.constraints.maxRequiredQuests
         let optionalCap = context.constraints.maxOptionalQuests
@@ -73,7 +76,7 @@ enum QuestSafety {
         }
 
         let haystack = (
-            [bundle.narrative, bundle.headerLine] + bundle.warnings + bundle.quests.map(\.title) + stringParams(in: bundle)
+            [bundle.narrative, bundle.headerLine, bundle.threat ?? ""] + bundle.warnings + bundle.quests.map(\.title) + stringParams(in: bundle)
         ).joined(separator: "\n").lowercased()
         if unsafePhrases.contains(where: { haystack.contains($0) }) {
             issues.append("unsafe phrasing")

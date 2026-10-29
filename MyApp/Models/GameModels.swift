@@ -268,6 +268,8 @@ struct QuestBundle: Codable, Equatable {
     var mode: QuestMode
     var headerLine: String
     var narrative: String
+    /// The penalty screen's two sentences, written by the generator with the day. Nil keeps the app's own line.
+    var threat: String?
     var quests: [Quest]
     var warnings: [String]
     /// `"fallback"` is the on-device catalog. `"mock"`, `"template"`, and `"llm"` are generated bundles.
@@ -304,7 +306,7 @@ struct QuestBundle: Codable, Equatable {
 
 extension QuestBundle {
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, dayKey, mode, headerLine, narrative, quests, warnings, generatedBy
+        case schemaVersion, dayKey, mode, headerLine, narrative, threat, quests, warnings, generatedBy
     }
 
     init(from decoder: Decoder) throws {
@@ -315,6 +317,7 @@ extension QuestBundle {
         let line = try container.decodeIfPresent(String.self, forKey: .headerLine) ?? ""
         headerLine = line.isEmpty ? mode.headerLine : line
         narrative = try container.decodeIfPresent(String.self, forKey: .narrative) ?? ""
+        threat = try container.decodeIfPresent(String.self, forKey: .threat)
         // Old saves can hold quests of a removed kind (Target quests). Skip those rows so the rest of the save still loads.
         quests = try container.decodeIfPresent([SkippableQuest].self, forKey: .quests)?.compactMap(\.quest) ?? []
         warnings = try container.decodeIfPresent([String].self, forKey: .warnings) ?? []
@@ -329,6 +332,7 @@ extension QuestBundle {
         try container.encode(mode, forKey: .mode)
         try container.encode(headerLine, forKey: .headerLine)
         try container.encode(narrative, forKey: .narrative)
+        try container.encodeIfPresent(threat, forKey: .threat)
         try container.encode(quests, forKey: .quests)
         try container.encode(warnings, forKey: .warnings)
         try container.encode(generatedBy, forKey: .generatedBy)
