@@ -59,9 +59,11 @@ struct GameSnapshot: Codable, Equatable {
         catalog: FallbackCatalog,
         now: Date = .now,
         signals: MorningSignals = .placeholder,
-        player: PlayerState = .starter
+        player: PlayerState = .starter,
+        readiness: ReadinessSnapshot? = nil
     ) -> GameSnapshot {
         var snapshot = GameSnapshot(version: currentVersion, player: player, signals: signals, bundle: .empty)
+        snapshot.readiness = readiness
         snapshot.rebuildBundle(catalog: catalog, now: now)
         return snapshot
     }
@@ -274,17 +276,29 @@ struct GameSnapshot: Codable, Equatable {
         return amount
     }
 
+    /// The WHOOP reading captured on `dayKey`. Nil when the newest reading is from another day.
+    func readiness(on dayKey: String) -> ReadinessSnapshot? {
+        readiness?.capturedOn == dayKey ? readiness : nil
+    }
+
+    /// Picker input from today's reading only. Yesterday's reading never sizes today.
+    /// With no reading today the band is green and sleep makes no adjustment, like the planner's default.
     func modeInput(now: Date) -> ModePickerInput {
+        Self.modeInput(spendingFullRecovery: signals.spendingFullRecovery, readiness: readiness(on: QuestDay.key(for: now)))
+    }
+
+    static func modeInput(spendingFullRecovery: Bool, readiness: ReadinessSnapshot?) -> ModePickerInput {
         ModePickerInput(
-            spendingFullRecovery: signals.spendingFullRecovery,
-            readinessBand: signals.readinessBand,
-            sleepPerformance: signals.sleepPerformance
+            spendingFullRecovery: spendingFullRecovery,
+            readinessBand: readiness?.band ?? .green,
+            sleepPerformance: readiness?.sleepPerformance
         )
     }
 
-    /// Readiness band that sizes today's Training quests, after the sleep adjustment.
+    /// Readiness band that sizes the bundle day's Training quests, after the sleep adjustment.
     var trainingBand: ReadinessBand {
-        ModePicker.trainingBand(readiness: signals.readinessBand, sleepPerformance: signals.sleepPerformance)
+        let today = readiness(on: bundle.dayKey)
+        return ModePicker.trainingBand(readiness: today?.band ?? .green, sleepPerformance: today?.sleepPerformance)
     }
 
     static func loadFromUserDefaults() -> GameSnapshot? {
@@ -323,6 +337,7 @@ struct GameSnapshot: Codable, Equatable {
     }
 
     /// Stores WHOOP recovery as readiness. Does not write `player.stats.REC`.
+    /// An unavailable reading keeps the old snapshot, but `modeInput` and `trainingBand` only read one captured today.
     /// A quiet morning rebuilds the catalog when the locked mode or the training band changes.
     @discardableResult
     mutating func applyWhoopReadiness(_ reading: WhoopDayReading, catalog: FallbackCatalog, now: Date) -> Bool {
@@ -338,10 +353,6 @@ struct GameSnapshot: Codable, Equatable {
             band: band,
             capturedOn: reading.dayKey
         )
-        signals.readinessBand = band
-        if let sleep = reading.sleepPerformance {
-            signals.sleepPerformance = sleep
-        }
         player.stats.REC = previousREC
         let nextDecision = ModePicker.decide(modeInput(now: now))
         let quiet = runningTimers.isEmpty && !bundle.quests.contains { $0.status == .completed }
