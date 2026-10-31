@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// The System's STATUS window: level, job and title, HP and fatigue, the seven stats, and Full Recoveries.
+/// The System's STATUS window: level, job and title, HP and fatigue, the seven stats, gold, and Full Recoveries.
 /// HP turns red when critical; the fatigue meter turns red at 80 or more.
-/// Tapping a stat opens its targets; the gear opens the settings.
+/// Tapping a stat opens its targets, the gold opens the shop, and the gear opens the settings.
 struct StatusSheetView: View {
     @EnvironmentObject private var store: GameStore
     @State private var selectedStat: Stat?
     @State private var showSettings = false
+    @State private var showShop = false
 
     var body: some View {
         ZStack {
@@ -20,8 +21,10 @@ struct StatusSheetView: View {
                             fatigue: store.fatigue,
                             stats: Stat.allCases.map { ($0, store.statLevels[$0]) },
                             fullRecoveryPoints: store.player.fullRecoveryBank,
+                            gold: store.snapshot.gold,
                             onSelectStat: { selectedStat = $0 },
-                            onSettings: { showSettings = true }
+                            onSettings: { showSettings = true },
+                            onShop: { showShop = true }
                         )
                     }
                     .frame(maxWidth: 460)
@@ -39,6 +42,9 @@ struct StatusSheetView: View {
         .sheet(isPresented: $showSettings) {
             StatusSettingsSheet()
         }
+        .sheet(isPresented: $showShop) {
+            ShopSheet()
+        }
     }
 }
 
@@ -49,8 +55,10 @@ private struct StatusSheetContent: View {
     let fatigue: Int
     let stats: [(Stat, Int)]
     let fullRecoveryPoints: Int
+    var gold = 0
     var onSelectStat: (Stat) -> Void = { _ in }
     var onSettings: () -> Void = {}
+    var onShop: () -> Void = {}
     /// The app has no jobs or titles yet.
     var job = "None"
     var title = "None"
@@ -82,18 +90,43 @@ private struct StatusSheetContent: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Full Recoveries:")
-                            .font(.footnote)
-                        Text(verbatim: "\(fullRecoveryPoints)")
-                            .font(.subheadline.weight(.bold))
-                            .monospacedDigit()
+                        goldButton
+                        Spacer(minLength: 8)
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("Full Recoveries:")
+                                .font(.footnote)
+                            Text(verbatim: "\(fullRecoveryPoints)")
+                                .font(.subheadline.weight(.bold))
+                                .monospacedDigit()
+                        }
+                        .accessibilityElement(children: .combine)
                     }
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                    .accessibilityElement(children: .combine)
                 }
             }
         }
+    }
+
+    /// "Gold: 12,340" that opens the shop.
+    private var goldButton: some View {
+        Button(action: onShop) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Gold:")
+                    .font(.footnote)
+                Text(verbatim: gold.formatted())
+                    .font(.subheadline.weight(.bold))
+                    .monospacedDigit()
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .opacity(0.7)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Gold \(gold), open shop")
+        .accessibilityAddTraits(.isButton)
     }
 
     private var settingsButton: some View {

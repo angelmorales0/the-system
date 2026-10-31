@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Opens from the gear on the STATUS window: Full Recovery, the No Gym toggle, and the other settings screens.
+/// Opens from the gear on the STATUS window: Full Recovery, the No Gym toggle, the shop, and the other settings screens.
 struct StatusSettingsSheet: View {
     @EnvironmentObject private var store: GameStore
     @State private var confirmRecovery = false
@@ -9,6 +9,7 @@ struct StatusSettingsSheet: View {
     @State private var showAppIcon = false
     @State private var showEmergency = false
     @State private var showConnections = false
+    @State private var showShop = false
 
     var body: some View {
         QuestSheet(title: "Settings") {
@@ -51,6 +52,7 @@ struct StatusSettingsSheet: View {
                 .tint(SystemTheme.cyan)
                 .disabled(store.snapshot.bundle.mode != .performanceTraining)
                 SystemDivider()
+                link("SHOP") { showShop = true }
                 link("PENALTY ZONE") { showShields = true }
                 link("SCREEN TIME") { showScreenTime = true }
                 link("EMERGENCY QUESTS") { showEmergency = true }
@@ -78,6 +80,9 @@ struct StatusSettingsSheet: View {
         }
         .sheet(isPresented: $showConnections) {
             ConnectionsSheet()
+        }
+        .sheet(isPresented: $showShop) {
+            ShopSheet()
         }
     }
 
