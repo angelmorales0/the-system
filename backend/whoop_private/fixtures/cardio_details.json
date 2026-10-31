@@ -1,0 +1,36 @@
+{
+  "metadata": {"average_heart_rate_display": "142"},
+  "title_bar": {"title": "Strength Trainer", "score_display": "11.2"},
+  "horizontal_stat": {"value_display": "11.2"},
+  "strain_breakdown": {"strain": 11.2},
+  "graph_response": {
+    "plots": [
+      {
+        "plot": {
+          "segments": [
+            {
+              "points": [
+                {"value": 120},
+                {"value": 135},
+                {"value": 150},
+                {"value": 140}
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "bar_graph_container": {
+    "heart_rate_zones": {
+      "zone_1": 600000,
+      "zone_2": 900000,
+      "zone_3": 300000,
+      "zone_4": 120000,
+      "zone_5": 0
+    }
+  },
+  "weightlifting_cardio_details": {"muscular_load": 420},
+  "calories": 380,
+  "max_heart_rate": 168
+}
