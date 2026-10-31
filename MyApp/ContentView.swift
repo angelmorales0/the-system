@@ -13,12 +13,9 @@ struct ContentView: View {
             SystemView()
                 .environment(\.isPageVisible, selectedPage == 0)
                 .tag(0)
-            StatusView()
+            StatusSheetView()
                 .environment(\.isPageVisible, selectedPage == 1)
                 .tag(1)
-            StatusSheetView()
-                .environment(\.isPageVisible, selectedPage == 2)
-                .tag(2)
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .ignoresSafeArea()
@@ -53,11 +50,11 @@ struct ContentView: View {
         }
     }
 
-    /// The first page. Launch with `-startPage 2` in DEBUG to open on another page.
+    /// The first page. Launch with `-startPage 1` in DEBUG to open on another page.
     private static var startPage: Int {
         #if DEBUG
         let page = UserDefaults.standard.integer(forKey: "startPage")
-        return (0...2).contains(page) ? page : 0
+        return (0...1).contains(page) ? page : 0
         #else
         return 0
         #endif

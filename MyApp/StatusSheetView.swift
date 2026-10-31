@@ -2,8 +2,11 @@ import SwiftUI
 
 /// The System's STATUS window: level, job and title, HP and fatigue, the seven stats, and Full Recoveries.
 /// HP turns red when critical; the fatigue meter turns red at 80 or more.
+/// Tapping a stat opens its targets; the gear opens the settings.
 struct StatusSheetView: View {
     @EnvironmentObject private var store: GameStore
+    @State private var selectedStat: Stat?
+    @State private var showSettings = false
 
     var body: some View {
         ZStack {
@@ -16,7 +19,9 @@ struct StatusSheetView: View {
                             hp: store.hitPoints,
                             fatigue: store.fatigue,
                             stats: Stat.allCases.map { ($0, store.statLevels[$0]) },
-                            fullRecoveryPoints: store.player.fullRecoveryBank
+                            fullRecoveryPoints: store.player.fullRecoveryBank,
+                            onSelectStat: { selectedStat = $0 },
+                            onSettings: { showSettings = true }
                         )
                     }
                     .frame(maxWidth: 460)
@@ -28,6 +33,12 @@ struct StatusSheetView: View {
                 .scrollBounceBehavior(.basedOnSize)
             }
         }
+        .sheet(item: $selectedStat) { stat in
+            StatTargetsSheet(stat: stat)
+        }
+        .sheet(isPresented: $showSettings) {
+            StatusSettingsSheet()
+        }
     }
 }
 
@@ -38,6 +49,8 @@ private struct StatusSheetContent: View {
     let fatigue: Int
     let stats: [(Stat, Int)]
     let fullRecoveryPoints: Int
+    var onSelectStat: (Stat) -> Void = { _ in }
+    var onSettings: () -> Void = {}
     /// The app has no jobs or titles yet.
     var job = "None"
     var title = "None"
@@ -45,6 +58,7 @@ private struct StatusSheetContent: View {
     var body: some View {
         VStack(spacing: 22) {
             StatusTitleBox()
+                .overlay(alignment: .trailing) { settingsButton }
             levelRow
             StatusFrame {
                 HStack(alignment: .center, spacing: 14) {
@@ -57,9 +71,9 @@ private struct StatusSheetContent: View {
                     Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 14) {
                         ForEach(Array(stride(from: 0, to: stats.count, by: 2)), id: \.self) { index in
                             GridRow {
-                                StatCell(stat: stats[index].0, value: stats[index].1)
+                                StatCell(stat: stats[index].0, value: stats[index].1, onSelect: onSelectStat)
                                 if index + 1 < stats.count {
-                                    StatCell(stat: stats[index + 1].0, value: stats[index + 1].1)
+                                    StatCell(stat: stats[index + 1].0, value: stats[index + 1].1, onSelect: onSelectStat)
                                 } else {
                                     Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
                                 }
@@ -80,6 +94,18 @@ private struct StatusSheetContent: View {
                 }
             }
         }
+    }
+
+    private var settingsButton: some View {
+        Button(action: onSettings) {
+            Image(systemName: "gearshape")
+                .font(.system(size: 20, weight: .light))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .shadow(color: QuestLight.cyan.opacity(0.5), radius: 4)
+        .accessibilityLabel("Settings")
     }
 
     private var levelRow: some View {
@@ -227,12 +253,23 @@ private struct FatigueRing: View {
     }
 }
 
-/// "STR: 142" with the stat's icon.
+/// "STR: 142" with the stat's icon. Tapping it opens the stat's targets.
 private struct StatCell: View {
     let stat: Stat
     let value: Int
+    var onSelect: (Stat) -> Void = { _ in }
 
     var body: some View {
+        Button {
+            onSelect(stat)
+        } label: {
+            label
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(stat.fullName) \(value), show targets")
+    }
+
+    private var label: some View {
         HStack(spacing: 8) {
             Image(systemName: Self.icon(stat))
                 .font(.system(size: 15, weight: .regular))
@@ -245,6 +282,7 @@ private struct StatCell: View {
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 
     static func icon(_ stat: Stat) -> String {
