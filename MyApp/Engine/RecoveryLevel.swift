@@ -577,6 +577,23 @@ enum RecoveryLevel {
             || noCaloriesReport.statReport.counted.count != 12 || abs(noCaloriesReport.statReport.counted.reduce(0, { $0 + $1.weight }) - 100) > 0.001 {
             errors.append("calories never logged should drop out and keep the max level, got level \(noCaloriesReport.level) failing \(noCaloriesReport.failing.map(\.category))")
         }
+        // No nutrition app at all: protein, fat, carbs, and calories all drop out, and WHOOP alone can still max REC.
+        var noNutrition = perfect
+        for index in noNutrition.indices {
+            noNutrition[index].proteinG = nil
+            noNutrition[index].fatG = nil
+            noNutrition[index].carbsG = nil
+            noNutrition[index].caloriesKcal = nil
+            noNutrition[index].maintenanceKcal = nil
+            noNutrition[index].caffeineMg = nil
+        }
+        let noNutritionReport = evaluate(days: noNutrition)
+        if !noNutritionReport.isMaxLevel || noNutritionReport.level != maxLevel
+            || Set(noNutritionReport.statReport.withoutData.map(\.category)) != ["Protein", "Fat", "Carbs", "Calories", "Caffeine"]
+            || noNutritionReport.statReport.counted.count != 8 {
+            errors.append("no nutrition logged should drop all four nutrition targets and caffeine and keep the max level, got level \(noNutritionReport.level) without data \(noNutritionReport.statReport.withoutData.map(\.category))")
+        }
+
         // Only WHOOP sleep logged: the four sleep categories score alone, so a perfect sleeper without a nutrition app can still max REC.
         let sleepOnly = perfect.map { day in
             RecoveryDay(dayKey: day.dayKey, sleepNeedPct: day.sleepNeedPct, sleepConsistencyPct: day.sleepConsistencyPct,
