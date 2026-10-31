@@ -31,9 +31,9 @@ enum ContextBuilder {
                 recoveryScore: readinessToday?.recoveryScore,
                 restingHr: readinessToday?.restingHr,
                 hrv: readinessToday?.hrv.map { Int($0.rounded()) },
-                sleepPerformance: snapshot.signals.sleepPerformance,
+                sleepPerformance: readinessToday?.sleepPerformance,
                 dayStrainYesterday: nil,
-                readinessBand: snapshot.signals.readinessBand
+                readinessBand: readinessToday?.band ?? .green
             ),
             nutrition: MorningNutrition(
                 source: "placeholder",
