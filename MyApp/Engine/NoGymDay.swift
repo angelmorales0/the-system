@@ -82,7 +82,7 @@ extension GameSnapshot {
         if on {
             noGymDayKey = bundle.dayKey
             bundle = finished(bundle, catalog: catalog, now: now)
-            return "No gym today. Strength quests are swapped for a second 10K."
+            return "No gym available. Strength quests are swapped for a second 10K."
         }
         noGymDayKey = nil
         var fresh = self

@@ -76,7 +76,7 @@ struct StatusView: View {
                             set: { store.setNoGym($0) }
                         )) {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text("NO GYM TODAY")
+                                Text("NO GYM AVAILABLE")
                                     .font(.caption.weight(.semibold))
                                     .tracking(1.1)
                                     .foregroundStyle(SystemTheme.muted)
