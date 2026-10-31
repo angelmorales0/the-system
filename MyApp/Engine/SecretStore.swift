@@ -17,6 +17,8 @@ nonisolated enum SecretStore {
         case whoopClientSecret
         /// JSON `{"access_token", "refresh_token", "expires_at"}`. WHOOP rotates the refresh token on each use.
         case whoopTokens
+        /// JSON `{"access_token", "refresh_token", "expires_at"}` from WHOOP's Cognito sign-in, for the private stress API.
+        case whoopPrivateTokens
         case mercuryToken
         case anthropicApiKey
     }

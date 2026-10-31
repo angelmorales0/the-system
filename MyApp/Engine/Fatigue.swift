@@ -56,7 +56,8 @@ struct FatigueState: Codable, Equatable {
 ///               (recovery 0: × 0.5 speed, 50 or no reading: × 1, 100: × 1.5)
 ///   Workout     + 50 × the session's HP drain share (a 50 min run: +12.5, at most +30), once per session
 ///   Recovery    WHOOP recovery under 67: + 0.3 per point under 67 (recovery 20: +14.1), once per WHOOP day
-///   Stress      score 0...100, see `stressScore`; above 30 it adds up to 1 point per hour: (stress − 30) / 70 per hour
+///   Stress      score 0...100: WHOOP's own stress (its 0...3 gauge × 100 / 3) when signed in, else `stressScore`;
+///               above 30 it adds up to 1 point per hour: (stress − 30) / 70 per hour
 ///   Screen      + 1 per hour of new screen time today (phone + Mac, shared minutes once); only the increase counts
 ///   Red         at or above 80
 enum Fatigue {
@@ -83,7 +84,7 @@ enum Fatigue {
 
     static func isRed(_ value: Int) -> Bool { value >= redAt }
 
-    /// Stress 0...100, derived because the app has no direct stress score:
+    /// Stress 0...100, estimated when WHOOP's own stress is not available (no private sign-in, or calibrating):
     ///   HRV part     share of HRV under the running baseline, 30% under = 100 (at or above the baseline = 0)
     ///   Strain part  WHOOP day strain over 10, on a 10...21 scale (21 = 100)
     ///   Both         0.6 × HRV part + 0.4 × strain part. One alone counts by itself. Neither: nil.
@@ -123,6 +124,7 @@ enum Fatigue {
         recoveryDayKey: String?,
         hrv: Double?,
         dayStrain: Double?,
+        whoopStress: Double? = nil,
         todayKey: String,
         workouts: [HPWorkout],
         screenDayKey: String,
@@ -133,7 +135,8 @@ enum Fatigue {
         let hours = Swift.max(0, now.timeIntervalSince(next.updatedAt) / 3600)
         let speed = HitPoints.regenMultiplier(recoveryScore: todays ? recoveryScore : nil)
         next.value *= pow(keepPerDay, hours / 24 * speed)
-        let stress = stressScore(hrv: todays ? hrv : nil, hrvBaseline: next.hrvBaseline, dayStrain: dayStrain)
+        // WHOOP's own stress score wins. Without it, the estimate from HRV against its baseline and day strain.
+        let stress = whoopStress ?? stressScore(hrv: todays ? hrv : nil, hrvBaseline: next.hrvBaseline, dayStrain: dayStrain)
         next.value += stressPerHour(stress) * hours
         next.updatedAt = Swift.max(now, next.updatedAt)
 
@@ -182,6 +185,14 @@ enum Fatigue {
 
         if isRed(79) || !isRed(80) {
             errors.append("the fatigue meter should turn red at 80")
+        }
+
+        // Real WHOOP stress 100 for 10 hours adds 10 at no decay; it wins over a calm estimate.
+        let rested = FatigueState(value: 0, updatedAt: start)
+        let whoopStressed = update(rested, now: start.addingTimeInterval(10 * 3600), recoveryScore: nil, recoveryDayKey: nil, hrv: nil,
+                              dayStrain: 5, whoopStress: 100, todayKey: day, workouts: [], screenDayKey: day, screenMinutes: 0)
+        if !near(whoopStressed.value, 10) {
+            errors.append("WHOOP stress 100 should add 1 fatigue per hour, got \(whoopStressed.value) in 10 hours")
         }
 
         let tired = FatigueState(value: 50, updatedAt: start)
@@ -249,7 +260,8 @@ enum Fatigue {
 
 extension GameSnapshot {
     /// Brings fatigue up to `now`: decay and stress, then today's new workouts, a low WHOOP recovery, and new screen time.
-    mutating func applyFatigue(integrations: DayIntegrationSnapshot, now: Date) {
+    /// `whoopStress` is today's real WHOOP stress (0...100) from `WhoopStressClient`; nil uses the HRV and strain estimate.
+    mutating func applyFatigue(integrations: DayIntegrationSnapshot, whoopStress: Double? = nil, now: Date) {
         let whoop = integrations.whoop
         let screen = screenTimeToday
         fatigue = Fatigue.update(
@@ -259,6 +271,7 @@ extension GameSnapshot {
             recoveryDayKey: readiness?.capturedOn,
             hrv: readiness?.hrv,
             dayStrain: whoop.available && whoop.scored ? whoop.dayStrain : nil,
+            whoopStress: whoopStress,
             todayKey: QuestDay.key(for: now),
             workouts: HitPoints.workouts(canonical: integrations.workouts, hevy: integrations.hevy.workouts),
             screenDayKey: screen.dayKey,

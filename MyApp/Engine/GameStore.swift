@@ -46,7 +46,7 @@ final class GameStore: ObservableObject {
             + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
             + NoGymDayRules.check() + PenaltyDecay.check() + SecretStore.check() + ConnectionStatusStore.check()
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MercuryClient.check()
-            + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check()
+            + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check() + WhoopStressClient.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -528,6 +528,7 @@ final class GameStore: ObservableObject {
             let remote = await IntegrationClient.load(dayKey: dayKey)
             let focusDays = FocusTracking.loadDays()
             let macScreen = await MacScreenClient.load(dayKey: dayKey)
+            let whoopStress = await WhoopStressClient.stress(dayKey: dayKey)
             guard let self else { return }
             self.refreshingIntegrations = false
             var next = self.snapshot
@@ -548,7 +549,7 @@ final class GameStore: ObservableObject {
             // After today's readiness, so a red recovery hits HP and sets the regeneration speed.
             next.applyHitPoints(integrations: day, now: now)
             // After today's screen time too, so only the new minutes add fatigue.
-            next.applyFatigue(integrations: day, now: now)
+            next.applyFatigue(integrations: day, whoopStress: whoopStress, now: now)
             self.snapshot = next
             self.integrations = day
             self.statInputs = (remote.codeforces, remote.financeMonths, bodyMass, focusDays)

@@ -217,6 +217,7 @@ struct ConnectionExtras: View {
             OAuthSignIn(provider: .strava, onMessage: onMessage)
         case .whoop:
             OAuthSignIn(provider: .whoop, onMessage: onMessage)
+            WhoopStressSignIn(onMessage: onMessage)
         case .mercury:
             MercurySettingsView()
         case .claude:
@@ -224,6 +225,97 @@ struct ConnectionExtras: View {
         default:
             EmptyView()
         }
+    }
+}
+
+/// WHOOP stress: a second sign-in, with the WHOOP email and password, for the private API that has stress.
+/// The password stays in this view's memory for the one call and is cleared after; only the tokens are saved.
+struct WhoopStressSignIn: View {
+    var onMessage: (String) -> Void
+    @State private var email = ""
+    @State private var password = ""
+    @State private var code = ""
+    @State private var challenge: (name: String, session: String)?
+    @State private var working = false
+    @State private var signedIn = WhoopStressClient.configured
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("STRESS (UNOFFICIAL API)")
+                .font(.caption.weight(.semibold))
+                .tracking(1.1)
+                .foregroundStyle(.white)
+                .padding(.top, 8)
+            if signedIn {
+                Text("Signed in. Fatigue uses WHOOP's stress score.")
+                    .font(.caption2)
+                    .foregroundStyle(SystemTheme.cyan)
+                button("SIGN OUT OF WHOOP STRESS") {
+                    WhoopStressClient.signOut()
+                    signedIn = false
+                    onMessage("Signed out of WHOOP stress. Fatigue uses its own estimate.")
+                }
+            } else if let challenge {
+                TextField("Code from WHOOP", text: $code)
+                    .textContentType(.oneTimeCode)
+                    .keyboardType(.numberPad)
+                button(working ? "CHECKING…" : "CONFIRM CODE") {
+                    run { await WhoopStressClient.confirm(email: email, code: code, challenge: challenge.name, session: challenge.session) }
+                }
+            } else {
+                TextField("WHOOP email", text: $email)
+                    .textContentType(.username)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                SecureField("WHOOP password", text: $password)
+                    .textContentType(.password)
+                button(working ? "SIGNING IN…" : "SIGN IN FOR STRESS") {
+                    run { await WhoopStressClient.signIn(email: email, password: password) }
+                }
+            }
+            Text("Uses the WHOOP iPhone app's private API. It is not official, it can stop working when WHOOP updates its app, and it may break WHOOP's terms. The password is not saved.")
+                .font(.caption2)
+                .foregroundStyle(SystemTheme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .disabled(working)
+    }
+
+    private func run(_ call: @escaping () async -> WhoopStressClient.SignInStep) {
+        working = true
+        Task {
+            let step = await call()
+            password = ""
+            working = false
+            switch step {
+            case .signedIn:
+                challenge = nil
+                code = ""
+                let stress = await WhoopStressClient.stress(dayKey: QuestDay.key(for: .now))
+                signedIn = true
+                onMessage(stress.map { "Signed in to WHOOP stress. Stress now: \(Int($0.rounded())) of 100." }
+                          ?? "Signed in to WHOOP stress. WHOOP has no stress score for today yet.")
+            case .needsCode(let name, let session):
+                challenge = (name, session)
+                onMessage("WHOOP sent a code. Type it to finish signing in.")
+            case .failed(let message):
+                challenge = nil
+                onMessage(message)
+            }
+        }
+    }
+
+    private func button(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .tracking(0.8)
+                .frame(maxWidth: .infinity, minHeight: 34)
+                .overlay { Rectangle().stroke(SystemTheme.cyan.opacity(0.8), lineWidth: 0.8) }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
