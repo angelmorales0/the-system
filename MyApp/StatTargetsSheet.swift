@@ -32,8 +32,13 @@ struct StatTargetsSheet: View {
 
     private var removed: Set<String> { store.statTargets.removed(for: stat) }
 
-    /// Active targets with their weights scaled to 100.
+    /// Active targets, with and without data, in display order.
     private var active: [StatRequirement] { report.removing(removed).requirements }
+
+    /// The weight each active target with data really carries, scaled to 100 among them.
+    private var countedWeights: [String: Double] {
+        Dictionary(uniqueKeysWithValues: report.removing(removed).counted.map { ($0.category, $0.weight) })
+    }
 
     private var removedTargets: [StatRequirement] { report.requirements.filter { removed.contains($0.category) } }
 
@@ -44,7 +49,7 @@ struct StatTargetsSheet: View {
                     Text("LEVEL \(store.statLevels[stat]) / \(StatLevel.maxLevel)")
                         .font(.title3.weight(.semibold))
                         .tracking(1.1)
-                    note("\(active.count) of \(report.requirements.count) targets count. Meet every target that counts to reach \(StatLevel.maxLevel). A removed target's weight goes to the others.")
+                    note("\(countedWeights.count) of \(report.requirements.count) targets count. Meet every target that counts to reach \(StatLevel.maxLevel). A removed target's weight goes to the others, and so does the weight of a target with no data yet.")
                     if stat == .FOC {
                         NavigationLink {
                             FocusTrackingView()
@@ -99,7 +104,7 @@ struct StatTargetsSheet: View {
                         .font(.subheadline.weight(.semibold))
                     Spacer(minLength: 8)
                     if !isRemoved {
-                        Text("\(Int(requirement.weight.rounded()))%")
+                        Text(countedWeights[requirement.category].map { "\(Int($0.rounded()))%" } ?? "NO DATA")
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(SystemTheme.muted)
                     }

@@ -1,7 +1,8 @@
 import Foundation
 
 /// The seven stat levels (0...350) that the status radar draws, and the overall level (0...146) they add up to.
-/// Each stat comes from its algorithm. A stat with no data yet scores 0; nothing falls back to XP points.
+/// Each stat comes from its algorithm. A target with no data drops out and the rest share its weight;
+/// a stat with no data at all scores 0. Nothing falls back to XP points.
 struct StatLevelSet: Equatable {
     /// Overall level 146 means all seven stats are at their max (350).
     static let overallMaxLevel = 146

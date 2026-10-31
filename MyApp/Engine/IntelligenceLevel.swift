@@ -39,11 +39,11 @@ enum IntelligenceLevel {
     private static func rating(_ reading: CodeforcesReading) -> StatRequirement {
         let category = "Codeforces rating"
         guard reading.configured, reading.available else {
-            return StatRequirement(category: category, passed: false, progress: 0, weight: Weight.rating, detail: reading.reason)
+            return StatRequirement(category: category, passed: false, progress: 0, weight: Weight.rating, detail: reading.reason, hasData: false)
         }
         let who = reading.handle.map { "\($0): " } ?? ""
         guard reading.contests > 0, let current = reading.rating else {
-            return StatRequirement(category: category, passed: false, progress: 0, weight: Weight.rating, detail: who + "unrated")
+            return StatRequirement(category: category, passed: false, progress: 0, weight: Weight.rating, detail: who + "unrated", hasData: false)
         }
         var detail = who + "rating \(current)"
         if let rank = reading.rank { detail += " (\(rank))" }

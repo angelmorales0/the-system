@@ -103,7 +103,7 @@ enum AgilityLevel {
         passes: (Double) -> Bool
     ) -> StatRequirement {
         guard let measurement else {
-            return StatRequirement(category: category, passed: false, progress: 0, weight: weight, detail: missing)
+            return StatRequirement(category: category, passed: false, progress: 0, weight: weight, detail: missing, hasData: false)
         }
         return StatRequirement(
             category: category,
@@ -114,7 +114,8 @@ enum AgilityLevel {
         )
     }
 
-    /// A left and a right test. Strict rule: both sides pass. Progress is the worse side; a missing side is 0.
+    /// A left and a right test. Strict rule: both tested sides pass. Progress is the worse tested side.
+    /// A side that was never tested is left out, so one tested side scores alone. Neither side tested is no data.
     private static func paired(
         _ category: String,
         _ left: AgilityMeasurement?,
@@ -124,15 +125,16 @@ enum AgilityLevel {
         weight: Double,
         passes: (Double) -> Bool
     ) -> StatRequirement {
-        guard left != nil || right != nil else {
-            return StatRequirement(category: category, passed: false, progress: 0, weight: weight, detail: missing)
+        let tested = [left, right].compactMap { $0 }
+        guard !tested.isEmpty else {
+            return StatRequirement(category: category, passed: false, progress: 0, weight: weight, detail: missing, hasData: false)
         }
         func side(_ name: String, _ measurement: AgilityMeasurement?) -> String {
             measurement.map { "\(name) \(format($0.value)) \(unit)" } ?? "\(name) not tested"
         }
         let newest = [left, right].compactMap { $0?.date }.max() ?? Date(timeIntervalSince1970: 0)
-        let passed = left.map { passes($0.value) } == true && right.map { passes($0.value) } == true
-        let progress = min(left.map { band.progress($0.value) } ?? 0, right.map { band.progress($0.value) } ?? 0)
+        let passed = tested.allSatisfy { passes($0.value) }
+        let progress = tested.map { band.progress($0.value) }.min() ?? 0
         return StatRequirement(
             category: category,
             passed: passed,
@@ -233,8 +235,13 @@ enum AgilityLevel {
         if empty.isMaxLevel || empty.level != 0 || empty.score != 0 {
             errors.append("no data must be level 0, got level \(empty.level) score \(empty.score)")
         }
-        if empty.requirements.contains(where: { $0.detail != "not tested in 90 days" }) {
-            errors.append("missing tests should read \"not tested in 90 days\", got \(empty.requirements.map(\.detail))")
+        if empty.requirements.contains(where: { $0.detail != "not tested in 90 days" || $0.hasData }) {
+            errors.append("missing tests should read \"not tested in 90 days\" with no data, got \(empty.requirements.map(\.detail))")
+        }
+        // One test done and the rest never tested: that test scores alone at weight 100.
+        let jumpOnly = fixture([(.verticalJump, 19)]).evaluate()
+        if jumpOnly.counted.map(\.category) != ["Vertical jump"] || jumpOnly.counted.first?.weight != 100 || jumpOnly.level != 175 || jumpOnly.withoutData.count != 5 {
+            errors.append("a lone 19 in jump should score alone at weight 100 and level 175, got \(jumpOnly.counted.map { "\($0.category) \($0.weight)" }) level \(jumpOnly.level)")
         }
 
         let floorReport = floorFixture().evaluate()
@@ -276,12 +283,17 @@ enum AgilityLevel {
         if frontRow?.detail.hasPrefix("left 0 cm, right 10 cm (") != true {
             errors.append("front splits detail wrong: \(String(describing: frontRow?.detail))")
         }
-        // One side not tested fails with progress 0.
+        // One side never tested is left out: the tested side scores alone and the detail says so.
         var halfTested = perfect
         halfTested.measurements.removeAll { $0.test == .frontSplitsRight }
         let halfRow = halfTested.evaluate().requirements.first { $0.category == "Front splits" }
-        if halfRow?.passed != false || halfRow?.progress != 0 || halfRow?.detail.contains("right not tested") != true {
-            errors.append("an untested right side should fail at progress 0, got \(String(describing: halfRow))")
+        if halfRow?.passed != true || halfRow?.progress != 1 || halfRow?.hasData != true || halfRow?.detail.contains("right not tested") != true {
+            errors.append("an untested right side should leave the left side to score alone, got \(String(describing: halfRow))")
+        }
+        halfTested.set(.frontSplitsLeft, 30)
+        let halfFail = halfTested.evaluate().requirements.first { $0.category == "Front splits" }
+        if halfFail?.passed != false || abs((halfFail?.progress ?? 0) - 0.5) > 0.0001 {
+            errors.append("a 30 cm left side alone should fail at progress 0.5, got \(String(describing: halfFail))")
         }
 
         // Splits pass within 0.5 cm; 0.6 cm fails.
@@ -329,11 +341,14 @@ enum AgilityLevel {
             fixture.measurements.append(AgilityMeasurement(test: .frontSplitsRight, value: 8, date: daysAgo(1), source: "Manual"))
         }
 
-        // Results older than 90 days do not count.
-        failsOnly("90/90 hip switches") { fixture in
-            for index in fixture.measurements.indices where fixture.measurements[index].test == .hipSwitches {
-                fixture.measurements[index].date = daysAgo(91)
-            }
+        // Results older than 90 days do not count. With no newer result the test has no data and drops out.
+        var expired = perfect
+        for index in expired.measurements.indices where expired.measurements[index].test == .hipSwitches {
+            expired.measurements[index].date = daysAgo(91)
+        }
+        let expiredReport = expired.evaluate()
+        if expiredReport.requirements.first(where: { $0.category == "90/90 hip switches" })?.hasData != false || !expiredReport.isMaxLevel || expiredReport.counted.count != 5 {
+            errors.append("an expired hip switch result should drop out and leave the other five at the max, got level \(expiredReport.level) failing \(expiredReport.failing.map(\.category))")
         }
         var oldSplits = perfect
         for index in oldSplits.measurements.indices where oldSplits.measurements[index].test == .sideSplits {

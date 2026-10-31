@@ -2,7 +2,8 @@ import Foundation
 
 /// One local day of recovery inputs. Every field is optional because each
 /// source (WHOOP, MacroFactor via HealthKit, Strava) can be missing on a day.
-/// A nil field means "not logged"; it is never scored as a fail.
+/// A nil field means "not logged". A metric with no logged day in the window has no data and drops out of
+/// the score (see `StatLevelReport.counted`). A metric logged on some days counts, scaled down by how many.
 struct RecoveryDay: Codable, Equatable {
     var dayKey: String
 
@@ -43,6 +44,8 @@ struct RecoveryRequirement: Equatable, Identifiable {
     /// Share of the 100-point score. All weights add to 100.
     var weight: Double
     var detail: String
+    /// False when the metric was never logged in the window. The category then drops out of the score.
+    var hasData: Bool = true
 
     var id: String { category }
     var points: Double { progress * weight }
@@ -50,34 +53,38 @@ struct RecoveryRequirement: Equatable, Identifiable {
     var levelsAvailable: Double { (weight - points) * Double(RecoveryLevel.maxLevel) / 100 }
 }
 
+/// The REC report. Scoring is `StatLevelReport`'s: categories without data drop out and the rest share their weight.
 struct RecoveryLevelReport: Equatable {
     var requirements: [RecoveryRequirement]
 
-    /// The max level needs every requirement at once.
-    var isMaxLevel: Bool { requirements.allSatisfy(\.passed) }
-    var failing: [RecoveryRequirement] { requirements.filter { !$0.passed } }
+    /// The max level needs every counted requirement at once.
+    var isMaxLevel: Bool { statReport.isMaxLevel }
+    /// Counted categories that miss their strict rule.
+    var failing: [RecoveryRequirement] { rows(statReport.failing) }
 
-    /// 0...100. Weighted sum of category progress.
-    var score: Double { requirements.reduce(0) { $0 + $1.points } }
+    /// 0...100. Weighted sum of the counted categories' progress.
+    var score: Double { statReport.score }
 
     /// 0...350. The max level needs every strict rule, not just a full score.
-    var level: Int {
-        let scored = Int((Double(RecoveryLevel.maxLevel) * score / 100 + 1e-9).rounded(.down))
-        return isMaxLevel ? RecoveryLevel.maxLevel : min(scored, RecoveryLevel.maxLevel - 1)
-    }
+    var level: Int { statReport.level }
 
     var levelsToMax: Int { RecoveryLevel.maxLevel - level }
 
-    /// Categories with the most levels left, best first.
+    /// Counted categories with the most levels left, best first.
     func topGains(_ count: Int = 3) -> [RecoveryRequirement] {
-        Array(requirements.filter { $0.levelsAvailable > 0 }.sorted { $0.levelsAvailable > $1.levelsAvailable }.prefix(count))
+        rows(statReport.topGains(count))
     }
 
     /// The same categories as a REC stat report, so the target list treats REC like every other stat.
     var statReport: StatLevelReport {
         StatLevelReport(stat: .REC, requirements: requirements.map {
-            StatRequirement(category: $0.category, passed: $0.passed, progress: $0.progress, weight: $0.weight, detail: $0.detail)
+            StatRequirement(category: $0.category, passed: $0.passed, progress: $0.progress, weight: $0.weight, detail: $0.detail, hasData: $0.hasData)
         })
+    }
+
+    /// The REC rows behind stat rows, in the stat rows' order.
+    private func rows(_ stats: [StatRequirement]) -> [RecoveryRequirement] {
+        stats.compactMap { stat in requirements.first { $0.category == stat.category } }
     }
 }
 
@@ -130,7 +137,9 @@ enum RecoveryLevel {
         static let sleepEfficiency = 10.0
         static let sleepDebt = 8.0
         static let caffeine = 5.0
+        /// Protein, fat, carbs, and calories: 15 points shared four ways.
         static let nutrition = 15.0
+        static let nutritionPart = nutrition / 4
         static let training = 10.0
         static let hrv = 15.0
         static let restingHr = 8.0
@@ -159,7 +168,7 @@ enum RecoveryLevel {
             sleepEfficiency(window),
             sleepDebt(window),
             caffeine(window),
-            nutrition(window),
+        ] + nutrition(window) + [
             trainingRecovery(window),
             hrv(window: window, baseline: all),
             restingHeartRate(window),
@@ -196,85 +205,87 @@ enum RecoveryLevel {
             passed: values.count >= minimumLoggedDays && values.allSatisfy { $0 <= 0 },
             progress: caffeineBand.progress(average) * coverage(values.count),
             weight: Weight.caffeine,
-            detail: logged(values.count, of: window.count) + "average \(format(average)) mg/day"
+            detail: logged(values.count, of: window.count) + "average \(format(average)) mg/day",
+            hasData: !values.isEmpty
         )
     }
 
     // MARK: - Nutrition
 
-    /// Four equal sub-metrics: protein, fat, carbs matched to load, calories near maintenance.
-    private static func nutrition(_ window: [RecoveryDay]) -> RecoveryRequirement {
-        var problems: [String] = []
-        var notes: [String] = []
-        var progressParts: [Double] = []
-
+    /// Four equal categories: protein, fat, carbs matched to load, calories near maintenance.
+    /// Each is its own target, so one that is not tracked (calories, say) can be removed or drops out on its own.
+    private static func nutrition(_ window: [RecoveryDay]) -> [RecoveryRequirement] {
         let withMass = carryForwardBodyMass(window)
+        return [
+            perKilogram("Protein", withMass, \.proteinG, band: proteinBand),
+            perKilogram("Fat", withMass, \.fatG, band: fatBand),
+            carbs(withMass),
+            calories(window),
+        ]
+    }
 
-        // Protein and fat: 30-day average of g/kg trend weight.
-        for (name, keyPath, band) in [
-            ("protein", \RecoveryDay.proteinG, proteinBand),
-            ("fat", \RecoveryDay.fatG, fatBand),
-        ] {
-            let perKg = withMass.compactMap { day -> Double? in
-                guard let grams = day[keyPath: keyPath], let kg = day.bodyMassKg, kg > 0 else { return nil }
-                return grams / kg
-            }
-            let average = perKg.isEmpty ? band.floor : perKg.reduce(0, +) / Double(perKg.count)
-            progressParts.append(band.progress(average) * coverage(perKg.count))
-            let text = "\(name) \(format(average)) g/kg"
-            if perKg.count < minimumLoggedDays {
-                problems.append("\(name) logged on \(perKg.count)/\(window.count) days")
-            } else if average >= band.target {
-                notes.append(text)
-            } else {
-                problems.append("\(text) < \(format(band.target))")
-            }
+    /// Strict rule: the 30-day average of grams per kg of trend weight reaches the band target.
+    /// A day needs both the grams and a trend weight (carried forward) to count.
+    private static func perKilogram(_ category: String, _ days: [RecoveryDay], _ keyPath: KeyPath<RecoveryDay, Double?>, band: Band) -> RecoveryRequirement {
+        let gramDays = days.filter { $0[keyPath: keyPath] != nil }.count
+        let perKg = days.compactMap { day -> Double? in
+            guard let grams = day[keyPath: keyPath], let kg = day.bodyMassKg, kg > 0 else { return nil }
+            return grams / kg
         }
+        let average = perKg.isEmpty ? band.floor : perKg.reduce(0, +) / Double(perKg.count)
+        var detail = logged(perKg.count, of: days.count) + "30-day average \(format(average)) g/kg"
+        if perKg.isEmpty, gramDays > 0 { detail = "no trend weight to score \(gramDays) logged days; " + detail }
+        return RecoveryRequirement(
+            category: category,
+            passed: perKg.count >= minimumLoggedDays && average >= band.target,
+            progress: band.progress(average) * coverage(perKg.count),
+            weight: Weight.nutritionPart,
+            detail: detail,
+            hasData: !perKg.isEmpty
+        )
+    }
 
-        // Carbs: 2-day rolling sum against the load-matched 2-day target.
-        let scored = carbPassByDay(withMass).compactMap { $0 }
-        let carbRatio = scored.isEmpty ? 0 : Double(scored.filter { $0 }.count) / Double(scored.count)
-        progressParts.append(carbBand.progress(carbRatio) * coverage(scored.count + 1))
-        let carbText = "carbs matched load on \(percent(carbRatio)) of days"
-        if scored.count < minimumLoggedDays - 1 {
-            problems.append("carbs scored on \(scored.count) days")
-        } else if carbRatio >= carbBand.target {
-            notes.append(carbText)
-        } else {
-            problems.append(carbText)
-        }
+    /// Strict rule: the 2-day rolling carb sum meets the load-matched 2-day target on 90% of scored days.
+    /// A day needs carbs, strain, and a trend weight on it and the day before.
+    private static func carbs(_ days: [RecoveryDay]) -> RecoveryRequirement {
+        let scored = carbPassByDay(days).compactMap { $0 }
+        let ratio = scored.isEmpty ? 0 : Double(scored.filter { $0 }.count) / Double(scored.count)
+        // The first day of the window can never score, so 26 scored days is full coverage.
+        let needed = minimumLoggedDays - 1
+        return RecoveryRequirement(
+            category: "Carbs",
+            passed: scored.count >= needed && ratio >= carbBand.target,
+            progress: carbBand.progress(ratio) * coverage(scored.count + 1),
+            weight: Weight.nutritionPart,
+            detail: (scored.count < needed ? "scored on \(scored.count)/\(max(days.count - 1, 0)) days; " : "") + "matched load on \(percent(ratio)) of days",
+            hasData: !scored.isEmpty
+        )
+    }
 
-        // Calories: every complete rolling 7-day window within 5% of maintenance.
-        let caloriePairs = window.compactMap { day -> (Double, Double)? in
+    /// Strict rule: every complete rolling 7-day window of logged days is within 5% of maintenance.
+    /// A day needs both the calories eaten and MacroFactor's expenditure to count.
+    private static func calories(_ days: [RecoveryDay]) -> RecoveryRequirement {
+        let pairs = days.compactMap { day -> (Double, Double)? in
             guard let eaten = day.caloriesKcal, let need = day.maintenanceKcal, need > 0 else { return nil }
             return (eaten, need)
         }
         var worst = calorieBand.floor
-        if caloriePairs.count >= 7 {
+        if pairs.count >= 7 {
             worst = 0
-            for end in 7...caloriePairs.count {
-                let slice = caloriePairs[(end - 7)..<end]
+            for end in 7...pairs.count {
+                let slice = pairs[(end - 7)..<end]
                 let eaten = slice.map(\.0).reduce(0, +)
                 let need = slice.map(\.1).reduce(0, +)
                 worst = max(worst, abs(eaten - need) / need)
             }
         }
-        progressParts.append(calorieBand.progress(worst) * coverage(caloriePairs.count))
-        let calorieText = "calories within \(percent(worst)) of maintenance (7-day)"
-        if caloriePairs.count < minimumLoggedDays {
-            problems.append("calories logged on \(caloriePairs.count)/\(window.count) days")
-        } else if worst <= calorieBand.target {
-            notes.append(calorieText)
-        } else {
-            problems.append(calorieText)
-        }
-
         return RecoveryRequirement(
-            category: "Nutrition",
-            passed: problems.isEmpty,
-            progress: progressParts.reduce(0, +) / Double(progressParts.count),
-            weight: Weight.nutrition,
-            detail: (problems + notes).joined(separator: "; ")
+            category: "Calories",
+            passed: pairs.count >= minimumLoggedDays && worst <= calorieBand.target,
+            progress: calorieBand.progress(worst) * coverage(pairs.count),
+            weight: Weight.nutritionPart,
+            detail: logged(pairs.count, of: days.count) + "worst 7-day window \(percent(worst)) from maintenance",
+            hasData: !pairs.isEmpty
         )
     }
 
@@ -312,8 +323,9 @@ enum RecoveryLevel {
         let strainCount = window.filter { $0.dayStrain != nil }.count
         // Fixed 7-day blocks counted back from the newest day. A leftover partial week is not scored.
         let weeks = stride(from: window.count, through: 7, by: -7).map { end in Array(window[(end - 7)..<end]) }
-        guard !weeks.isEmpty else {
-            return RecoveryRequirement(category: "Training recovery", passed: false, progress: 0, weight: Weight.training, detail: "strain logged on \(strainCount)/\(window.count) days")
+        guard !weeks.isEmpty, strainCount > 0 else {
+            return RecoveryRequirement(category: "Training recovery", passed: false, progress: 0, weight: Weight.training,
+                                       detail: "strain logged on \(strainCount)/\(window.count) days", hasData: strainCount > 0)
         }
 
         var problems: [String] = []
@@ -353,7 +365,7 @@ enum RecoveryLevel {
         let recent = window.compactMap(\.hrv)
         let base = baseline.compactMap(\.hrv)
         guard !recent.isEmpty, !base.isEmpty else {
-            return RecoveryRequirement(category: "HRV", passed: false, progress: 0, weight: Weight.hrv, detail: "HRV logged on \(recent.count)/\(window.count) days")
+            return RecoveryRequirement(category: "HRV", passed: false, progress: 0, weight: Weight.hrv, detail: "HRV logged on \(recent.count)/\(window.count) days", hasData: false)
         }
         let recentMedian = median(recent)
         let baseMedian = median(base)
@@ -379,7 +391,8 @@ enum RecoveryLevel {
             passed: values.count >= minimumLoggedDays && average >= restingHrMin && average <= restingHrBand.target,
             progress: restingHrBand.progress(average) * coverage(values.count),
             weight: Weight.restingHr,
-            detail: logged(values.count, of: window.count) + "30-day average \(format(average)) bpm"
+            detail: logged(values.count, of: window.count) + "30-day average \(format(average)) bpm",
+            hasData: !values.isEmpty
         )
     }
 
@@ -389,7 +402,7 @@ enum RecoveryLevel {
             return (bed, wake)
         }
         guard !nights.isEmpty else {
-            return RecoveryRequirement(category: "Circadian rhythm", passed: false, progress: 0, weight: Weight.circadian, detail: "sleep times logged on 0/\(window.count) nights")
+            return RecoveryRequirement(category: "Circadian rhythm", passed: false, progress: 0, weight: Weight.circadian, detail: "sleep times logged on 0/\(window.count) nights", hasData: false)
         }
         let bedMedian = median(nights.map(\.0))
         let wakeMedian = median(nights.map(\.1))
@@ -424,7 +437,8 @@ enum RecoveryLevel {
             passed: values.count >= minimumLoggedDays && ratio >= band.target,
             progress: band.progress(ratio) * coverage(values.count),
             weight: weight,
-            detail: logged(values.count, of: window.count) + "\(percent(ratio)) of \(label)"
+            detail: logged(values.count, of: window.count) + "\(percent(ratio)) of \(label)",
+            hasData: !values.isEmpty
         )
     }
 
@@ -444,7 +458,8 @@ enum RecoveryLevel {
             passed: values.count >= minimumLoggedDays && band.progress(average) >= 1,
             progress: band.progress(average) * coverage(values.count),
             weight: weight,
-            detail: logged(values.count, of: window.count) + "30-day average \(format(average))\(unit)"
+            detail: logged(values.count, of: window.count) + "30-day average \(format(average))\(unit)",
+            hasData: !values.isEmpty
         )
     }
 
@@ -534,8 +549,11 @@ enum RecoveryLevel {
         if !report.isMaxLevel {
             errors.append("perfect days should reach the max level, failing: " + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
         }
-        if report.requirements.count != 10 {
-            errors.append("the max level should have 10 requirements, got \(report.requirements.count)")
+        if report.requirements.count != 13 {
+            errors.append("the max level should have 13 requirements, got \(report.requirements.count)")
+        }
+        if report.requirements.filter({ ["Protein", "Fat", "Carbs", "Calories"].contains($0.category) }).map(\.weight) != Array(repeating: 3.75, count: 4) {
+            errors.append("the four nutrition targets should weigh 3.75 each, got \(report.requirements.map { "\($0.category) \($0.weight)" })")
         }
         let totalWeight = report.requirements.reduce(0) { $0 + $1.weight }
         if abs(totalWeight - 100) > 0.001 {
@@ -546,8 +564,34 @@ enum RecoveryLevel {
         }
 
         let empty = evaluate(days: [])
-        if empty.isMaxLevel || empty.level != 0 || empty.score != 0 {
-            errors.append("no data must be level 0, got level \(empty.level) score \(empty.score)")
+        if empty.isMaxLevel || empty.level != 0 || empty.score != 0 || empty.requirements.contains(where: \.hasData) {
+            errors.append("no data must be level 0 with no counted category, got level \(empty.level) score \(empty.score)")
+        }
+
+        // A metric never logged drops out: no calories at all leaves the other 12 to share its weight, and the max level stays reachable.
+        var noCalories = perfect
+        for index in noCalories.indices { noCalories[index].caloriesKcal = nil }
+        let noCaloriesReport = evaluate(days: noCalories)
+        let calorieRow = noCaloriesReport.requirements.first { $0.category == "Calories" }
+        if !noCaloriesReport.isMaxLevel || noCaloriesReport.level != maxLevel || calorieRow?.hasData != false
+            || noCaloriesReport.statReport.counted.count != 12 || abs(noCaloriesReport.statReport.counted.reduce(0, { $0 + $1.weight }) - 100) > 0.001 {
+            errors.append("calories never logged should drop out and keep the max level, got level \(noCaloriesReport.level) failing \(noCaloriesReport.failing.map(\.category))")
+        }
+        // Only WHOOP sleep logged: the four sleep categories score alone, so a perfect sleeper without a nutrition app can still max REC.
+        let sleepOnly = perfect.map { day in
+            RecoveryDay(dayKey: day.dayKey, sleepNeedPct: day.sleepNeedPct, sleepConsistencyPct: day.sleepConsistencyPct,
+                        sleepEfficiencyPct: day.sleepEfficiencyPct, sleepDebtMinutes: day.sleepDebtMinutes)
+        }
+        let sleepReport = evaluate(days: sleepOnly)
+        if !sleepReport.isMaxLevel || sleepReport.statReport.counted.map(\.category) != ["Sleep duration", "Sleep consistency", "Sleep efficiency", "Sleep debt"] {
+            errors.append("sleep alone should score alone and reach the max level, got level \(sleepReport.level) counted \(sleepReport.statReport.counted.map(\.category))")
+        }
+        // Protein logged without any trend weight cannot be scored per kg: it has no data and says why.
+        var noWeightAtAll = perfect
+        for index in noWeightAtAll.indices { noWeightAtAll[index].bodyMassKg = nil }
+        let proteinRow = evaluate(days: noWeightAtAll).requirements.first { $0.category == "Protein" }
+        if proteinRow?.hasData != false || proteinRow?.detail.hasPrefix("no trend weight to score 30 logged days") != true {
+            errors.append("protein without a trend weight should have no data and say so, got \(String(describing: proteinRow))")
         }
 
         // The floor set: at or below every level 0 floor, but with HRV at baseline so only the physiology ratio is tested elsewhere.
@@ -585,9 +629,11 @@ enum RecoveryLevel {
         failsOnly("Sleep efficiency") { days in days[89].sleepEfficiencyPct = 30 }
         failsOnly("Sleep debt") { days in days[89].sleepDebtMinutes = 400 }
         failsOnly("Caffeine") { days in days[70].caffeineMg = 95 }
-        failsOnly("Nutrition") { days in for index in 60..<90 { days[index].proteinG = 100 } }
-        failsOnly("Nutrition") { days in for index in 60..<90 { days[index].fatG = 40 } }
-        failsOnly("Nutrition") { days in for index in 60..<90 { days[index].caloriesKcal = 3400 } }
+        failsOnly("Protein") { days in for index in 60..<90 { days[index].proteinG = 100 } }
+        failsOnly("Fat") { days in for index in 60..<90 { days[index].fatG = 40 } }
+        failsOnly("Calories") { days in for index in 60..<90 { days[index].caloriesKcal = 3400 } }
+        // Calories logged on some days but not enough still fail (partial data counts, scaled down).
+        failsOnly("Calories") { days in for index in 60..<70 { days[index].caloriesKcal = nil } }
         // The newest week is days 83...89: 83 moderate, 84 rest, 85 light, 86 high, 87 very high, 88 high, 89 very high.
         failsOnly("Training recovery") { days in days[84].dayStrain = 12 } // no rest day
         failsOnly("Training recovery") { days in days[84].workoutCount = 1 } // a workout on the rest day
@@ -655,7 +701,7 @@ enum RecoveryLevel {
         if !evaluate(days: rolled).isMaxLevel {
             errors.append("a single carb shortfall in 30 days should still pass")
         }
-        failsOnly("Nutrition") { days in for index in 60..<90 { days[index].carbsG = 100 } }
+        failsOnly("Carbs") { days in for index in 60..<90 { days[index].carbsG = 100 } }
         var noWeight = perfect
         for index in 61..<90 { noWeight[index].bodyMassKg = nil }
         if !evaluate(days: noWeight).isMaxLevel {

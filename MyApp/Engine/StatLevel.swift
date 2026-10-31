@@ -3,6 +3,10 @@ import Foundation
 /// Shared math for the stat levels (STR, END, INT, AGI, FOC, FIN). Each stat scores its requirements from a
 /// level 0 floor to its max target, weights them to a 0–100 score, and maps the score to 0–350.
 /// The max level needs every strict requirement, not only a full score.
+///
+/// Missing data: a requirement whose input is not logged at all has `hasData == false`. It does not count.
+/// It drops out of the score and the other requirements share its weight, the same as a removed target.
+/// A requirement with some data counts, scaled down by how much is logged. A stat with no data at all is level 0.
 enum StatLevel {
     static let maxLevel = 350
 
@@ -38,6 +42,9 @@ struct StatRequirement: Equatable, Identifiable {
     /// Share of the 100-point score. A stat's weights add to 100.
     var weight: Double
     var detail: String
+    /// False when the input is not logged at all. The requirement then drops out of the score
+    /// (see `StatLevelReport.counted`). `passed` and `progress` are false and 0 for such a row.
+    var hasData: Bool = true
 
     var id: String { category }
     var points: Double { progress * weight }
@@ -47,13 +54,20 @@ struct StatRequirement: Equatable, Identifiable {
 
 struct StatLevelReport: Equatable {
     var stat: Stat
+    /// Every requirement, with and without data, in display order.
     var requirements: [StatRequirement]
 
-    var isMaxLevel: Bool { !requirements.isEmpty && requirements.allSatisfy(\.passed) }
-    var failing: [StatRequirement] { requirements.filter { !$0.passed } }
+    /// The requirements that score: those with data, their weights scaled back to 100 in the same ratio.
+    var counted: [StatRequirement] { Self.scaled(requirements.filter(\.hasData)) }
 
-    /// 0...100. Weighted sum of requirement progress.
-    var score: Double { requirements.reduce(0) { $0 + $1.points } }
+    /// The max level needs every counted requirement at once. No counted requirement: never the max.
+    var isMaxLevel: Bool { !counted.isEmpty && counted.allSatisfy(\.passed) }
+    /// Counted requirements that miss their strict rule. A requirement without data is not failing; it is not counted.
+    var failing: [StatRequirement] { counted.filter { !$0.passed } }
+    var withoutData: [StatRequirement] { requirements.filter { !$0.hasData } }
+
+    /// 0...100. Weighted sum of the counted requirements' progress.
+    var score: Double { counted.reduce(0) { $0 + $1.points } }
 
     /// 0...350. Without every strict rule the level stops at 349.
     var level: Int {
@@ -63,21 +77,26 @@ struct StatLevelReport: Equatable {
 
     var levelsToMax: Int { StatLevel.maxLevel - level }
 
-    /// Requirements with the most levels left, best first.
+    /// Counted requirements with the most levels left, best first.
     func topGains(_ count: Int = 3) -> [StatRequirement] {
-        Array(requirements.filter { $0.levelsAvailable > 0 }.sorted { $0.levelsAvailable > $1.levelsAvailable }.prefix(count))
+        Array(counted.filter { $0.levelsAvailable > 0 }.sorted { $0.levelsAvailable > $1.levelsAvailable }.prefix(count))
     }
 
     /// Drops the removed targets and scales the weights of the rest back to 100, in the same ratio.
+    /// Rows without data stay in the list (so they can be shown) but still do not count.
     /// Removing every target gives an empty report: score 0, level 0.
     func removing(_ removed: Set<String>) -> StatLevelReport {
-        let kept = requirements.filter { !removed.contains($0.category) }
-        let total = kept.reduce(0) { $0 + $1.weight }
-        guard total > 0 else { return StatLevelReport(stat: stat, requirements: []) }
-        return StatLevelReport(stat: stat, requirements: kept.map { requirement in
-            var scaled = requirement
-            scaled.weight = requirement.weight * 100 / total
+        StatLevelReport(stat: stat, requirements: Self.scaled(requirements.filter { !removed.contains($0.category) }))
+    }
+
+    /// The same rows with their weights scaled to add to 100. Empty stays empty.
+    static func scaled(_ rows: [StatRequirement]) -> [StatRequirement] {
+        let total = rows.reduce(0) { $0 + $1.weight }
+        guard total > 0 else { return [] }
+        return rows.map { row in
+            var scaled = row
+            scaled.weight = row.weight * 100 / total
             return scaled
-        })
+        }
     }
 }

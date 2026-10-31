@@ -115,7 +115,7 @@ enum EnduranceLevel {
     /// Progress is 1 inside that range and falls to 0 at 30 lb away.
     private static func bodyWeight(_ readings: [BodyMassReading]) -> StatRequirement {
         guard let latest = readings.max(by: { $0.date < $1.date }) else {
-            return StatRequirement(category: "Body weight", passed: false, progress: 0, weight: Weight.bodyWeight, detail: "no weigh-in in \(bodyWeightWindowDays) days")
+            return StatRequirement(category: "Body weight", passed: false, progress: 0, weight: Weight.bodyWeight, detail: "no weigh-in in \(bodyWeightWindowDays) days", hasData: false)
         }
         let off = abs(latest.pounds - bodyWeightTargetLb)
         let progress = 1 - (off - bodyWeightToleranceLb) / (bodyWeightFloorLb - bodyWeightToleranceLb)
@@ -139,7 +139,7 @@ enum EnduranceLevel {
         weight: Double
     ) -> StatRequirement {
         guard let best = efforts.filter({ $0.distance == distance }).min(by: { $0.seconds < $1.seconds }) else {
-            return StatRequirement(category: category, passed: false, progress: 0, weight: weight, detail: "no \(label(distance)) in \(effortWindowDays) days")
+            return StatRequirement(category: category, passed: false, progress: 0, weight: weight, detail: "no \(label(distance)) in \(effortWindowDays) days", hasData: false)
         }
         return StatRequirement(
             category: category,
@@ -155,7 +155,7 @@ enum EnduranceLevel {
     /// Strict rule: the fastest 1-mile swim in 180 days is at or under 25:00.
     private static func swimMile(_ swims: [SwimEffort]) -> StatRequirement {
         guard let best = swims.min(by: { $0.seconds < $1.seconds }) else {
-            return StatRequirement(category: "1-mile swim", passed: false, progress: 0, weight: Weight.swimMile, detail: "no 1-mile swim in \(effortWindowDays) days")
+            return StatRequirement(category: "1-mile swim", passed: false, progress: 0, weight: Weight.swimMile, detail: "no 1-mile swim in \(effortWindowDays) days", hasData: false)
         }
         return StatRequirement(
             category: "1-mile swim",
@@ -171,7 +171,7 @@ enum EnduranceLevel {
     /// Strict rule: the newest reading in 90 days is 55 or higher. An older, higher reading does not count.
     private static func vo2Max(_ readings: [VO2MaxReading]) -> StatRequirement {
         guard let latest = readings.max(by: { $0.date < $1.date }) else {
-            return StatRequirement(category: "VO₂ max", passed: false, progress: 0, weight: Weight.vo2, detail: "no VO₂ max in \(vo2WindowDays) days")
+            return StatRequirement(category: "VO₂ max", passed: false, progress: 0, weight: Weight.vo2, detail: "no VO₂ max in \(vo2WindowDays) days", hasData: false)
         }
         return StatRequirement(
             category: "VO₂ max",
@@ -185,7 +185,7 @@ enum EnduranceLevel {
     /// Strict rule: one session with 90 continuous minutes in zone 2. Sessions never add up.
     private static func zoneTwoEndurance(_ sessions: [ZoneTwoSession]) -> StatRequirement {
         guard let longest = sessions.max(by: { $0.minutes < $1.minutes }) else {
-            return StatRequirement(category: "Zone 2 endurance", passed: false, progress: 0, weight: Weight.zoneTwo, detail: "no zone 2 session in \(effortWindowDays) days")
+            return StatRequirement(category: "Zone 2 endurance", passed: false, progress: 0, weight: Weight.zoneTwo, detail: "no zone 2 session in \(effortWindowDays) days", hasData: false)
         }
         return StatRequirement(
             category: "Zone 2 endurance",
@@ -317,8 +317,22 @@ enum EnduranceLevel {
         failsOnly("VO₂ max") { $0.vo2[0].value = 48 }
         failsOnly("Zone 2 endurance") { $0.zoneTwo[0].minutes = 60 }
         failsOnly("1-mile swim") { $0.swims[0].seconds = 1800 }
-        failsOnly("1-mile swim") { $0.swims = [] }
-        failsOnly("1-mile swim") { $0.swims[0].date = daysAgo(181) }
+
+        /// An input with nothing in its window has no data: it drops out and the other six targets still reach the max.
+        func dropsOut(_ category: String, _ edit: (inout Fixture) -> Void, line: Int = #line) {
+            var fixture = perfect
+            edit(&fixture)
+            let edited = fixture.evaluate()
+            let row = edited.requirements.first { $0.category == category }
+            if row?.hasData != false || row?.progress != 0 || edited.failing.contains(where: { $0.category == category }) {
+                errors.append("line \(line): \(category) should have no data and not fail, got \(String(describing: row))")
+            }
+            if !edited.isMaxLevel || edited.counted.count != 6 || abs(edited.counted.reduce(0, { $0 + $1.weight }) - 100) > 0.001 {
+                errors.append("line \(line): without \(category) the other six targets should share the weight and reach the max, got level \(edited.level)")
+            }
+        }
+        dropsOut("1-mile swim") { $0.swims = [] }
+        dropsOut("1-mile swim") { $0.swims[0].date = daysAgo(181) }
 
         // The swim passes at exactly 25:00 and fails at 25:01. A 42:30 swim is half of the 60:00 → 25:00 band.
         var exactSwim = perfect
@@ -367,9 +381,9 @@ enum EnduranceLevel {
             errors.append("a slower newer mile should not hide the faster one")
         }
 
-        // Efforts and zone 2 sessions older than 180 days do not count.
-        failsOnly("1-mile run") { $0.efforts[0].date = daysAgo(181) }
-        failsOnly("Zone 2 endurance") { $0.zoneTwo[0].date = daysAgo(200) }
+        // Efforts and zone 2 sessions older than 180 days do not count. With nothing left in the window the target drops out.
+        dropsOut("1-mile run") { $0.efforts[0].date = daysAgo(181) }
+        dropsOut("Zone 2 endurance") { $0.zoneTwo[0].date = daysAgo(200) }
         var oldRow = perfect
         oldRow.efforts[1].date = daysAgo(181)
         let oldDetail = oldRow.evaluate().requirements.first { $0.category == "5K run" }?.detail
@@ -384,8 +398,8 @@ enum EnduranceLevel {
                 VO2MaxReading(value: 50, date: daysAgo(3), source: "WHOOP"),
             ]
         }
-        // A reading older than 90 days does not count.
-        failsOnly("VO₂ max") { $0.vo2[0].date = daysAgo(91) }
+        // A reading older than 90 days does not count; with no newer reading the target drops out.
+        dropsOut("VO₂ max") { $0.vo2[0].date = daysAgo(91) }
 
         // Two 45-minute zone 2 sessions do not add up to 90.
         failsOnly("Zone 2 endurance") { fixture in
@@ -408,8 +422,13 @@ enum EnduranceLevel {
         }
         failsOnly("Body weight") { $0.bodyMass = pounds(147.5) }
         failsOnly("Body weight") { $0.bodyMass = pounds(130) }
-        failsOnly("Body weight") { $0.bodyMass = [] }
-        failsOnly("Body weight") { $0.bodyMass = pounds(145, daysAgo: 31) }
+        dropsOut("Body weight") { $0.bodyMass = [] }
+        dropsOut("Body weight") { $0.bodyMass = pounds(145, daysAgo: 31) }
+        // Body weight alone, with nothing else logged, is the whole END score.
+        let weightOnly = Fixture(efforts: [], swims: [], vo2: [], zoneTwo: [], bodyMass: pounds(160)).evaluate()
+        if weightOnly.counted.map(\.category) != ["Body weight"] || weightOnly.counted.first?.weight != 100 || weightOnly.level != 187 {
+            errors.append("a lone 160 lb weigh-in should score alone: 15/28 of 350 = level 187, got \(weightOnly.counted.map { "\($0.category) \($0.weight)" }) level \(weightOnly.level)")
+        }
         var heavy = perfect
         heavy.bodyMass = pounds(160)
         let heavyRow = heavy.evaluate().requirements.first { $0.category == "Body weight" }

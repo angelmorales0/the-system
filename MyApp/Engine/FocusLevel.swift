@@ -63,7 +63,8 @@ enum FocusLevel {
             passed: values.count >= minimumLoggedDays && share >= screenPassShare - 1e-9,
             progress: averageProgress(values, band: screenBand) * coverage(values.count),
             weight: Weight.screenTime,
-            detail: logged(values.count, of: window.count) + "\(passes) of \(values.count) days under 2 h; avg reached \(average(values)) min"
+            detail: logged(values.count, of: window.count) + "\(passes) of \(values.count) days under 2 h; avg reached \(average(values)) min",
+            hasData: !values.isEmpty
         )
     }
 
@@ -77,7 +78,8 @@ enum FocusLevel {
             passed: values.count >= minimumLoggedDays && passes == values.count,
             progress: averageProgress(values, band: socialBand) * coverage(values.count),
             weight: Weight.socialMedia,
-            detail: logged(values.count, of: window.count) + "\(passes) of \(values.count) days at 0 min; avg reached \(average(values)) min"
+            detail: logged(values.count, of: window.count) + "\(passes) of \(values.count) days at 0 min; avg reached \(average(values)) min",
+            hasData: !values.isEmpty
         )
     }
 
@@ -221,6 +223,14 @@ enum FocusLevel {
         }
         // Missing social data alone fails only social media.
         failsOnly("Social media") { days in for index in 0..<4 { days[index].socialMinutesReached = nil } }
+        // Social never logged is no data: it drops out and screen time scores alone at weight 100.
+        var noSocial = perfect
+        for index in noSocial.indices { noSocial[index].socialMinutesReached = nil }
+        let noSocialReport = evaluate(days: noSocial)
+        if !noSocialReport.isMaxLevel || noSocialReport.counted.map(\.category) != ["Daily screen time"] || noSocialReport.counted.first?.weight != 100
+            || noSocialReport.withoutData.map(\.category) != ["Social media"] {
+            errors.append("social never logged should drop out and leave screen time at weight 100, got \(noSocialReport.counted.map { "\($0.category) \($0.weight)" }) level \(noSocialReport.level)")
+        }
 
         // Progress is linear per day: 180 min reached is (480 - 180) / (480 - 90) = 300/390.
         var mid = perfect

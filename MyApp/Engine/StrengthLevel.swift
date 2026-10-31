@@ -293,7 +293,7 @@ enum StrengthLevel {
     }
 
     private static func missing(_ category: String) -> StatRequirement {
-        StatRequirement(category: category, passed: false, progress: 0, weight: weight, detail: "no logged sets in \(windowDays) days")
+        StatRequirement(category: category, passed: false, progress: 0, weight: weight, detail: "no logged sets in \(windowDays) days", hasData: false)
     }
 
     private static func format(_ value: Double) -> String {
@@ -411,6 +411,18 @@ enum StrengthLevel {
             }
         }
 
+        /// A target with no usable sets has no data: it drops out and the other 14 built-in targets still reach the max.
+        func dropsOut(_ category: String, _ workouts: [HevyWorkout], line: Int = #line) {
+            let result = evaluate(workouts: workouts, now: now)
+            let row = result.requirements.first { $0.category == category }
+            if row?.hasData != false || row?.progress != 0 || result.failing.contains(where: { $0.category == category }) {
+                errors.append("line \(line): \(category) should have no data and not fail, got \(String(describing: row))")
+            }
+            if !result.isMaxLevel || result.counted.count != 14 || abs(result.counted.reduce(0, { $0 + $1.weight }) - 100) > 0.001 {
+                errors.append("line \(line): without \(category) the other 14 targets should share the weight and reach the max, got level \(result.level)")
+            }
+        }
+
         failsOnly("Deadlift", edited("Deadlift (Barbell)", sets: [workingSet(lb: 315, reps: 1)]))
         failsOnly("Pull-ups", edited("Pull Up", sets: [workingSet(reps: 12)]))
         failsOnly("Dead hang", edited("Dead Hang", sets: [workingSet(seconds: 90)]))
@@ -443,11 +455,8 @@ enum StrengthLevel {
             errors.append("workouts older than 180 days should not score, got level \(oldReport.level)")
         }
 
-        // "Incline Bench Press (Dumbbell)" is a different lift.
-        failsOnly("Bench press", edited("Bench Press (Barbell)", newTitle: "Incline Bench Press (Dumbbell)"))
-        if row("Bench press", edited("Bench Press (Barbell)", newTitle: "Incline Bench Press (Dumbbell)"))?.progress != 0 {
-            errors.append("incline bench should give no bench progress")
-        }
+        // "Incline Bench Press (Dumbbell)" is a different lift: the bench has no sets, so it has no data and drops out.
+        dropsOut("Bench press", edited("Bench Press (Barbell)", newTitle: "Incline Bench Press (Dumbbell)"))
 
         // Pistol squats need one set per leg on the same day.
         failsOnly("Pistol squats", edited("Pistol Squat", sets: [workingSet(reps: 10)]))
@@ -464,8 +473,8 @@ enum StrengthLevel {
         if halfFarmer?.passed != false || abs((halfFarmer?.progress ?? 0) - 0.5) > 0.0001 {
             errors.append("farmer's carry 100 lb × 30 sec should be 0.5 progress and fail, got \(String(describing: halfFarmer))")
         }
-        // A carry with distance but no duration does not count.
-        failsOnly("Farmer's carry", edited("Farmers Walk", sets: [workingSet(lb: 100, reps: nil, seconds: nil)]))
+        // A carry with distance but no duration does not count: no usable set, so no data.
+        dropsOut("Farmer's carry", edited("Farmers Walk", sets: [workingSet(lb: 100, reps: nil, seconds: nil)]))
 
         // Bulgarian split squats need one set per leg on the same day; the weaker set scores.
         failsOnly("Bulgarian split squat", edited("Bulgarian Split Squat (Dumbbell)", sets: [workingSet(lb: 80, reps: 8)]))
@@ -485,8 +494,8 @@ enum StrengthLevel {
             errors.append("bodyweight dips should log +0 lb and no progress, got \(String(describing: bodyweightDips))")
         }
 
-        // Chin-ups are not strict pull-ups.
-        failsOnly("Pull-ups", edited("Pull Up", newTitle: "Chin Up"))
+        // Chin-ups are not strict pull-ups, so pull-ups have no sets and drop out.
+        dropsOut("Pull-ups", edited("Pull Up", newTitle: "Chin Up"))
         if row("Pull-ups", edited("Pull Up", newTitle: "Pull-Up (Weighted)"))?.passed != true {
             errors.append("\"Pull-Up (Weighted)\" should match pull-ups")
         }
@@ -506,11 +515,17 @@ enum StrengthLevel {
             }
         }
 
-        // The max level needs the custom goals passed too. Without their sets, 15 of 18 targets give level 291.
+        // A custom goal counts once it is logged. Until then it has no data, like a built-in target: the 15 logged targets keep the max.
         let withGoal = evaluate(workouts: perfect, custom: [hipThrust, lSit, muscleUp], now: now)
-        if withGoal.isMaxLevel || withGoal.level != 291
-            || withGoal.failing.map(\.category) != ["Hip Thrust", "L-Sit", "Muscle Up"] {
-            errors.append("unlogged custom goals should block the max level, got \(withGoal.level) failing \(withGoal.failing.map(\.category))")
+        if !withGoal.isMaxLevel || withGoal.withoutData.map(\.category) != ["Hip Thrust", "L-Sit", "Muscle Up"] || withGoal.counted.count != 15 {
+            errors.append("unlogged custom goals should drop out until logged, got \(withGoal.level) without data \(withGoal.withoutData.map(\.category))")
+        }
+        // A logged custom goal that misses its target blocks the max level.
+        var missedGoal = perfect
+        missedGoal[0].exercises.append(HevyExercise(title: "Muscle-Up", sets: [workingSet(reps: 4)]))
+        let missed = evaluate(workouts: missedGoal, custom: [hipThrust, lSit, muscleUp], now: now)
+        if missed.isMaxLevel || missed.failing.map(\.category) != ["Muscle Up"] || missed.counted.count != 16 {
+            errors.append("a logged custom goal under target should fail and count, got \(missed.level) failing \(missed.failing.map(\.category))")
         }
         var done = perfect
         done[0].exercises += [
