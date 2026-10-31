@@ -3,6 +3,8 @@ import SwiftUI
 struct SystemView: View {
     @EnvironmentObject private var store: GameStore
     @Environment(\.dynamicTypeSize) private var typeSize
+    /// The gym row starts collapsed each launch.
+    @State private var liftsExpanded = false
 
     var body: some View {
         ZStack {
@@ -58,45 +60,21 @@ struct SystemView: View {
 
             Spacer(minLength: 23)
             VStack(spacing: 1) {
-                ForEach(store.goalQuests) { quest in
-                    // Open penalty rows sit in the normal list, in red, with a PENALTY tag.
-                    let penalty = quest.kind == .penalty
-                    let ink = penalty ? QuestLight.penalty : screenTimeInk(quest) ?? QuestLight.ink
-                    Button {
-                        store.handleQuestTap(id: quest.id)
-                    } label: {
-                        HStack(spacing: 11) {
-                            HStack(spacing: 6) {
-                                if penalty {
-                                    Text("PENALTY")
-                                        .font(.caption2.weight(.semibold))
-                                        .tracking(1)
-                                }
-                                Text(quest.title)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            // Blue once this run unlocked Beyond the Limit: [15.2/10km].
-                            let beyond = store.snapshot.beyondTheLimitToday?.questId == quest.id
-                            Text(store.rowLabel(for: quest))
-                                .monospacedDigit()
-                                .fixedSize(horizontal: true, vertical: false)
-                                .foregroundStyle(beyond ? QuestLight.cyan : ink)
-                                .shadow(color: beyond ? QuestLight.blue : .clear, radius: 6)
-                            QuestCheckbox(checked: quest.status == .completed)
-                                .frame(width: 16, height: 17)
+                ForEach(goalRows) { row in
+                    switch row {
+                    case .quest(let quest):
+                        questRow(quest)
+                        if quest.id == ScreenTime.questId {
+                            ScreenTimeSplit(day: store.snapshot.screenTimeToday)
                         }
-                        .font(.subheadline)
-                        .foregroundStyle(ink)
-                        .shadow(color: (penalty ? QuestLight.penalty : screenTimeInk(quest) ?? QuestLight.cyan).opacity(0.6), radius: 5)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(penalty ? "Penalty: \(quest.title)" : quest.title)
-                    .accessibilityValue(store.accessibilityValue(for: quest))
-                    .accessibilityHint(questRowHint(quest))
-                    if quest.id == ScreenTime.questId {
-                        ScreenTimeSplit(day: store.snapshot.screenTimeToday)
+                    case .lifts(let lifts):
+                        liftGroupRow(lifts)
+                        if liftsExpanded {
+                            ForEach(lifts) { quest in
+                                questRow(quest)
+                                    .padding(.leading, 16)
+                            }
+                        }
                     }
                 }
             }
@@ -123,6 +101,103 @@ struct SystemView: View {
         }
     }
 
+    /// The goal list with the day's lifts folded into one row at the place of the first lift.
+    private var goalRows: [GoalRow] {
+        let quests = store.goalQuests
+        let lifts = quests.filter(isLift)
+        guard lifts.count > 1 else { return quests.map(GoalRow.quest) }
+        var rows: [GoalRow] = []
+        for quest in quests {
+            if !isLift(quest) {
+                rows.append(.quest(quest))
+            } else if quest.id == lifts[0].id {
+                rows.append(.lifts(lifts))
+            }
+        }
+        return rows
+    }
+
+    /// A gym exercise from the split: a daily strength quest that is not the stretch.
+    private func isLift(_ quest: Quest) -> Bool {
+        quest.kind == .daily && quest.id != DailyStretch.questId && TrainingDay.isStrength(quest)
+    }
+
+    /// "Bench Day" when the header names a split day, else "Gym".
+    private var liftGroupTitle: String {
+        GymSplit.day(named: store.bundle.headerLine)?.name ?? "Gym"
+    }
+
+    private func liftGroupRow(_ lifts: [Quest]) -> some View {
+        let done = lifts.filter { $0.status == .completed }.count
+        return Button {
+            withAnimation(.easeOut(duration: 0.2)) { liftsExpanded.toggle() }
+        } label: {
+            HStack(spacing: 11) {
+                HStack(spacing: 6) {
+                    Text(liftGroupTitle)
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.medium))
+                        .rotationEffect(.degrees(liftsExpanded ? 90 : 0))
+                        .opacity(0.7)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Text("[\(done)/\(lifts.count)]")
+                    .monospacedDigit()
+                    .fixedSize(horizontal: true, vertical: false)
+                QuestCheckbox(checked: done == lifts.count)
+                    .frame(width: 16, height: 17)
+            }
+            .font(.subheadline)
+            .foregroundStyle(QuestLight.ink)
+            .shadow(color: QuestLight.cyan.opacity(0.6), radius: 5)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(liftGroupTitle)
+        .accessibilityValue("\(done) of \(lifts.count) exercises done, \(liftsExpanded ? "expanded" : "collapsed")")
+        .accessibilityHint(liftsExpanded ? "Hides the exercises" : "Shows the exercises")
+    }
+
+    private func questRow(_ quest: Quest) -> some View {
+        // Open penalty rows sit in the normal list, in red, with a PENALTY tag.
+        let penalty = quest.kind == .penalty
+        let ink = penalty ? QuestLight.penalty : screenTimeInk(quest) ?? QuestLight.ink
+        // Blue once this run unlocked Beyond the Limit: [15.2/10km].
+        let beyond = store.snapshot.beyondTheLimitToday?.questId == quest.id
+        return Button {
+            store.handleQuestTap(id: quest.id)
+        } label: {
+            HStack(spacing: 11) {
+                HStack(spacing: 6) {
+                    if penalty {
+                        Text("PENALTY")
+                            .font(.caption2.weight(.semibold))
+                            .tracking(1)
+                    }
+                    Text(quest.title)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Text(store.rowLabel(for: quest))
+                    .monospacedDigit()
+                    .fixedSize(horizontal: true, vertical: false)
+                    .foregroundStyle(beyond ? QuestLight.cyan : ink)
+                    .shadow(color: beyond ? QuestLight.blue : .clear, radius: 6)
+                QuestCheckbox(checked: quest.status == .completed)
+                    .frame(width: 16, height: 17)
+            }
+            .font(.subheadline)
+            .foregroundStyle(ink)
+            .shadow(color: (penalty ? QuestLight.penalty : screenTimeInk(quest) ?? QuestLight.cyan).opacity(0.6), radius: 5)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(penalty ? "Penalty: \(quest.title)" : quest.title)
+        .accessibilityValue(store.accessibilityValue(for: quest))
+        .accessibilityHint(questRowHint(quest))
+    }
+
     /// Screen Time is yellow from the 8 h 20 m cap through the grace, and red once it fails.
     private func screenTimeInk(_ quest: Quest) -> Color? {
         guard quest.id == ScreenTime.questId else { return nil }
@@ -136,6 +211,19 @@ struct SystemView: View {
             text[range].foregroundColor = QuestLight.penalty
         }
         return text
+    }
+}
+
+/// One line of the goal list: a quest, or the day's lifts as one row.
+private enum GoalRow: Identifiable {
+    case quest(Quest)
+    case lifts([Quest])
+
+    var id: String {
+        switch self {
+        case .quest(let quest): quest.id
+        case .lifts: "gym_lifts"
+        }
     }
 }
 
