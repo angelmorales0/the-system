@@ -10,7 +10,12 @@ enum GamePersistence {
 
 @MainActor
 final class GameStore: ObservableObject {
-    @Published private(set) var snapshot: GameSnapshot
+    @Published private(set) var snapshot: GameSnapshot {
+        didSet {
+            guard soundsOn else { return }
+            for sound in SoundCues.sounds(from: oldValue, to: snapshot) { sound.play() }
+        }
+    }
     @Published private(set) var verificationNote: String?
     @Published private(set) var clock = Date()
     @Published private(set) var dayClock: DayClock
@@ -28,6 +33,10 @@ final class GameStore: ObservableObject {
     private var catalog: FallbackCatalog
     private let generator: any QuestGenerating
     private let persistence: GamePersistence
+    /// Armed once `init` has settled the saved day, so a launch plays only the launch cue.
+    private var soundsArmed = false
+    /// Previews and checks use a memory store and stay silent.
+    private var soundsOn: Bool { soundsArmed && persistence == .standard }
     private var ticker: Timer?
     private var integrations: DayIntegrationSnapshot = .empty(dayKey: "")
     private var refreshingIntegrations = false
@@ -95,6 +104,11 @@ final class GameStore: ObservableObject {
             observeStepUpdates()
             evaluateEmergencies(now: .now)
         }
+        soundsArmed = true
+    }
+
+    private func cue(_ sound: SystemSound) {
+        if soundsOn { sound.play() }
     }
 
     /// After the phone screen time picker saves, restart the daily count with the new apps.
@@ -108,9 +122,11 @@ final class GameStore: ObservableObject {
     func spendFullRecovery(now: Date = .now) {
         var next = snapshot
         let message = next.spendFullRecovery(catalog: catalog, now: now)
+        let spent = next.player.fullRecoveryBank < snapshot.player.fullRecoveryBank
         snapshot = next
         verificationNote = message
         clock = now
+        cue(spent ? .fullRecovery : .questFail)
         persist()
         enforcePenalty()
     }
@@ -118,18 +134,22 @@ final class GameStore: ObservableObject {
     func buyFullRecovery(now: Date = .now) {
         var next = snapshot
         let message = next.buyFullRecovery()
+        let bought = next.gold < snapshot.gold
         snapshot = next
         verificationNote = message
         clock = now
+        cue(bought ? .purchase : .questFail)
         persist()
     }
 
     func usePotion(_ potion: Potion, dose: PotionDose = .full, now: Date = .now) {
         var next = snapshot
         let message = next.usePotion(potion, dose: dose)
+        let drunk = next.potionLog.count > snapshot.potionLog.count
         snapshot = next
         verificationNote = message
         clock = now
+        cue(drunk ? .potion : .questFail)
         recomputeStatLevels(now: now)
         persist()
         enforcePenalty()
@@ -178,7 +198,7 @@ final class GameStore: ObservableObject {
     func toggleStatTarget(_ category: String, in stat: Stat) {
         statTargets.toggle(category, in: stat)
         if persistence == .standard { statTargets.save() }
-        recomputeStatLevels(now: .now)
+        recomputeStatLevels(now: .now, announce: false)
         persist()
     }
 
@@ -203,13 +223,20 @@ final class GameStore: ObservableObject {
         statTargets = targets
         catalog.strengthGoals = targets.custom
         if persistence == .standard { statTargets.save() }
-        recomputeStatLevels(now: .now)
+        recomputeStatLevels(now: .now, announce: false)
         persist()
     }
 
     /// Before the first refresh there are no live inputs; the next refresh applies the new targets.
-    private func recomputeStatLevels(now: Date) {
+    /// `announce` plays the level-up cue when the STATUS level rises; an edit to the targets stays quiet.
+    private func recomputeStatLevels(now: Date, announce: Bool = true) {
         guard let statInputs else { return }
+        let before = statLevels
+        defer {
+            if announce, before != .empty, statLevels.overallLevel > before.overallLevel {
+                cue(.levelUp)
+            }
+        }
         statLevels = StatLevelSet.compute(
             codeforces: statInputs.codeforces,
             financeMonths: statInputs.financeMonths,
@@ -248,10 +275,12 @@ final class GameStore: ObservableObject {
     func endEmergencyTest() {
         guard let quest = emergency, quest.isTest else { return }
         finish(quest, message: "Emergency test ended.")
+        cue(.systemClose)
     }
 
     private func begin(_ quest: EmergencyQuest) {
         emergency = quest
+        cue(.warning)
         if persistence == .standard {
             EmergencyStore.save(quest)
             EmergencyEnforcement.applyLockdown(for: quest)
@@ -282,6 +311,7 @@ final class GameStore: ObservableObject {
             case .skippedStretch: message = "Emergency quest complete: \(Int(DailyStretch.minutes)) minutes stretched."
             }
             finish(resolved, message: message)
+            cue(.emergencyComplete)
         case .failed:
             if EmergencyRules.opensPenalty(resolved) {
                 snapshot.emergencyFailedDayKey = resolved.dayKey
@@ -290,6 +320,7 @@ final class GameStore: ObservableObject {
             finish(resolved, message: resolved.isTest
                    ? "Emergency test failed. A test does not open a penalty."
                    : "Emergency quest failed. A penalty opens tomorrow.")
+            cue(.emergencyFailed)
         }
     }
 
@@ -411,6 +442,7 @@ final class GameStore: ObservableObject {
         var next = snapshot
         next.markHiddenRevealSeen(id: reveal.id)
         snapshot = next
+        cue(.systemClose)
         persist()
     }
     var bundle: QuestBundle { snapshot.bundle }
@@ -474,9 +506,11 @@ final class GameStore: ObservableObject {
                 case .incomplete(let reason):
                     verificationNote = reason
                     clock = now
+                    cue(.questFail)
                 case .unchanged:
                     verificationNote = "No matching sample yet."
                     clock = now
+                    cue(.questFail)
                 case .failed, .progress, .completed:
                     commit(result, questId: id, now: now)
                 }
@@ -487,11 +521,14 @@ final class GameStore: ObservableObject {
     func refreshForToday(now: Date = .now) {
         settleExpiredEmergency(now: now)
         let previousDay = snapshot.bundle.dayKey
+        let previousGold = snapshot.gold
         var next = snapshot
         next.refreshIfNeeded(catalog: catalog, now: now)
         snapshot = next
         if snapshot.bundle.dayKey != previousDay {
             verificationNote = nil
+            // Yesterday's gold is paid at rollover; that cue outranks the plain arrival.
+            cue(snapshot.gold > previousGold ? .reward : .newDay)
         }
         dayClock = DayClock.resolve(current: dayClock, now: now)
         advanceTimers(now: now)
@@ -674,6 +711,7 @@ final class GameStore: ObservableObject {
         next.runningTimers.append(TimerRun(questId: questId, startedAt: now))
         snapshot = next
         clock = now
+        cue(.timerStart)
         let required = snapshot.bundle.quests.first(where: { $0.id == questId }).map { TimerSessionVerifier.requiredSeconds($0) } ?? 0
         verificationNote = "\(title) \(Self.clockString(0)) / \(Self.clockString(required))"
         persist()
@@ -769,6 +807,7 @@ final class GameStore: ObservableObject {
             verificationNote = nil
         case .rejected(let reason):
             verificationNote = "\(title): \(reason)"
+            cue(.questFail)
         case .ignored, .updated:
             break
         }

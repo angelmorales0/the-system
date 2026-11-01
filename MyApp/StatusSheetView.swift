@@ -22,9 +22,9 @@ struct StatusSheetView: View {
                             stats: Stat.allCases.map { ($0, store.statLevels[$0]) },
                             fullRecoveryPoints: store.player.fullRecoveryBank,
                             gold: store.snapshot.gold,
-                            onSelectStat: { selectedStat = $0 },
-                            onSettings: { showSettings = true },
-                            onShop: { showShop = true }
+                            onSelectStat: { selectedStat = $0; SystemSound.systemOpen.play() },
+                            onSettings: { showSettings = true; SystemSound.systemOpen.play() },
+                            onShop: { showShop = true; SystemSound.systemOpen.play() }
                         )
                     }
                     .frame(maxWidth: 460)
@@ -36,13 +36,13 @@ struct StatusSheetView: View {
                 .scrollBounceBehavior(.basedOnSize)
             }
         }
-        .sheet(item: $selectedStat) { stat in
+        .sheet(item: $selectedStat, onDismiss: { SystemSound.systemClose.play() }) { stat in
             StatTargetsSheet(stat: stat)
         }
-        .sheet(isPresented: $showSettings) {
+        .sheet(isPresented: $showSettings, onDismiss: { SystemSound.systemClose.play() }) {
             StatusSettingsSheet()
         }
-        .sheet(isPresented: $showShop) {
+        .sheet(isPresented: $showShop, onDismiss: { SystemSound.systemClose.play() }) {
             ShopSheet()
         }
     }

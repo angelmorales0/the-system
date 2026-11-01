@@ -19,6 +19,8 @@ struct ContentView: View {
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .ignoresSafeArea()
+        // Once per launch. An open penalty's own cue, a major one, cuts this short.
+        .task { SystemSound.launch.play() }
         #if DEBUG
         // A paged TabView ignores its first selection, so the start page is set once it is on screen.
         .task { selectedPage = Self.startPage }

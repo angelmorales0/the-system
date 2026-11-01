@@ -66,28 +66,29 @@ struct StatusSettingsSheet: View {
         } message: {
             Text("A quiet morning switches today. A day already underway is queued for tomorrow. That day does not open a penalty if training is missed.")
         }
-        .sheet(isPresented: $showShields) {
+        .sheet(isPresented: $showShields, onDismiss: { SystemSound.systemClose.play() }) {
             PenaltyTargetsSheet()
         }
-        .sheet(isPresented: $showScreenTime) {
+        .sheet(isPresented: $showScreenTime, onDismiss: { SystemSound.systemClose.play() }) {
             ScreenTimeSheet()
         }
-        .sheet(isPresented: $showAppIcon) {
+        .sheet(isPresented: $showAppIcon, onDismiss: { SystemSound.systemClose.play() }) {
             AppIconSheet()
         }
-        .sheet(isPresented: $showEmergency) {
+        .sheet(isPresented: $showEmergency, onDismiss: { SystemSound.systemClose.play() }) {
             EmergencySettingsSheet()
         }
-        .sheet(isPresented: $showConnections) {
+        .sheet(isPresented: $showConnections, onDismiss: { SystemSound.systemClose.play() }) {
             ConnectionsSheet()
         }
-        .sheet(isPresented: $showShop) {
+        .sheet(isPresented: $showShop, onDismiss: { SystemSound.systemClose.play() }) {
             ShopSheet()
         }
     }
 
+    /// Every link opens a System window, so each one plays the open cue.
     private func link(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button(action: { SystemSound.systemOpen.play(); action() }) {
             HStack {
                 Text(title)
                     .font(.caption.weight(.semibold))

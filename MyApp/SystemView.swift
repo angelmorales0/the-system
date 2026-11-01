@@ -335,6 +335,8 @@ private struct HiddenQuestReveal: View {
                 .ignoresSafeArea()
                 .onTapGesture(perform: onClose)
                 .accessibilityHidden(true)
+                // Once per reveal. The window has no inner state, so this does not re-fire.
+                .onAppear { SystemSound.hiddenQuest.play() }
             // The quest glass is translucent; this backing keeps the rows underneath from showing through.
             QuestHologram {
                 VStack(spacing: 0) {

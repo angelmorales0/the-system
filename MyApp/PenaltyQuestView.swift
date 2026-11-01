@@ -154,6 +154,7 @@ struct PenaltyQuestView: View {
     /// Fades and sharpens the window in, then flickers it three times, as the scene does.
     private func arrive() {
         guard !arrived else { return }
+        SystemSound.penaltyOpen.play()
         if reduceMotion {
             arrived = true
             return
