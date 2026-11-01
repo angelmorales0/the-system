@@ -195,6 +195,14 @@ struct MorningRest: Codable, Equatable {
     var available: Bool
     var trainedDaysInARow: Int
     var forcedAfterDays: Int
+    /// The Status page's fatigue meter, 0...100. 0 before the first refresh.
+    var fatigue: Int = 0
+    /// HP as a share of max, 0...100. Nil before the first refresh.
+    var hpPercent: Int? = nil
+    /// The app's own rest signals from today's data (`RestScore`), in plain words. Empty when nothing says rest.
+    var signals: [String] = []
+    /// True when the signals alone would rest today. Offline, the app rests on this when `available` is true.
+    var scoreSaysRest: Bool = false
 }
 
 /// Redacted morning summary. Mercury is category totals only, and only after a backend snapshot.

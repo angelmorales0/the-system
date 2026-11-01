@@ -44,6 +44,8 @@ struct GameSnapshot: Codable, Equatable {
     var noGymDayKey: String?
     /// Quest day the planner made the week's rest day. `restDue` then locks it to Full Recovery.
     var plannerRestDayKey: String?
+    /// The planner's one sentence on why that day rests. The Rest Day shows it as its narrative.
+    var plannerRestReason: String?
     /// Earned on perfect days. Spent in `Shop`.
     var gold: Int = 0
     /// Potions used, oldest first. Prices, cooldowns, and stat excuses read this.
@@ -290,6 +292,16 @@ struct GameSnapshot: Codable, Equatable {
 
     /// Header of the free weekly rest day. A token day keeps the catalog's "Full Recovery Day".
     static let restDayHeader = "Rest Day"
+    /// Narrative of the forced seventh day, and of a picked day with no reason on record.
+    static let forcedRestNarrative = "The seventh day. Training is waived; the body does the work."
+    static let pickedRestNarrative = "The System calls a rest. Training is waived; the body does the work."
+
+    /// What the Rest Day says under its header: the planner's reason on its picked day, else the fixed line.
+    func restDayNarrative(on dayKey: String) -> String {
+        guard plannerRestDayKey == dayKey else { return Self.forcedRestNarrative }
+        let reason = plannerRestReason?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return reason.isEmpty ? Self.pickedRestNarrative : reason
+    }
 
     private func recordedModes() -> [String: QuestMode] {
         Dictionary(questHistory.map { ($0.dayKey, $0.mode) }, uniquingKeysWith: { first, _ in first })
@@ -454,7 +466,7 @@ struct GameSnapshot: Codable, Equatable {
         var day = noGymDayKey == bundle.dayKey ? NoGymDay.cardioOnly(bundle, now: now) : bundle
         if day.mode == .fullRecovery, !signals.spendingFullRecovery, fullRecoveryDayKey != day.dayKey, restDue(on: day.dayKey) {
             day.headerLine = Self.restDayHeader
-            day.narrative = "The seventh day. Training is waived; the body does the work."
+            day.narrative = restDayNarrative(on: day.dayKey)
         }
         return PenaltyQuests.ensure(
             in: DailyStretch.ensure(in: ScreenTime.ensure(in: day, now: now), now: now),
@@ -502,7 +514,7 @@ extension GameSnapshot {
         case finance
         case fullRecoveryDayKey, queuedFullRecoveryDayKey, hasDistractorSelection
         case hiddenUnlocks
-        case emergencyFailedDayKey, noGymDayKey, plannerRestDayKey
+        case emergencyFailedDayKey, noGymDayKey, plannerRestDayKey, plannerRestReason
         case questHistory, screenTime
         case gold, potionLog, lastGoldReward
         case hitPoints, fatigue
@@ -526,6 +538,7 @@ extension GameSnapshot {
         emergencyFailedDayKey = try container.decodeIfPresent(String.self, forKey: .emergencyFailedDayKey)
         noGymDayKey = try container.decodeIfPresent(String.self, forKey: .noGymDayKey)
         plannerRestDayKey = try container.decodeIfPresent(String.self, forKey: .plannerRestDayKey)
+        plannerRestReason = try container.decodeIfPresent(String.self, forKey: .plannerRestReason)
         generationAttemptDayKey = try container.decodeIfPresent(String.self, forKey: .generationAttemptDayKey)
         generatedBundle = try container.decodeIfPresent(QuestBundle.self, forKey: .generatedBundle)
         questHistory = try container.decodeIfPresent([QuestDayRecord].self, forKey: .questHistory) ?? []
@@ -555,6 +568,7 @@ extension GameSnapshot {
         try container.encodeIfPresent(emergencyFailedDayKey, forKey: .emergencyFailedDayKey)
         try container.encodeIfPresent(noGymDayKey, forKey: .noGymDayKey)
         try container.encodeIfPresent(plannerRestDayKey, forKey: .plannerRestDayKey)
+        try container.encodeIfPresent(plannerRestReason, forKey: .plannerRestReason)
         try container.encode(questHistory, forKey: .questHistory)
         try container.encodeIfPresent(screenTime, forKey: .screenTime)
         try container.encodeIfPresent(generationAttemptDayKey, forKey: .generationAttemptDayKey)

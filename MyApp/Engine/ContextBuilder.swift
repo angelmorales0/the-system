@@ -77,11 +77,31 @@ enum ContextBuilder {
                 today: GymSplit.today(history: snapshot.questHistory, dayKey: dayKey, goals: targets.custom),
                 lastDone: GymSplit.lastDone(history: snapshot.questHistory)
             ),
-            rest: MorningRest(
-                available: snapshot.restAvailable(on: dayKey),
-                trainedDaysInARow: snapshot.trainedDaysInARow(before: dayKey),
-                forcedAfterDays: ModePicker.restEveryDays - 1
-            )
+            rest: rest(snapshot: snapshot, dayKey: dayKey, readiness: readinessToday)
+        )
+    }
+
+    /// The week's rest as the planner sees it, with the app's own rest signals from today's data.
+    static func rest(snapshot: GameSnapshot, dayKey: String, readiness: ReadinessSnapshot?) -> MorningRest {
+        let yesterday = QuestDay.key(byAddingDays: -1, to: dayKey)
+        let hp = snapshot.hitPoints.map { (current: Int($0.current.rounded(.down)), max: $0.max) }
+        let score = RestScore.score(RestScore.Input(
+            readinessBand: readiness?.band,
+            yesterdayBand: snapshot.questHistory.first { $0.dayKey == yesterday }?.trainingBand,
+            sleepPerformance: readiness?.sleepPerformance,
+            hrv: readiness?.hrv,
+            hrvBaseline: snapshot.fatigue?.hrvBaseline,
+            fatigue: snapshot.fatigue.map { Int($0.value.rounded()) } ?? 0,
+            hpCritical: hp.map { HitPoints.isCritical(current: $0.current, max: $0.max) } ?? false
+        ))
+        return MorningRest(
+            available: snapshot.restAvailable(on: dayKey),
+            trainedDaysInARow: snapshot.trainedDaysInARow(before: dayKey),
+            forcedAfterDays: ModePicker.restEveryDays - 1,
+            fatigue: snapshot.fatigue.map { Int($0.value.rounded()) } ?? 0,
+            hpPercent: hp.flatMap { $0.max > 0 ? Int((Double($0.current) / Double($0.max) * 100).rounded()) : nil },
+            signals: score.signals,
+            scoreSaysRest: score.saysRest
         )
     }
 

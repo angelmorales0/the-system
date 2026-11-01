@@ -64,6 +64,7 @@ enum QuestPlanner {
                 "narrative": .object(["type": .string("string")]),
                 "threat": .object(["type": .string("string"), "description": .string("the penalty screen's two sentences, see the system prompt")]),
                 "restToday": .object(["type": .string("boolean"), "description": .string("true only when rest.available is true and today should be the week's rest day; quests may then be empty")]),
+                "restReason": .object(["type": .string("string"), "description": .string("when restToday is true, one sentence (at most 160 characters) on why today rests, from the data; otherwise an empty string")]),
                 "quests": .object([
                     "type": .string("array"),
                     "items": .object([
@@ -95,7 +96,7 @@ enum QuestPlanner {
                     ]),
                 ]),
             ]),
-            "required": .array(["schemaVersion", "dayKey", "mode", "headerLine", "narrative", "restToday", "quests"].map(JSONValue.string)),
+            "required": .array(["schemaVersion", "dayKey", "mode", "headerLine", "narrative", "restToday", "restReason", "quests"].map(JSONValue.string)),
             "additionalProperties": .bool(false),
         ])
     }()
@@ -135,7 +136,8 @@ enum QuestPlanner {
 
     Rest day (one in every seven quest days, you pick which):
     - rest.available true means this week's rest day is still open: rest.trainedDaysInARow days trained since the last one, and the app forces a rest after rest.forcedAfterDays. You decide which day rests. Make today the rest day when the data calls for it: red recovery, HRV well under its 30-day average, deloadRecommended, or runsToday empty with a heavy leg day next. Never rest two days in a row.
-    - To rest, return restToday true with quests []: the app writes the Rest Day itself (no runs, no lifts, no penalty). Otherwise restToday is false. When rest.available is false, restToday must be false.
+    - Weigh the signals together, like a coach: rest.signals lists what the app's own data says today (red recovery two mornings in a row, HRV under its baseline, sleep under 60%, fatigue at rest.fatigue of 100, HP at rest.hpPercent of max); trainingHistory.recovery gives the 30-day trend for HRV and resting heart rate; trainingHistory.week.loadVsPrevious3Weeks compares this week's run km, strength sessions, and strain to the previous three weeks (above about 1.3 means too much load); trainingHistory.fatigue says when the lifts call for a deload. One bad night is not a rest day. Two red mornings with high fatigue is. Resting heart rate above its baseline for three days, HRV under its baseline for three days, or a week's load well above the previous three, is. Train when recovery is green, HRV is at baseline, and the week's load is normal; a rest day within the last two days says train too.
+    - To rest, return restToday true with quests [] and restReason: one sentence, at most 160 characters, that names the data behind the rest (example: "HRV 18% under baseline for three days. Rest to protect the next block."). The player reads it under the Rest Day header. The app writes the Rest Day itself (no runs, no lifts, no penalty). Otherwise restToday is false and restReason is "". When rest.available is false, restToday must be false.
 
     Fatigue (adjust instead of pushing through):
     - Each entry in trainingHistory.lifts has a trend and advice from its newest sessions: improving, steady, stalled, declining, or dropping. Follow the advice for that lift.
@@ -313,8 +315,8 @@ enum QuestPlanner {
 
         enum Step: Equatable {
             case accept(JSONValue)
-            /// The model made today the week's rest day. The app writes the Rest Day itself.
-            case rest
+            /// The model made today the week's rest day, with its one-sentence reason. The app writes the Rest Day itself.
+            case rest(reason: String)
             case retry
             case stop
         }
@@ -330,7 +332,7 @@ enum QuestPlanner {
                     feedback = ["rest is not available today: restToday must be false"]
                     return .retry
                 }
-                return .rest
+                return .rest(reason: restReason(raw["restReason"]?.stringValue))
             }
             let locked = context["modeDecision"]?["selectedMode"]?.stringValue ?? "None"
             if raw["mode"]?.stringValue != locked {
@@ -349,10 +351,20 @@ enum QuestPlanner {
         }
     }
 
+    /// The model's rest reason, trimmed to one line of at most `restReasonMaxLength` characters. Empty when it gave none.
+    static let restReasonMaxLength = 160
+    static func restReason(_ text: String?) -> String {
+        let line = (text ?? "").replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard line.count > restReasonMaxLength else { return line }
+        let cut = line.prefix(restReasonMaxLength)
+        let end = cut.lastIndex(of: " ").map { cut[..<$0] } ?? cut
+        return String(end).trimmingCharacters(in: CharacterSet(charactersIn: " ,;:")) + "…"
+    }
+
     enum PlanOutcome: Equatable {
         case accepted(JSONValue)
-        /// The model made today the week's rest day.
-        case rest
+        /// The model made today the week's rest day, with its reason (empty when it gave none).
+        case rest(reason: String)
         /// Every reply was refused, cut off, or broke a rule: use the template.
         case rejected
         /// No reply came back at all (offline, app suspended, bad key): keep the catalog and try again later.
@@ -369,7 +381,7 @@ enum QuestPlanner {
             let reply = await send(claudeRequest(context, feedback: attempts.feedback, model: model), remaining)
             switch attempts.take(reply, context: context) {
             case .accept(let bundle): return .accepted(bundle)
-            case .rest: return .rest
+            case .rest(let reason): return .rest(reason: reason)
             case .retry: continue
             case .stop: return attempts.gotReply ? .rejected : .unreachable
             }
@@ -448,6 +460,7 @@ enum QuestPlanner {
         var cleaned = bundle.objectValue ?? [:]
         cleaned["completed"] = nil
         cleaned["restToday"] = nil
+        cleaned["restReason"] = nil
         cleaned["schemaVersion"] = .number(1)
         if let day { cleaned["dayKey"] = .string(day) }
         if let mode, modes.contains(mode) { cleaned["mode"] = .string(mode) }

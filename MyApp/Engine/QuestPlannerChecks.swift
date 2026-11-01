@@ -155,7 +155,14 @@ extension QuestPlanner {
             errors.append("restToday without rest.available should be sent back")
         }
         let restOpen = setting(sampleRequest(), ["rest"], to: .object(["available": .bool(true), "trainedDaysInARow": .number(4), "forcedAfterDays": .number(6)]))
-        if attempts.take(restReply, context: restOpen) != .rest { errors.append("restToday with rest.available should rest") }
+        if attempts.take(restReply, context: restOpen) != .rest(reason: "") { errors.append("restToday with rest.available should rest with an empty reason") }
+        let reasoned = ClaudeReply.reply(stopReason: "end_turn", text: #"{"restToday": true, "restReason": "  HRV 18% under baseline\nfor three days.  ", "quests": []}"#)
+        if attempts.take(reasoned, context: restOpen) != .rest(reason: "HRV 18% under baseline for three days.") { errors.append("the rest reason should come through as one trimmed line") }
+        let long = restReason(String(repeating: "tired ", count: 40))
+        if long.count > restReasonMaxLength + 1 || !long.hasSuffix("…") { errors.append("a long rest reason should be cut at a word with an ellipsis, got \(long.count) characters") }
+        if !questBundleSchema["required"]!.arrayValue!.contains(.string("restReason")) || sanitize(.object(["restReason": .string("x"), "quests": .array([])]), restOpen)["restReason"] != nil {
+            errors.append("restReason should be required in the schema and stripped from a plan")
+        }
         let paced = setting(setting(base, ["quests", 0, "title"], to: .string("Easy 10K @ 5:30/km")), ["narrative"], to: .string("Run it easy."))
         if titles(sanitize(paced, sampleRequest())).first != "10K Run" { errors.append("a run title should be only 10K Run") }
         if decodedBundle(sanitize(templateBundle(sampleRequest()), sampleRequest())) == nil { errors.append("a sanitized template should decode as a QuestBundle") }

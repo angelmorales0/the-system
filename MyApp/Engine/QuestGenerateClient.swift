@@ -13,6 +13,8 @@ struct QuestGeneration {
     var retryLater: Bool
     /// True when the planner made today the week's rest day. `bundle` is then the catalog's and the app writes the Rest Day.
     var restToday = false
+    /// The planner's one sentence on why today rests, or the app's own from `RestScore` offline.
+    var restReason: String? = nil
 }
 
 extension QuestGenerating {
@@ -85,6 +87,11 @@ struct OnDeviceQuestGenerateClient: QuestGenerating {
         let now = Date()
         let mock = MockQuestGenerateClient(catalog: catalog)
         guard let key = SecretStore.read(.anthropicApiKey) else {
+            // No planner: the app's own rest signals pick the week's rest day when it is open.
+            if let rest = context.rest, rest.available, rest.scoreSaysRest {
+                let reason = RestScore.Result(points: RestScore.restAt, signals: rest.signals).reason
+                return QuestGeneration(bundle: mock.catalogFallback(context: context, now: now), retryLater: false, restToday: true, restReason: reason)
+            }
             return QuestGeneration(bundle: mock.bundle(for: context, now: now), retryLater: false)
         }
         let fallback = QuestGeneration(bundle: mock.catalogFallback(context: context, now: now), retryLater: false)
@@ -98,8 +105,8 @@ struct OnDeviceQuestGenerateClient: QuestGenerating {
         switch outcome {
         case .accepted(let plan):
             raw = plan
-        case .rest:
-            return QuestGeneration(bundle: fallback.bundle, retryLater: false, restToday: true)
+        case .rest(let reason):
+            return QuestGeneration(bundle: fallback.bundle, retryLater: false, restToday: true, restReason: reason)
         case .rejected:
             raw = QuestPlanner.templateBundle(full)
         case .unreachable:

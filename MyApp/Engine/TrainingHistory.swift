@@ -93,7 +93,7 @@ enum TrainingHistory {
             "strengthTargets": .array(strengthTargets(goals["strength"]?.arrayValue ?? [], lifts: lifts)),
             "runs": .array(runs),
             "recovery": .array(recovery),
-            "week": weekSummary(runs: runs, sessions: sessions, questDays: questDays),
+            "week": weekSummary(runs: runs, sessions: sessions, questDays: questDays, recovery: recovery, today: today),
             "runWindow": runWindow(runs, goalKm: goalKm, noGymDays: Set(questDays.filter { $0["noGym"].truthy }.compactMap { $0["dayKey"]?.stringValue })),
             "fatigue": fatigueSummary(lifts.json, recovery: recovery),
             "limits": .object([
@@ -468,15 +468,44 @@ enum TrainingHistory {
     }
 
     /// The last 7 days at a glance, and days where a required quest was missed.
-    static func weekSummary(runs: [JSONValue], sessions: [JSONValue], questDays: [JSONValue]) -> JSONValue {
-        let last7 = runs.filter { ($0["daysAgo"]?.doubleValue ?? 99) <= 6 }
-        let recentSessions = sessions.filter { ($0["daysAgo"]?.doubleValue ?? 99) <= 6 }
+    /// Weeks before this one that the load comparison averages over.
+    static let loadCompareWeeks = 3
+
+    /// This week's load (run km, strength sessions, WHOOP strain) beside the average week of the previous three, and the
+    /// ratio of each. A ratio well above 1 is a load jump; the planner reads it as a rest signal. Null when the earlier weeks hold nothing.
+    static func weekSummary(runs: [JSONValue], sessions: [JSONValue], questDays: [JSONValue], recovery: [JSONValue] = [], today: String = "") -> JSONValue {
+        func daysAgo(_ row: JSONValue) -> Double {
+            if let ago = row["daysAgo"]?.doubleValue { return ago }
+            guard let date = row["date"]?.stringValue, !today.isEmpty else { return 99 }
+            return Double(OnDeviceTime.daysBetween(date, today))
+        }
+        let last7 = runs.filter { daysAgo($0) <= 6 }
+        let recentSessions = sessions.filter { daysAgo($0) <= 6 }
+        let earlier = 7.0...Double(7 * (loadCompareWeeks + 1) - 1)
+        func strain(_ rows: [JSONValue]) -> Double { rows.reduce(0) { $0 + ($1["strain"]?.doubleValue ?? 0) } }
+        let thisWeek = (runKm: runKm(runs, 0...6), sessions: Double(recentSessions.count), strain: strain(recovery.filter { daysAgo($0) <= 6 }))
+        let perWeek = Double(loadCompareWeeks)
+        let previous = (runKm: pyRound(runs.filter { earlier.contains(daysAgo($0)) }.reduce(0) { $0 + ($1["km"]?.doubleValue ?? 0) } / perWeek, 1),
+                        sessions: pyRound(Double(sessions.filter { earlier.contains(daysAgo($0)) }.count) / perWeek, 1),
+                        strain: pyRound(strain(recovery.filter { earlier.contains(daysAgo($0)) }) / perWeek, 1))
+        func ratio(_ now: Double, _ before: Double) -> JSONValue { before > 0 ? .number(pyRound(now / before, 2)) : .null }
         return .object([
             "last7Days": .object([
                 "tenKs": .number(Double(last7.filter { $0["counts"]?.stringValue == "10K" }.count)),
-                "runKm": .number(runKm(runs, 0...6)),
-                "strengthSessions": .number(Double(recentSessions.count)),
+                "runKm": .number(thisWeek.runKm),
+                "strengthSessions": .number(thisWeek.sessions),
                 "heavyLowerSessions": .number(Double(recentSessions.filter { $0["heavyLower"]?.boolValue == true }.count)),
+                "strain": .number(pyRound(thisWeek.strain, 1)),
+            ]),
+            "previous3WeeksPerWeek": .object([
+                "runKm": .number(previous.runKm),
+                "strengthSessions": .number(previous.sessions),
+                "strain": .number(previous.strain),
+            ]),
+            "loadVsPrevious3Weeks": .object([
+                "runKm": ratio(thisWeek.runKm, previous.runKm),
+                "strengthSessions": ratio(thisWeek.sessions, previous.sessions),
+                "strain": ratio(thisWeek.strain, previous.strain),
             ]),
             "missedQuestDays": .array(questDays.filter { $0["missedRequired"].truthy }.map { $0["dayKey"] ?? .null }),
         ])
@@ -622,6 +651,12 @@ enum TrainingHistory {
             errors.append("starting from zero should give the most one day allows")
         }
         let week = history["week"] ?? .null
+        // Load: 25.03 km this week against 9 km in the previous three weeks (3 km per week), one session against none, strain 9.3 against none.
+        let load = week["loadVsPrevious3Weeks"]
+        if week["previous3WeeksPerWeek"]?["runKm"]?.doubleValue != 3 || load?["runKm"]?.doubleValue != 8.34 || load?["strengthSessions"]?.doubleValue != 6.67
+            || load?["strain"] != .null || week["last7Days"]?["strain"]?.doubleValue != 9.3 {
+            errors.append("the week should compare this week's load to the previous three, got \(week["previous3WeeksPerWeek"] ?? .null) \(load ?? .null)")
+        }
         if week["last7Days"]?["runKm"]?.doubleValue != 25.03 || week["missedQuestDays"] != .array([.string("2026-10-20")]) {
             errors.append("last 7 days wrong")
         }

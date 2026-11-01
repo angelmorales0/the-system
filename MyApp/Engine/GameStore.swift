@@ -55,7 +55,7 @@ final class GameStore: ObservableObject {
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check() + MacScreenClient.check()
             + HiddenQuestRules.check() + RecoveryHolidayRules.check() + ShopRules.check()
             + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
-            + NoGymDayRules.check() + PenaltyDecay.check() + RestRules.check() + SecretStore.check() + ConnectionStatusStore.check()
+            + NoGymDayRules.check() + PenaltyDecay.check() + RestRules.check() + RestScore.check() + SecretStore.check() + ConnectionStatusStore.check()
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MercuryClient.check()
             + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check() + WhoopStressClient.check()
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
@@ -710,7 +710,7 @@ final class GameStore: ObservableObject {
             return
         }
         if result.restToday {
-            takePlannerRest(dayKey: dayKey)
+            takePlannerRest(dayKey: dayKey, reason: result.restReason)
             return
         }
         guard bundle.generatedBy != "fallback" else { return }
@@ -731,13 +731,14 @@ final class GameStore: ObservableObject {
     }
 
     /// The planner made today the week's rest day. The day locks to Full Recovery and the catalog writes the Rest Day.
-    private func takePlannerRest(dayKey: String) {
+    private func takePlannerRest(dayKey: String, reason: String?) {
         let now = Date()
         guard snapshot.bundle.dayKey == dayKey, snapshot.generationAttemptDayKey == dayKey,
               !snapshot.bundle.quests.contains(where: { $0.status == .completed }),
               snapshot.runningTimers.isEmpty, snapshot.restAvailable(on: dayKey) else { return }
         var next = snapshot
         next.plannerRestDayKey = dayKey
+        next.plannerRestReason = reason
         next.generatedBundle = nil
         next.rebuildBundle(catalog: catalog, now: now)
         snapshot = next
