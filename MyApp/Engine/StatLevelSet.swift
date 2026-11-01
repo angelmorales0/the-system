@@ -46,29 +46,29 @@ struct StatLevelSet: Equatable {
         Stat.allCases.map { (label: $0.rawValue, value: Double(self[$0])) }
     }
 
-    /// Inputs the phone can read today. The empty lists are the data still to be wired
-    /// (Hevy history, run and swim efforts, VO₂ max, zone 2, agility tests, recovery days).
-    /// `bodyMass` is the newest Apple Health weigh-in, for the END body weight target.
+    /// Everything the phone reads for the seven stats. `inputs` holds the histories (`StatInputLoader`): Hevy workouts
+    /// for STR and the AGI tests, WHOOP and Apple Health recovery days for REC, and the runs, swims, VO₂ max, and
+    /// zone 2 sessions for END. `bodyMass` is the newest Apple Health weigh-in, for the END body weight target.
     /// `focusDays` are the iPhone Screen Time days. `targets` removes targets and adds the player's own STR goals.
     static func compute(
         codeforces: CodeforcesReading,
         financeMonths: [FinanceMonth],
         bodyMass: [BodyMassReading] = [],
         focusDays: [FocusDay] = [],
-        recoveryDays: [RecoveryDay] = [],
+        inputs: StatInputs = StatInputs(),
         targets: StatTargets = StatTargets(),
         excuses: PotionExcuses = .none,
         now: Date
     ) -> StatLevelSet {
         // Potion days do not count against FOC, REC, or FIN.
         let focusDays = focusDays.filter { !excuses.focusDayKeys.contains($0.dayKey) }
-        let recoveryDays = recoveryDays.filter { !excuses.recoveryDayKeys.contains($0.dayKey) }
+        let recoveryDays = inputs.recoveryDays.filter { !excuses.recoveryDayKeys.contains($0.dayKey) }
         let financeMonths = financeMonths.map(excuses.excusing)
         let reports: [Stat: StatLevelReport] = [
-            .STR: StrengthLevel.evaluate(workouts: [], custom: targets.custom, now: now),
-            .END: EnduranceLevel.evaluate(efforts: [], swims: [], vo2: [], zoneTwo: [], bodyMass: bodyMass, now: now),
+            .STR: StrengthLevel.evaluate(workouts: inputs.hevyWorkouts, custom: targets.custom, now: now),
+            .END: EnduranceLevel.evaluate(efforts: inputs.runEfforts, swims: inputs.swimEfforts, vo2: inputs.vo2, zoneTwo: inputs.zoneTwo, bodyMass: bodyMass, now: now),
             .INT: IntelligenceLevel.evaluate(codeforces),
-            .AGI: AgilityLevel.evaluate(measurements: [], now: now),
+            .AGI: AgilityLevel.evaluate(measurements: inputs.agility, now: now),
             .FOC: FocusLevel.evaluate(days: focusDays),
             .REC: RecoveryLevel.evaluate(days: recoveryDays).statReport,
             .FIN: FinanceLevel.evaluate(months: financeMonths),
@@ -109,6 +109,23 @@ struct StatLevelSet: Equatable {
         let connected = compute(codeforces: rated, financeMonths: [month], now: now)
         if connected[.INT] != StatLevel.maxLevel || connected[.FIN] != StatLevel.maxLevel || connected[.STR] != 0 {
             errors.append("a 2100 rating and a perfect month should give INT and FIN 146, got INT \(connected[.INT]) FIN \(connected[.FIN])")
+        }
+
+        // The histories feed STR, AGI, REC, and END: perfect Hevy workouts, Hevy AGI tests, and WHOOP days reach the max.
+        var inputs = StatInputs()
+        inputs.hevyWorkouts = StrengthLevel.perfectWorkouts(now: now)
+        inputs.agility = AgilityLevel.perfectFixture().measurements
+        inputs.recoveryDays = RecoveryLevel.perfectDays()
+        inputs.runEfforts = [RunEffort(distance: .tenK, seconds: 2_900, date: now.addingTimeInterval(-86_400), source: "Strava")]
+        let fed = compute(codeforces: rated, financeMonths: [month], inputs: inputs, now: now)
+        if fed[.STR] != StatLevel.maxLevel || fed[.AGI] != StatLevel.maxLevel || fed[.REC] != StatLevel.maxLevel || fed[.END] <= 0 {
+            errors.append("the histories should score STR, AGI, REC, and END, got STR \(fed[.STR]) AGI \(fed[.AGI]) REC \(fed[.REC]) END \(fed[.END])")
+        }
+        // A potion day is left out of REC.
+        var excuses = PotionExcuses.none
+        excuses.recoveryDayKeys = Set(inputs.recoveryDays.map(\.dayKey))
+        if compute(codeforces: rated, financeMonths: [month], inputs: inputs, excuses: excuses, now: now)[.REC] != 0 {
+            errors.append("excused recovery days should not score REC")
         }
 
         // A month still in progress does not count, so FIN stays 0.

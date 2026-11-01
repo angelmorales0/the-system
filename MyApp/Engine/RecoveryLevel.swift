@@ -29,7 +29,8 @@ struct RecoveryDay: Codable, Equatable {
     var fatG: Double?
     var carbsG: Double?
     var caloriesKcal: Double?
-    /// MacroFactor's expenditure estimate for the day.
+    /// The day's expenditure: Apple Health active plus basal energy (an Apple Watch), on days that have both.
+    /// MacroFactor keeps its own expenditure estimate and does not write it to Health.
     var maintenanceKcal: Double?
     /// Trend weight, not a single weigh-in.
     var bodyMassKg: Double?

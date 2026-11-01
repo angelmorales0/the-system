@@ -28,7 +28,20 @@ Open **Status → Connections**. Each service has a row with its state (**Connec
 2. Copy the API key.
 3. In the app, open **Status → Connections → Hevy**. Paste the key. Tap **Save and test**.
 
-The phone reads workouts, exercises, and sets (reps, kg, RPE, hold time). It does not read notes or descriptions. Lifts check off from Hevy.
+The phone reads workouts, exercises, and sets (reps, kg, RPE, hold time, distance). It does not read notes or descriptions. Lifts check off from Hevy.
+
+The STR stat reads the last 180 days of Hevy workouts. The AGI stat reads its tests from the same history. Make each test a Hevy exercise with one of these names, and log the result as a set: the number as reps (cm, inches, or switches), or a distance in metres.
+
+| AGI target | Hevy exercise name | Set |
+|---|---|---|
+| Vertical jump | `Vertical Jump` | inches as reps, or the jump as a distance |
+| Front splits | `Front Splits Left`, `Front Splits Right` | cm from the hips to the floor as reps, or a distance |
+| Side splits | `Side Splits` | cm as reps, or a distance |
+| Apley scratch test | `Apley Scratch Test Left`, `Apley Scratch Test Right` | finger gap in cm as reps (0 when they touch) |
+| Knee-to-wall test | `Knee to Wall Left`, `Knee to Wall Right` | cm from the toe to the wall as reps, or a distance |
+| 90/90 hip switches | `90/90 Hip Switches` | reps |
+
+The newest result of each test in 90 days counts. The names are also shown under each AGI target in Status.
 
 ## Strava
 
@@ -52,6 +65,22 @@ WHOOP accepts a custom-scheme redirect URL (its OAuth docs show `whoop://example
 6. Tap **Test**. It should say "Connected to WHOOP."
 
 WHOOP gives a new refresh token on each refresh. The app saves it to the Keychain each time and runs only one refresh at a time, because a second refresh with the old token fails. If a refresh fails, the row shows **Error**: sign in again.
+
+The REC stat reads 90 days of WHOOP cycles, recoveries, sleeps, and workouts: sleep performance, consistency, efficiency, and debt, bed and wake times, HRV, resting heart rate, strain, and the workout count per day. Naps are skipped.
+
+## Apple Health
+
+Nothing to type. The app asks for Health access on first launch. It reads:
+
+- Workouts, weight, and steps (quests, the END body weight target, and emergency quests).
+- Nutrition for the REC stat: protein, fat, carbs, calories, and caffeine. Log food in MacroFactor and turn on its Apple Health write. On a day with MacroFactor samples, only those count.
+- Active and basal energy for the Calories target's maintenance (an Apple Watch). A day without both has no maintenance and does not score.
+- VO₂ max for the END stat (an Apple Watch writes one after outdoor runs and walks).
+- Heart rate inside each cardio workout of 20 minutes or more, for the zone 2 target: the longest stretch at 60–70% of the max heart rate, where the max is 220 minus your age from the Health date of birth. Without a date of birth, zone 2 has no data.
+
+Runs and swims for the END stat come from Strava and Health workouts: a recording at most 50 m short or up to 15% long of the mile, 5K, 10K, or 1-mile swim counts at its average pace.
+
+Each history is cached in the app's Application Support folder and read again after 15 minutes, with a full read once a day.
 
 ## Codeforces
 
