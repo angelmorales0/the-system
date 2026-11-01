@@ -42,3 +42,16 @@ enum PenaltyQuests {
         )
     }
 }
+
+extension GameSnapshot {
+    /// Spends one banked Full Recovery token to end the open penalty: the tier drops to 0 and the penalty rows go.
+    /// Today's own quests stay as they are, so the day is not a rest day.
+    mutating func clearPenaltyWithFullRecovery() -> String {
+        guard player.penaltyTier > 0 else { return "No penalty is open." }
+        guard player.fullRecoveryBank > 0 else { return "No Full Recovery token in the bank." }
+        player.withdrawRecoveryToken()
+        player.penaltyTier = 0
+        bundle.quests.removeAll { $0.kind == .penalty }
+        return "Full Recovery spent. The penalty is cleared. Today's quests stay."
+    }
+}

@@ -6,7 +6,8 @@ import SwiftUI
 /// flat, leaning a little as the phone moves, with every line drawn twice (a dim copy sunk under the bright one), and it arrives with a flicker.
 /// The longer the penalty stays open, the more the screen rots around it (see `PenaltyDecay`):
 /// gray creeps in from the edges, the edge turns blood red and pulses, then everything outside blurs.
-/// There is no close button. The screen leaves when the penalty run is verified from Apple Health.
+/// There is no close button. The screen leaves when the penalty run is verified from Apple Health,
+/// or when the player spends one Full Recovery token on it.
 struct PenaltyQuestView: View {
     @EnvironmentObject private var store: GameStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -16,6 +17,7 @@ struct PenaltyQuestView: View {
     var tier: Int = 1
     @State private var arrived = false
     @State private var flicker = false
+    @State private var confirmFullRecovery = false
     @StateObject private var tilt = MotionTilt()
 
     /// In DEBUG, launch with `-penaltyPreviewHours 12` to draw the screen as if the penalty were that old.
@@ -137,8 +139,39 @@ struct PenaltyQuestView: View {
             Spacer().frame(height: 12)
             GhostText(Text(tierLine).tracking(1.4), font: .caption2, alignment: .leading, ghost: ghost)
                 .foregroundStyle(QuestLight.penalty)
+            Spacer().frame(height: 24)
+            fullRecoveryButton
         }
         .foregroundStyle(QuestLight.ink)
+    }
+
+    /// One banked Full Recovery token ends the penalty. Asks first.
+    private var fullRecoveryButton: some View {
+        let bank = store.player.fullRecoveryBank
+        return VStack(spacing: 6) {
+            Button { confirmFullRecovery = true } label: {
+                Text("USE FULL RECOVERY · x\(bank)")
+                    .font(.caption.weight(.semibold))
+                    .tracking(1.4)
+                    .monospacedDigit()
+                    .frame(maxWidth: .infinity, minHeight: 38)
+                    .overlay { Rectangle().stroke(QuestLight.ink.opacity(bank > 0 ? 0.6 : 0.25), lineWidth: 0.8) }
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .opacity(bank > 0 ? 1 : 0.45)
+            .disabled(bank == 0)
+            .accessibilityLabel(bank > 0 ? "Use a Full Recovery to clear the penalty, \(bank) in the bank" : "No Full Recovery in the bank")
+            Text(bank > 0 ? "Ends this penalty. Today's quests stay." : "No Full Recovery in the bank.")
+                .font(.caption2)
+                .foregroundStyle(QuestLight.ink.opacity(0.6))
+        }
+        .confirmationDialog("Use one Full Recovery?", isPresented: $confirmFullRecovery, titleVisibility: .visible) {
+            Button("Clear the penalty") { store.clearPenaltyWithFullRecovery() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("One token leaves the bank. The penalty ends now and today's quests stay.")
+        }
     }
 
     /// The generator's two sentences for today, or the app's own: `Laziness is present and is damaging the Player.

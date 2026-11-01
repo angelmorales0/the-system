@@ -134,6 +134,19 @@ final class GameStore: ObservableObject {
         enforcePenalty()
     }
 
+    /// From the penalty screen: one token ends the open penalty. The cleared cue plays from the tier change.
+    func clearPenaltyWithFullRecovery(now: Date = .now) {
+        var next = snapshot
+        let message = next.clearPenaltyWithFullRecovery()
+        let spent = next.player.fullRecoveryBank < snapshot.player.fullRecoveryBank
+        snapshot = next
+        verificationNote = message
+        clock = now
+        if !spent { cue(.questFail) }
+        persist()
+        enforcePenalty()
+    }
+
     func buyFullRecovery(now: Date = .now) {
         var next = snapshot
         let message = next.buyFullRecovery()

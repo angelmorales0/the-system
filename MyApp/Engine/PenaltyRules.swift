@@ -77,6 +77,21 @@ enum PenaltyRules {
             errors.append("the tier should wait through Full Recovery and return the next day")
         }
 
+        // From the penalty screen: one token clears the penalty and keeps the day as it is.
+        var paid = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
+        paid.player.penaltyTier = 2
+        paid.rebuildForTest(catalog: catalog, now: dayOne)
+        paid.player.fullRecoveryBank = 0
+        if !paid.clearPenaltyWithFullRecovery().contains("No Full Recovery") || paid.player.penaltyTier != 2 {
+            errors.append("clearing a penalty needs a token")
+        }
+        paid.player.fullRecoveryBank = 1
+        _ = paid.clearPenaltyWithFullRecovery()
+        if paid.player.penaltyTier != 0 || paid.player.fullRecoveryBank != 0 || !PenaltyQuests.rows(in: paid.bundle).isEmpty || paid.bundle.mode != .performanceTraining {
+            errors.append("a token should clear the penalty and keep the day, got tier \(paid.player.penaltyTier) bank \(paid.player.fullRecoveryBank)")
+        }
+        if paid.clearPenaltyWithFullRecovery() != "No penalty is open." { errors.append("clearing twice should change nothing") }
+
         var banked = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
         banked.player.fullRecoveryBank = 1
         let assigned = banked.spendFullRecovery(catalog: catalog, now: dayOne)
