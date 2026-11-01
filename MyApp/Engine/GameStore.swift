@@ -145,9 +145,9 @@ final class GameStore: ObservableObject {
         persist()
     }
 
-    func usePotion(_ potion: Potion, dose: PotionDose = .full, now: Date = .now) {
+    func usePotion(_ potion: Potion, now: Date = .now) {
         var next = snapshot
-        let message = next.usePotion(potion, dose: dose)
+        let message = next.usePotion(potion)
         let drunk = next.potionLog.count > snapshot.potionLog.count
         snapshot = next
         verificationNote = message

@@ -25,13 +25,6 @@ enum Gold {
     }
 }
 
-enum PotionDose: String, Codable, Equatable {
-    /// Clears the stat's quests for the day.
-    case full
-    /// Costs 40%. Completes the stat's quests once half the work is logged.
-    case half
-}
-
 /// One potion per stat that has a forced daily quest. INT has none: reading is never forced.
 /// You buy a potion at the moment you drink it. A day that uses any potion pays no gold.
 enum Potion: String, Codable, CaseIterable, Equatable {
@@ -91,7 +84,7 @@ enum Potion: String, Codable, CaseIterable, Equatable {
         }
     }
 
-    /// Full-dose price before the repeat rule.
+    /// Price before the repeat rule.
     var basePrice: Int {
         switch self {
         case .gildedIndulgence: 25_000
@@ -111,9 +104,6 @@ enum Potion: String, Codable, CaseIterable, Equatable {
         }
     }
 
-    /// FIN, STR, END, and AGI have a half dose. A half night out or half a screen binge does not exist.
-    var hasHalfDose: Bool { self != .nightfall && self != .idleHours }
-
     /// These potions clear the stat's open daily quests, so they need one. FIN has no daily quest.
     var needsQuest: Bool { self == .ironblood || self == .secondWind || self == .quicksilver }
 
@@ -121,13 +111,11 @@ enum Potion: String, Codable, CaseIterable, Equatable {
     static let indulgenceUsd = 150.0
     /// Each use in this many days raises the next price by 50%.
     static let repeatWindowDays = 30
-    static let halfDoseShare = 0.4
 }
 
 struct PotionUse: Codable, Equatable {
     var dayKey: String
     var potion: Potion
-    var dose: PotionDose
 }
 
 /// Days and dollars that potions remove from the FOC, REC, and FIN scores.
@@ -183,9 +171,9 @@ extension GameSnapshot {
         return potionLog.filter { $0.potion == potion && $0.dayKey > cutoff && $0.dayKey <= bundle.dayKey }
     }
 
-    /// Base price, 40% for a half dose, then +50% for each use of the same potion in the last 30 days.
-    func potionPrice(_ potion: Potion, dose: PotionDose = .full) -> Int {
-        let base = Double(potion.basePrice) * (dose == .half ? Potion.halfDoseShare : 1)
+    /// Base price, then +50% for each use of the same potion in the last 30 days.
+    func potionPrice(_ potion: Potion) -> Int {
+        let base = Double(potion.basePrice)
         let repeats = uses(of: potion, sinceDaysAgo: Potion.repeatWindowDays).count
         let price = base * pow(1.5, Double(repeats))
         return Int((price / 10).rounded()) * 10
@@ -198,31 +186,24 @@ extension GameSnapshot {
     }
 
     /// Why the potion cannot be used now, or nil when it can.
-    func potionBlocker(_ potion: Potion, dose: PotionDose = .full) -> String? {
+    func potionBlocker(_ potion: Potion) -> String? {
         if player.penaltyTier > 0 { return "The shop is closed during a penalty." }
         if potionUsedToday { return "One potion per day. You already used one today." }
-        if dose == .half && !potion.hasHalfDose { return "\(potion.name) has no half dose." }
         if let cooldown = potion.cooldownDays, let last = uses(of: potion, sinceDaysAgo: cooldown).last {
             let ready = QuestDay.key(byAddingDays: cooldown, to: last.dayKey)
             return "\(potion.name) is on cooldown until \(ready)."
         }
         let targets = potionTargets(potion)
         if potion.needsQuest && targets.isEmpty { return "There is no open \(potion.stat.rawValue) quest today." }
-        if dose == .half {
-            let short = targets.filter { $0.progress.target <= 0 || $0.progress.current * 2 < $0.progress.target }
-            if !short.isEmpty {
-                return "A half dose needs half the work logged first: \(short.map(\.title).joined(separator: ", "))."
-            }
-        }
-        let price = potionPrice(potion, dose: dose)
+        let price = potionPrice(potion)
         if gold < price { return "Not enough gold. \(potion.name) costs \(price) gold. You have \(gold)." }
         return nil
     }
 
     /// Buys and drinks one potion. Clears the stat's open quests and records the excuse.
-    mutating func usePotion(_ potion: Potion, dose: PotionDose = .full) -> String {
-        if let blocker = potionBlocker(potion, dose: dose) { return blocker }
-        let price = potionPrice(potion, dose: dose)
+    mutating func usePotion(_ potion: Potion) -> String {
+        if let blocker = potionBlocker(potion) { return blocker }
+        let price = potionPrice(potion)
         gold -= price
         for quest in potionTargets(potion) {
             guard let index = bundle.quests.firstIndex(where: { $0.id == quest.id }) else { continue }
@@ -232,11 +213,10 @@ extension GameSnapshot {
             bundle.quests[index] = row
             runningTimers.removeAll { $0.questId == quest.id }
         }
-        potionLog.append(PotionUse(dayKey: bundle.dayKey, potion: potion, dose: dose))
+        potionLog.append(PotionUse(dayKey: bundle.dayKey, potion: potion))
         // One use per day at most, so 400 entries cover more than a year of excuses.
         potionLog = Array(potionLog.suffix(400))
-        let doseName = dose == .half ? "Half dose of \(potion.name)" : potion.name
-        return "\(doseName) used for \(price) gold. Today pays no gold. \(gold) gold left."
+        return "\(potion.name) used for \(price) gold. Today pays no gold. \(gold) gold left."
     }
 
     var potionExcuses: PotionExcuses {
@@ -251,8 +231,7 @@ extension GameSnapshot {
                 excuses.recoveryDayKeys.insert(QuestDay.key(byAddingDays: 1, to: use.dayKey))
             case .gildedIndulgence:
                 let month = String(use.dayKey.prefix(7))
-                let amount = use.dose == .half ? Potion.indulgenceUsd / 2 : Potion.indulgenceUsd
-                excuses.spendUsdByMonth[month, default: 0] += amount
+                excuses.spendUsdByMonth[month, default: 0] += Potion.indulgenceUsd
             case .ironblood, .secondWind, .quicksilver:
                 break
             }
@@ -322,7 +301,7 @@ enum ShopRules {
             errors.append("buying Full Recovery should cost \(Gold.fullRecoveryPrice) and bank a token")
         }
 
-        // A full dose clears every open quest of its stat. One potion per day. The day pays no gold.
+        // A potion clears every open quest of its stat. One potion per day. The day pays no gold.
         guard let potion = Potion.allCases.first(where: { $0.needsQuest && !shop.potionTargets($0).isEmpty }) else {
             return errors + ["the shop test day needs an open STR, END, or AGI quest"]
         }
@@ -351,29 +330,9 @@ enum ShopRules {
             errors.append("history should not count a potion skip as real work")
         }
 
-        // The next use of the same potion within 30 days costs 50% more. A half dose costs 40%.
+        // The next use of the same potion within 30 days costs 50% more.
         if shop.potionPrice(potion) != potion.basePrice * 3 / 2 {
             errors.append("a repeat use should cost 150%, got \(shop.potionPrice(potion))")
-        }
-        let half = Int((Double(potion.basePrice) * 0.4 * 1.5 / 10).rounded()) * 10
-        if shop.potionPrice(potion, dose: .half) != half {
-            errors.append("a repeat half dose should cost \(half), got \(shop.potionPrice(potion, dose: .half))")
-        }
-
-        // A half dose needs half the work logged, then completes the quest.
-        if let target = shop.potionTargets(potion).first {
-            if shop.potionBlocker(potion, dose: .half) == nil {
-                errors.append("a half dose with no work logged should be refused")
-            }
-            for quest in shop.potionTargets(potion) {
-                guard let index = shop.bundle.quests.firstIndex(where: { $0.id == quest.id }) else { continue }
-                shop.bundle.quests[index].progress.current = (quest.progress.target / 2).rounded(.up)
-            }
-            _ = shop.usePotion(potion, dose: .half)
-            let row = shop.bundle.quests.first { $0.id == target.id }
-            if row?.status != .completed || row?.skippedWithPotion != true {
-                errors.append("a half dose should complete the quest once half the work is logged")
-            }
         }
 
         // Cooldowns, the penalty lock, and stat excuses.
@@ -389,18 +348,15 @@ enum ShopRules {
         if excuse.potionBlocker(.nightfall)?.contains("cooldown") != true {
             errors.append("Insomniac's Elixir should be on a 14-day cooldown, got \(String(describing: excuse.potionBlocker(.nightfall)))")
         }
-        if excuse.potionBlocker(.idleHours, dose: .half) == nil {
-            errors.append("Veil of Idle Hours should have no half dose")
-        }
         excuse.player.penaltyTier = 1
         if excuse.potionBlocker(.gildedIndulgence)?.contains("penalty") != true || !excuse.buyFullRecovery().contains("penalty") {
             errors.append("the shop should be closed during a penalty")
         }
         excuse.player.penaltyTier = 0
-        _ = excuse.usePotion(.gildedIndulgence, dose: .half)
+        _ = excuse.usePotion(.gildedIndulgence)
         let month = FinanceMonth(month: String(excuse.bundle.dayKey.prefix(7)), postTaxIncomeUsd: 5_000, spendingUsd: 1_100, budgetUsd: 1_000, complete: true)
-        if excuse.potionExcuses.excusing(month).spendingUsd != 1_025 {
-            errors.append("a half Gilded Indulgence should excuse $75, got \(excuse.potionExcuses.excusing(month).spendingUsd)")
+        if excuse.potionExcuses.excusing(month).spendingUsd != 1_100 - Potion.indulgenceUsd {
+            errors.append("Gilded Indulgence should excuse $\(Int(Potion.indulgenceUsd)), got \(excuse.potionExcuses.excusing(month).spendingUsd)")
         }
         return errors
     }

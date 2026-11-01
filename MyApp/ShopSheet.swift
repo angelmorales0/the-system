@@ -10,12 +10,12 @@ struct ShopSheet: View {
     /// What the player tapped, kept until they confirm.
     private enum Purchase: Identifiable {
         case fullRecovery
-        case potion(Potion, PotionDose)
+        case potion(Potion)
 
         var id: String {
             switch self {
             case .fullRecovery: "fullRecovery"
-            case .potion(let potion, let dose): "\(potion.rawValue)-\(dose.rawValue)"
+            case .potion(let potion): potion.rawValue
             }
         }
     }
@@ -104,8 +104,7 @@ struct ShopSheet: View {
     }
 
     private func potionRow(_ potion: Potion) -> some View {
-        let fullBlocker = snapshot.potionBlocker(potion, dose: .full)
-        let halfBlocker = potion.hasHalfDose ? snapshot.potionBlocker(potion, dose: .half) : nil
+        let blocker = snapshot.potionBlocker(potion)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Text(potion.name)
@@ -116,22 +115,10 @@ struct ShopSheet: View {
                     .foregroundStyle(SystemTheme.muted)
             }
             note(potion.details)
-            HStack(spacing: 10) {
-                buyButton("DRINK · \(snapshot.potionPrice(potion, dose: .full).formatted())", enabled: fullBlocker == nil) {
-                    pending = .potion(potion, .full)
-                }
-                if potion.hasHalfDose {
-                    buyButton("HALF · \(snapshot.potionPrice(potion, dose: .half).formatted())", enabled: halfBlocker == nil) {
-                        pending = .potion(potion, .half)
-                    }
-                }
+            buyButton("DRINK · \(snapshot.potionPrice(potion).formatted())", enabled: blocker == nil) {
+                pending = .potion(potion)
             }
-            // A half dose usually waits on logged work, so only show its reason when the full dose is open.
-            if let fullBlocker {
-                blockerText(fullBlocker)
-            } else if potion.hasHalfDose, let halfBlocker {
-                blockerText("Half dose: " + halfBlocker)
-            }
+            if let blocker { blockerText(blocker) }
         }
     }
 
@@ -140,7 +127,7 @@ struct ShopSheet: View {
     private var confirmTitle: String {
         switch pending {
         case .fullRecovery: "Buy one Full Recovery?"
-        case .potion(let potion, let dose): dose == .half ? "Drink a half dose of \(potion.name)?" : "Drink \(potion.name)?"
+        case .potion(let potion): "Drink \(potion.name)?"
         case nil: ""
         }
     }
@@ -148,7 +135,7 @@ struct ShopSheet: View {
     private func confirmButton(_ purchase: Purchase) -> String {
         switch purchase {
         case .fullRecovery: "Buy for \(Gold.fullRecoveryPrice.formatted()) gold"
-        case .potion(let potion, let dose): "Drink for \(snapshot.potionPrice(potion, dose: dose).formatted()) gold"
+        case .potion(let potion): "Drink for \(snapshot.potionPrice(potion).formatted()) gold"
         }
     }
 
@@ -156,11 +143,9 @@ struct ShopSheet: View {
         switch purchase {
         case .fullRecovery:
             ""
-        case .potion(let potion, let dose):
+        case .potion(let potion):
             if potion.needsQuest {
-                dose == .half
-                    ? "It completes today's \(potion.stat.rawValue) quests. Half the work must be logged first. Today pays no gold."
-                    : "It clears today's \(potion.stat.rawValue) quests. Today pays no gold."
+                "It clears today's \(potion.stat.rawValue) quests. Today pays no gold."
             } else {
                 "It skips no quest. The excuse applies to the \(potion.stat.rawValue) score. Today pays no gold."
             }
@@ -170,7 +155,7 @@ struct ShopSheet: View {
     private func buy(_ purchase: Purchase) {
         switch purchase {
         case .fullRecovery: store.buyFullRecovery()
-        case .potion(let potion, let dose): store.usePotion(potion, dose: dose)
+        case .potion(let potion): store.usePotion(potion)
         }
         result = store.verificationNote
         pending = nil
