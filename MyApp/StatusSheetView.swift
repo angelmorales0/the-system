@@ -17,6 +17,7 @@ struct StatusSheetView: View {
                     SystemPanel(padding: 14) {
                         StatusSheetContent(
                             level: store.statLevels.overallLevel,
+                            xp: (store.player.xp, store.player.xpToNext),
                             hp: store.hitPoints,
                             fatigue: store.fatigue,
                             stats: Stat.allCases.map { ($0, store.statLevels[$0]) },
@@ -51,6 +52,8 @@ struct StatusSheetView: View {
 /// The window's content, apart from the store, so the preview can show any values.
 private struct StatusSheetContent: View {
     let level: Int
+    /// Quest XP toward the next XP level: current and the step.
+    var xp: (current: Int, next: Int) = (0, 1)
     let hp: (current: Int, max: Int)
     let fatigue: Int
     let stats: [(Stat, Int)]
@@ -68,6 +71,7 @@ private struct StatusSheetContent: View {
             StatusTitleBox()
                 .overlay(alignment: .trailing) { settingsButton }
             levelRow
+            xpBar
             StatusFrame {
                 HStack(alignment: .center, spacing: 14) {
                     hpMeter
@@ -162,6 +166,28 @@ private struct StatusSheetContent: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// "XP 3,420 / 5,000" with a bar that fills toward the next XP level.
+    private var xpBar: some View {
+        let step = max(xp.next, 1)
+        let fraction = Double(min(max(xp.current, 0), step)) / Double(step)
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text("XP").font(.caption.weight(.bold)).tracking(1)
+                Spacer(minLength: 4)
+                Text(verbatim: xp.current.formatted()).font(.caption.weight(.bold))
+                Text(verbatim: " / \(step.formatted())").font(.caption2).foregroundStyle(HPLight.normal.ink.opacity(0.8))
+            }
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            GlowBar(fraction: fraction, light: .normal)
+        }
+        .foregroundStyle(HPLight.normal.ink.opacity(0.8))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("XP")
+        .accessibilityValue("\(xp.current) of \(step)")
     }
 
     private func labeled(_ label: String, _ value: String) -> some View {
@@ -337,7 +363,7 @@ private struct StatCell: View {
         ScrollView {
             VStack(spacing: 24) {
                 SystemPanel(padding: 14) {
-                    StatusSheetContent(level: 61, hp: (2_911, 3_602), fatigue: 34,
+                    StatusSheetContent(level: 61, xp: (3_420, 5_000), hp: (2_911, 3_602), fatigue: 34,
                                        stats: Stat.allCases.map { ($0, 140) }, fullRecoveryPoints: 7)
                 }
                 SystemPanel(padding: 14) {
