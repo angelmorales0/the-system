@@ -1,12 +1,13 @@
 import Foundation
 
-/// "No gym today": the player cannot get to the gym, so the Training day doubles up on cardio.
-/// Strength rows that are not finished give way to a second run, always a 10K. Finished work stays.
-/// Penalty rows are not changed. The setting lasts for one quest day.
+/// "No gym today": the player cannot get to the gym, so the Training day swaps its lifts for one added 10K.
+/// The added 10K sits on top of whatever the 50 km window asked for today, and it never counts toward that
+/// window (`TrainingHistory.noGymAddedKm`). The day stays under two 10Ks and 20 km, so a day the window already
+/// filled with two 10Ks adds none. Finished work stays. Penalty rows are not changed. The setting lasts one quest day.
 enum NoGymDay {
     static let secondTenKSlug = "run_10k_2"
     static let secondTenKTitle = TrainingDay.tenKTitle
-    /// Runs the day should have: its own 5K or 10K, plus 10Ks up to this count.
+    /// The most runs a day holds: the window's runs plus the added 10K, never more than this.
     static let runCount = 2
 
     static func cardioOnly(_ bundle: QuestBundle, now: Date) -> QuestBundle {
@@ -17,14 +18,12 @@ enum NoGymDay {
             copy.headerLine = TrainingDay.header
         }
         let runs = copy.quests.filter { isSwappable($0) && TrainingDay.isRaceRun($0) }
-        guard runs.count < runCount else { return copy }
-        let template = runs.first { isTenK($0) }
-        let added = (runs.count..<runCount).map { index in
-            tenK(from: template, index: index, bundle: copy, now: now)
-        }
+        let km = runs.reduce(0.0) { $0 + ($1.verification.params["minDistanceMeters"]?.doubleValue ?? 0) / 1000 }
+        guard runs.count < runCount, km + Double(TrainingHistory.noGymAddedKm) <= Double(TrainingHistory.maxRunKmPerDay) else { return copy }
+        let added = tenK(from: runs.first { isTenK($0) }, index: runs.count, bundle: copy, now: now)
         // After the day's own quests, before Stretching, optional rows, and penalty rows.
         let insertAt = copy.quests.firstIndex { $0.id == ScreenTime.questId || $0.id == DailyStretch.questId || $0.kind != .daily } ?? copy.quests.count
-        copy.quests.insert(contentsOf: added, at: insertAt)
+        copy.quests.insert(added, at: insertAt)
         return copy
     }
 
@@ -77,7 +76,7 @@ extension GameSnapshot {
         if on {
             noGymDayKey = bundle.dayKey
             bundle = finished(bundle, catalog: catalog, now: now)
-            return "No gym available. Strength quests are swapped for a second 10K."
+            return "No gym available. Strength quests are swapped for an added 10K. It does not count toward the 50 km window."
         }
         noGymDayKey = nil
         var fresh = self

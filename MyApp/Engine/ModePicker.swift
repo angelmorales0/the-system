@@ -4,7 +4,7 @@ struct ModePickerInput: Equatable {
     var spendingFullRecovery: Bool
     var readinessBand: ReadinessBand
     var sleepPerformance: Int?
-    /// True when the six quest days before today had no rest day (`GameSnapshot.restDue`). Today then rests.
+    /// True when today rests (`GameSnapshot.restDue`): the planner picked it, or the seventh day is forced.
     var restDue = false
 }
 
@@ -18,7 +18,8 @@ struct ModeDecision: Equatable {
 
 /// Rules-only day mode. The LLM is not allowed to override this once it exists.
 /// Every day is Performance Training unless a Full Recovery token is spent or the weekly rest is due:
-/// one Full Recovery day in every seven quest days, free, with no penalty. Readiness and sleep
+/// one Full Recovery day in every seven quest days, free, with no penalty. The planner picks the day
+/// (`GameSnapshot.restAvailable`); after six trained days in a row the seventh is forced. Readiness and sleep
 /// size the Training day through `trainingBand`; they never pick a different mode.
 /// An open penalty does not pick a mode; `PenaltyQuests` adds its rows to the day.
 enum ModePicker {
@@ -26,6 +27,8 @@ enum ModePicker {
     static let lowSleepPerformance = 60
     /// At least one rest day in every run of this many quest days.
     static let restEveryDays = 7
+    /// The planner may rest only after this many trained days in a row, so two rests never touch.
+    static let restMinTrainedDays = 2
     static let weeklyRestReason = "weekly_rest"
 
     static func decide(_ input: ModePickerInput) -> ModeDecision {
@@ -132,6 +135,33 @@ enum RestRules {
             errors.append("the day after a Rest Day should train again with no penalty, got tier \(week.player.penaltyTier) mode \(week.bundle.mode)")
         }
 
+        // The planner picks the rest day: not on day 1 or 2, open from day 3, closed for six days after it.
+        var picked = GameSnapshot.fresh(catalog: catalog, now: dayOne)
+        if picked.restAvailable(on: picked.bundle.dayKey) { errors.append("the planner should not rest on day 1") }
+        for offset in 0..<2 {
+            finishRequired(&picked, now: day(offset))
+            picked.refreshIfNeeded(catalog: catalog, now: day(offset + 1))
+        }
+        if !picked.restAvailable(on: picked.bundle.dayKey) || picked.trainedDaysInARow(before: picked.bundle.dayKey) != 2 {
+            errors.append("after two trained days the planner may rest, got \(picked.trainedDaysInARow(before: picked.bundle.dayKey)) days")
+        }
+        picked.plannerRestDayKey = picked.bundle.dayKey
+        picked.rebuildBundle(catalog: catalog, now: day(2))
+        if picked.bundle.mode != .fullRecovery || picked.bundle.headerLine != GameSnapshot.restDayHeader {
+            errors.append("the planner's rest day should be a Rest Day, got \(picked.bundle.mode) \(picked.bundle.headerLine)")
+        }
+        picked.refreshIfNeeded(catalog: catalog, now: day(3))
+        for offset in 3..<9 {
+            if picked.bundle.mode != .performanceTraining { errors.append("day \(offset + 1) after a picked rest should train") }
+            if picked.restAvailable(on: picked.bundle.dayKey) || !picked.restTaken(before: picked.bundle.dayKey) {
+                errors.append("rest should not be open again while the pick sits in the last six days (day \(offset + 1))")
+            }
+            finishRequired(&picked, now: day(offset))
+            picked.refreshIfNeeded(catalog: catalog, now: day(offset + 1))
+        }
+        // Day 10: the pick on day 3 left the six-day lookback, six trained days behind: forced.
+        if picked.bundle.mode != .fullRecovery { errors.append("six trained days after the picked rest should force the next, got \(picked.bundle.mode)") }
+
         // A token spent mid-week counts as the rest, so the forced day moves out a week.
         var token = GameSnapshot.fresh(catalog: catalog, now: dayOne)
         token.player.fullRecoveryBank = 1
@@ -168,15 +198,27 @@ enum RestRules {
         if ran.bundle.quests.contains(where: { TrainingDay.isRaceRun($0) }) || !ran.bundle.quests.contains(where: { TrainingDay.isStrength($0) && $0.id != DailyStretch.questId }) {
             errors.append("50 km in six days should drop the run and keep the lifts, got \(ran.bundle.quests.map(\.title))")
         }
-        // "No gym today" stands outside the rule: two 10Ks on a full window.
+        // "No gym today" adds one 10K that never counts: one run on a full window, two when the window needs one.
         var noGym = ran
         _ = noGym.setNoGym(true, catalog: catalog, now: dayOne)
-        if noGym.bundle.quests.filter({ TrainingDay.isRaceRun($0) }).count != 2 {
-            errors.append("a no-gym day should run two 10Ks on a full window, got \(noGym.bundle.quests.map(\.title))")
+        if noGym.bundle.quests.filter({ TrainingDay.isRaceRun($0) }).count != 1 {
+            errors.append("a no-gym day on a full window should run only the added 10K, got \(noGym.bundle.quests.map(\.title))")
         }
         ran.questHistory.removeLast()
         ran.rebuildBundle(catalog: catalog, now: dayOne)
         if !ran.bundle.quests.contains(where: { TrainingDay.isRaceRun($0) }) { errors.append("40 km in six days should keep the run") }
+        var noGymShort = ran
+        _ = noGymShort.setNoGym(true, catalog: catalog, now: dayOne)
+        if noGymShort.bundle.quests.filter({ TrainingDay.isRaceRun($0) }).count != 2 {
+            errors.append("a no-gym day with 40 km behind it should run the window's 10K plus the added one, got \(noGymShort.bundle.quests.map(\.title))")
+        }
+        // Offline, a past no-gym day's added 10K comes off the window too.
+        var discounted = ran
+        discounted.questHistory.append(QuestDayRecord(dayKey: QuestDay.key(byAddingDays: -5, to: ran.bundle.dayKey), mode: .performanceTraining, trainingBand: .green,
+                                                      noGym: true, generatedBy: "fallback", missedRequired: false, quests: [runRecord]))
+        if discounted.loggedRunKm(before: discounted.bundle.dayKey) != 40 {
+            errors.append("a no-gym day's single 10K should give the window nothing, got \(discounted.loggedRunKm(before: discounted.bundle.dayKey))")
+        }
         return errors
     }
 }

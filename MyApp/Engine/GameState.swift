@@ -40,8 +40,10 @@ struct GameSnapshot: Codable, Equatable {
     var hiddenUnlocks: [HiddenQuestUnlock] = []
     /// A real emergency quest failed on this day. Ending the day then opens a penalty.
     var emergencyFailedDayKey: String?
-    /// Quest day the player marked "No gym today". Lifts become a second 10K on that day only.
+    /// Quest day the player marked "No gym today". Lifts become one added 10K on that day only.
     var noGymDayKey: String?
+    /// Quest day the planner made the week's rest day. `restDue` then locks it to Full Recovery.
+    var plannerRestDayKey: String?
     /// Earned on perfect days. Spent in `Shop`.
     var gold: Int = 0
     /// Potions used, oldest first. Prices, cooldowns, and stat excuses read this.
@@ -289,16 +291,39 @@ struct GameSnapshot: Codable, Equatable {
     /// Header of the free weekly rest day. A token day keeps the catalog's "Full Recovery Day".
     static let restDayHeader = "Rest Day"
 
-    /// The seventh day rests. True when the six quest days before `dayKey` are all on record and none was a
-    /// Full Recovery day, from a token or an earlier rest. A day the app never saw counts as rest.
+    private func recordedModes() -> [String: QuestMode] {
+        Dictionary(questHistory.map { ($0.dayKey, $0.mode) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Quest days trained in a row before `dayKey`: recorded days back from yesterday until a Full Recovery day
+    /// or a day the app never saw.
+    func trainedDaysInARow(before dayKey: String) -> Int {
+        let modes = recordedModes()
+        var count = 0
+        while count < QuestDayRecord.keepDays, let mode = modes[QuestDay.key(byAddingDays: -(count + 1), to: dayKey)], mode != .fullRecovery {
+            count += 1
+        }
+        return count
+    }
+
+    /// A Full Recovery day (a token, a forced rest, or the planner's pick) sits in the six quest days before `dayKey`.
+    func restTaken(before dayKey: String) -> Bool {
+        let modes = recordedModes()
+        return (1..<ModePicker.restEveryDays).contains { modes[QuestDay.key(byAddingDays: -$0, to: dayKey)] == .fullRecovery }
+    }
+
+    /// Today rests: the planner picked it, or six quest days trained in a row and the seventh is forced.
     /// An open penalty is served first: no rest day while the tier is above 0.
     func restDue(on dayKey: String) -> Bool {
         guard player.penaltyTier == 0 else { return false }
-        let modes = Dictionary(questHistory.map { ($0.dayKey, $0.mode) }, uniquingKeysWith: { first, _ in first })
-        for daysAgo in 1..<ModePicker.restEveryDays {
-            guard let mode = modes[QuestDay.key(byAddingDays: -daysAgo, to: dayKey)], mode != .fullRecovery else { return false }
-        }
-        return true
+        return plannerRestDayKey == dayKey || trainedDaysInARow(before: dayKey) >= ModePicker.restEveryDays - 1
+    }
+
+    /// The planner may make `dayKey` the rest day: no penalty, no rest in the last six days, not already forced,
+    /// and at least `ModePicker.restMinTrainedDays` trained days behind it, so two rests never touch.
+    func restAvailable(on dayKey: String) -> Bool {
+        player.penaltyTier == 0 && !restDue(on: dayKey) && !restTaken(before: dayKey)
+            && trainedDaysInARow(before: dayKey) >= ModePicker.restMinTrainedDays
     }
 
     /// Today is the free weekly rest day, not a token day.
@@ -307,9 +332,13 @@ struct GameSnapshot: Codable, Equatable {
     }
 
     /// Offline stand-in for the planner's run window: km logged on the run rows of the six quest days before `dayKey`.
+    /// A "No gym today" day gives up its added 10K, like `TrainingHistory.windowKm`.
     func loggedRunKm(before dayKey: String) -> Double {
         let keys = Set((1..<ModePicker.restEveryDays).map { QuestDay.key(byAddingDays: -$0, to: dayKey) })
-        return questHistory.filter { keys.contains($0.dayKey) }.flatMap(\.quests).filter { $0.unit == "km" }.reduce(0) { $0 + $1.done }
+        return questHistory.filter { keys.contains($0.dayKey) }.reduce(0) { total, day in
+            let km = day.quests.filter { $0.unit == "km" }.reduce(0) { $0 + $1.done }
+            return total + (day.noGym ? max(0, km - Double(TrainingHistory.noGymAddedKm)) : km)
+        }
     }
 
     /// Readiness band that sizes the bundle day's Training quests, after the sleep adjustment.
@@ -412,8 +441,8 @@ struct GameSnapshot: Codable, Equatable {
         let today = GymSplit.today(history: questHistory, dayKey: dayKey, goals: catalog.strengthGoals)
         var split = GymSplit.apply(today, to: catalogDay, band: decision.trainingBand, now: now)
         // The 50 km window is already full: a rest day from running. The lifts stay.
-        // A "No gym today" day stands outside the rule: `NoGymDay.cardioOnly` gives it two 10Ks regardless.
-        if decision.selectedMode == .performanceTraining, noGymDayKey != dayKey, loggedRunKm(before: dayKey) >= Double(TrainingDay.runKmPer7Days) {
+        // On a "No gym today" day `finished` then adds the one 10K that never counts.
+        if decision.selectedMode == .performanceTraining, loggedRunKm(before: dayKey) >= Double(TrainingDay.runKmPer7Days) {
             split.quests.removeAll { $0.kind != .penalty && TrainingDay.isRaceRun($0) }
         }
         bundle = finished(split, catalog: catalog, now: now)
@@ -473,7 +502,7 @@ extension GameSnapshot {
         case finance
         case fullRecoveryDayKey, queuedFullRecoveryDayKey, hasDistractorSelection
         case hiddenUnlocks
-        case emergencyFailedDayKey, noGymDayKey
+        case emergencyFailedDayKey, noGymDayKey, plannerRestDayKey
         case questHistory, screenTime
         case gold, potionLog, lastGoldReward
         case hitPoints, fatigue
@@ -496,6 +525,7 @@ extension GameSnapshot {
         hiddenUnlocks = try container.decodeIfPresent([HiddenQuestUnlock].self, forKey: .hiddenUnlocks) ?? []
         emergencyFailedDayKey = try container.decodeIfPresent(String.self, forKey: .emergencyFailedDayKey)
         noGymDayKey = try container.decodeIfPresent(String.self, forKey: .noGymDayKey)
+        plannerRestDayKey = try container.decodeIfPresent(String.self, forKey: .plannerRestDayKey)
         generationAttemptDayKey = try container.decodeIfPresent(String.self, forKey: .generationAttemptDayKey)
         generatedBundle = try container.decodeIfPresent(QuestBundle.self, forKey: .generatedBundle)
         questHistory = try container.decodeIfPresent([QuestDayRecord].self, forKey: .questHistory) ?? []
@@ -524,6 +554,7 @@ extension GameSnapshot {
         try container.encode(hiddenUnlocks, forKey: .hiddenUnlocks)
         try container.encodeIfPresent(emergencyFailedDayKey, forKey: .emergencyFailedDayKey)
         try container.encodeIfPresent(noGymDayKey, forKey: .noGymDayKey)
+        try container.encodeIfPresent(plannerRestDayKey, forKey: .plannerRestDayKey)
         try container.encode(questHistory, forKey: .questHistory)
         try container.encodeIfPresent(screenTime, forKey: .screenTime)
         try container.encodeIfPresent(generationAttemptDayKey, forKey: .generationAttemptDayKey)

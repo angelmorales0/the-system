@@ -709,6 +709,10 @@ final class GameStore: ObservableObject {
             allowGenerationRetry(dayKey: dayKey)
             return
         }
+        if result.restToday {
+            takePlannerRest(dayKey: dayKey)
+            return
+        }
         guard bundle.generatedBy != "fallback" else { return }
         let now = Date()
         guard snapshot.bundle.dayKey == dayKey, snapshot.generationAttemptDayKey == dayKey else { return }
@@ -724,6 +728,22 @@ final class GameStore: ObservableObject {
         snapshot = next
         runningTimersRemoveMissing()
         persist()
+    }
+
+    /// The planner made today the week's rest day. The day locks to Full Recovery and the catalog writes the Rest Day.
+    private func takePlannerRest(dayKey: String) {
+        let now = Date()
+        guard snapshot.bundle.dayKey == dayKey, snapshot.generationAttemptDayKey == dayKey,
+              !snapshot.bundle.quests.contains(where: { $0.status == .completed }),
+              snapshot.runningTimers.isEmpty, snapshot.restAvailable(on: dayKey) else { return }
+        var next = snapshot
+        next.plannerRestDayKey = dayKey
+        next.generatedBundle = nil
+        next.rebuildBundle(catalog: catalog, now: now)
+        snapshot = next
+        runningTimersRemoveMissing()
+        persist()
+        enforcePenalty()
     }
 
     /// No reply came back: clear today's attempt so the next open or refresh plans again, up to the daily limit.

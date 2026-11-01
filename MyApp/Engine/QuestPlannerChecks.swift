@@ -145,9 +145,17 @@ extension QuestPlanner {
             errors.append("a 10K on a full window should be rejected")
         }
         let noGymRest = setting(restWindow, ["constraints", "noGymToday"], to: .bool(true))
-        if titles(templateBundle(noGymRest)).filter({ $0 == "10K Run" }).count != 2 || !validateBundle(sanitize(templateBundle(noGymRest), noGymRest), noGymRest).isEmpty {
-            errors.append("a no-gym day should run two 10Ks even on a full window, got \(titles(templateBundle(noGymRest)))")
+        if titles(templateBundle(noGymRest)).filter({ $0 == "10K Run" }).count != 1 || !validateBundle(sanitize(templateBundle(noGymRest), noGymRest), noGymRest).isEmpty {
+            errors.append("a no-gym day on a full window should run only the added 10K, got \(titles(templateBundle(noGymRest)))")
         }
+        // The model may rest only when the app says the week's rest is open.
+        var attempts = Attempts()
+        let restReply = ClaudeReply.reply(stopReason: "end_turn", text: #"{"restToday": true, "quests": []}"#)
+        if attempts.take(restReply, context: sampleRequest()) != .retry || !attempts.feedback.joined().contains("rest is not available") {
+            errors.append("restToday without rest.available should be sent back")
+        }
+        let restOpen = setting(sampleRequest(), ["rest"], to: .object(["available": .bool(true), "trainedDaysInARow": .number(4), "forcedAfterDays": .number(6)]))
+        if attempts.take(restReply, context: restOpen) != .rest { errors.append("restToday with rest.available should rest") }
         let paced = setting(setting(base, ["quests", 0, "title"], to: .string("Easy 10K @ 5:30/km")), ["narrative"], to: .string("Run it easy."))
         if titles(sanitize(paced, sampleRequest())).first != "10K Run" { errors.append("a run title should be only 10K Run") }
         if decodedBundle(sanitize(templateBundle(sampleRequest()), sampleRequest())) == nil { errors.append("a sanitized template should decode as a QuestBundle") }

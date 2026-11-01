@@ -25,6 +25,9 @@ enum TrainingHistory {
     static let runKmPer7Days = 50
     static let runStepKm = 5
     static let maxRunKmPerDay = 20
+    /// Km a "No gym today" day adds on top of the window's runs. They never count toward the 50 km window:
+    /// this much is taken off such a day when the window is built.
+    static let noGymAddedKm = 10
 
     // Fatigue: a lift is declining when its newest session scores under 97% of the better of the two before it.
     static let declineShare = 0.97
@@ -91,7 +94,7 @@ enum TrainingHistory {
             "runs": .array(runs),
             "recovery": .array(recovery),
             "week": weekSummary(runs: runs, sessions: sessions, questDays: questDays),
-            "runWindow": runWindow(runs, goalKm: goalKm),
+            "runWindow": runWindow(runs, goalKm: goalKm, noGymDays: Set(questDays.filter { $0["noGym"].truthy }.compactMap { $0["dayKey"]?.stringValue })),
             "fatigue": fatigueSummary(lifts.json, recovery: recovery),
             "limits": .object([
                 "heavyLowerMaxPer7Days": .number(Double(heavyLowerMaxPer7Days)),
@@ -431,9 +434,21 @@ enum TrainingHistory {
         Array(repeating: "10K", count: km / 10) + Array(repeating: "5K", count: (km % 10) / runStepKm)
     }
 
+    /// Km of the last 6 days that count toward the window: a "No gym today" day gives up its added 10K.
+    static func windowKm(_ runs: [JSONValue], noGymDays: Set<String>) -> Double {
+        var total = runKm(runs, 1...6)
+        for day in noGymDays {
+            let dayKm = runs.filter { $0["counts"].truthy && $0["date"]?.stringValue == day && (1...6).contains(Int($0["daysAgo"]?.doubleValue ?? -1)) }
+                .reduce(0) { $0 + ($1["km"]?.doubleValue ?? 0) }
+            total -= min(dayKm, Double(noGymAddedKm))
+        }
+        return pyRound(max(0, total), 2)
+    }
+
     /// What today must run so the 7 days ending today hold `goalKm`. The last 6 days count; today's runs fill the rest.
-    static func runWindow(_ runs: [JSONValue], goalKm: Int) -> JSONValue {
-        let prior = runKm(runs, 1...6)
+    /// `noGymDays` are quest days that ran an added 10K: its km are taken off (`noGymAddedKm`).
+    static func runWindow(_ runs: [JSONValue], goalKm: Int, noGymDays: Set<String> = []) -> JSONValue {
+        let prior = windowKm(runs, noGymDays: noGymDays)
         let needed = max(0, Double(goalKm) - prior)
         let hundredths = Int(needed * 100)
         let steps = (hundredths + runStepKm * 100 - 1) / (runStepKm * 100)
@@ -448,6 +463,7 @@ enum TrainingHistory {
             "shortfallKm": .number(pyRound(max(0, needed - Double(planned)), 2)),
             // Tomorrow these km leave the window, so tomorrow needs about this much again.
             "kmLeavingTomorrow": .number(runKm(runs, 6...6)),
+            "noGymDaysDiscounted": .array(noGymDays.sorted().map(JSONValue.string)),
         ])
     }
 
@@ -499,8 +515,7 @@ enum TrainingHistory {
     }
 
     /// Hard limits the model cannot talk its way past. Runs on every generated Training bundle.
-    /// `noGym`: a "No gym today" day runs two 10Ks whatever the window says, so the window's km rule is skipped.
-    /// The daily caps still hold.
+    /// `noGym`: a "No gym today" day runs the window's km plus one added 10K, when that stays under the day cap.
     static func limitProblems(_ bundle: JSONValue, _ history: JSONValue?, noGym: Bool = false) -> [String] {
         guard bundle["mode"]?.stringValue == "performance_training" else { return [] }
         let quests = (bundle["quests"]?.arrayValue ?? []).filter { $0.objectValue != nil }
@@ -518,11 +533,18 @@ enum TrainingHistory {
         if tenKs > maxTenKsPerDay { problems.append("more than \(maxTenKsPerDay) 10Ks in one day") }
         let km = plannedRunKm(quests)
         if km > maxRunKmPerDay { problems.append("more than \(maxRunKmPerDay) km of runs in one day") }
-        if !noGym, let planned = history?["runWindow"]?["plannedKmToday"]?.intValue, km != planned {
-            let goal = history?["runWindow"]?["goalKm"]?.intValue.map(String.init) ?? "None"
-            problems.append(planned == 0
-                ? "the last 6 days already hold \(goal) km; today is a rest day from running with 0 km of runs, the plan has \(km)"
-                : "today needs exactly \(planned) km of runs to keep \(goal) km in 7 days, the plan has \(km)")
+        if let planned = history?["runWindow"]?["plannedKmToday"]?.intValue {
+            let expected = noGym && planned + noGymAddedKm <= maxRunKmPerDay ? planned + noGymAddedKm : planned
+            if km != expected {
+                let goal = history?["runWindow"]?["goalKm"]?.intValue.map(String.init) ?? "None"
+                if noGym {
+                    problems.append("a no-gym day runs the window's \(planned) km plus one added 10K: \(expected) km of runs, the plan has \(km)")
+                } else if planned == 0 {
+                    problems.append("the last 6 days already hold \(goal) km; today is a rest day from running with 0 km of runs, the plan has \(km)")
+                } else {
+                    problems.append("today needs exactly \(planned) km of runs to keep \(goal) km in 7 days, the plan has \(km)")
+                }
+            }
         }
         guard quests.contains(where: { questIsHeavyLower($0, lifts: lifts) }) else { return problems }
         if tenKs >= 2 { problems.append("heavy squats or deadlifts on a two-10K day") }
@@ -720,11 +742,25 @@ enum TrainingHistory {
             errors.append("a run should be rejected when the window is already full")
         }
         if !limitProblems(bundle(hevy("Bench Press", ["minReps": .number(5)])), .object(rested)).isEmpty { errors.append("lifts alone should pass on a run rest day") }
-        // "No gym today" runs two 10Ks outside the window rule, on a full window and on a 20 km day alike.
-        if !limitProblems(bundle(tenKQuest, tenKQuest), .object(rested), noGym: true).isEmpty || !limitProblems(bundle(tenKQuest, tenKQuest), .object(windowed), noGym: true).isEmpty {
-            errors.append("a no-gym day's two 10Ks should pass whatever the window says")
+        // "No gym today": the window's runs plus one added 10K. A full window gives one 10K; a 20 km day stays at two.
+        if !limitProblems(bundle(tenKQuest), .object(rested), noGym: true).isEmpty || limitProblems(bundle(tenKQuest, tenKQuest), .object(rested), noGym: true).isEmpty {
+            errors.append("a no-gym day on a full window should run exactly one 10K")
         }
-        if limitProblems(bundle(tenKQuest, tenKQuest, tenKQuest), .object(rested), noGym: true).isEmpty { errors.append("a no-gym day still keeps the two-10K cap") }
+        if !limitProblems(bundle(tenKQuest, tenKQuest), .object(windowed), noGym: true).isEmpty || limitProblems(bundle(tenKQuest), .object(windowed), noGym: true).isEmpty {
+            errors.append("a no-gym day that needs 20 km should run two 10Ks and no more")
+        }
+        // The added 10K never counts: a no-gym day with 20 km gives 10 to the window.
+        func row(_ date: String, _ daysAgo: Int, _ km: Double) -> JSONValue { .object(["date": .string(date), "daysAgo": .number(Double(daysAgo)), "km": .number(km), "counts": .string("10K")]) }
+        let sixDays = [row("2026-10-21", 1, 10), row("2026-10-20", 2, 10), row("2026-10-19", 3, 10), row("2026-10-18", 4, 10), row("2026-10-17", 5, 10), row("2026-10-17", 5, 10)]
+        let plain = runWindow(sixDays, goalKm: 50)
+        let discounted = runWindow(sixDays, goalKm: 50, noGymDays: ["2026-10-17"])
+        if plain["kmLast6Days"]?.doubleValue != 60 || plain["plannedKmToday"]?.intValue != 0 || discounted["kmLast6Days"]?.doubleValue != 50 || discounted["plannedKmToday"]?.intValue != 0 {
+            errors.append("a no-gym day's added 10K should come off the window, got \(String(describing: plain["kmLast6Days"])) and \(String(describing: discounted["kmLast6Days"]))")
+        }
+        let short = runWindow(Array(sixDays.prefix(5)), goalKm: 50, noGymDays: ["2026-10-17"])
+        if short["kmLast6Days"]?.doubleValue != 40 || short["plannedKmToday"]?.intValue != 10 {
+            errors.append("a no-gym day with one 10K should give the window nothing, got \(String(describing: short["kmLast6Days"]))")
+        }
         if limitProblems(bundle(tenKQuest, tenKQuest, hevy("Bench Press", ["minReps": .number(5)])), .object(windowed)).contains(where: { $0.contains("km of runs") }) {
             errors.append("two 10Ks should pass when the window needs 20 km")
         }

@@ -63,6 +63,7 @@ enum QuestPlanner {
                 "headerLine": .object(["type": .string("string")]),
                 "narrative": .object(["type": .string("string")]),
                 "threat": .object(["type": .string("string"), "description": .string("the penalty screen's two sentences, see the system prompt")]),
+                "restToday": .object(["type": .string("boolean"), "description": .string("true only when rest.available is true and today should be the week's rest day; quests may then be empty")]),
                 "quests": .object([
                     "type": .string("array"),
                     "items": .object([
@@ -94,7 +95,7 @@ enum QuestPlanner {
                     ]),
                 ]),
             ]),
-            "required": .array(["schemaVersion", "dayKey", "mode", "headerLine", "narrative", "quests"].map(JSONValue.string)),
+            "required": .array(["schemaVersion", "dayKey", "mode", "headerLine", "narrative", "restToday", "quests"].map(JSONValue.string)),
             "additionalProperties": .bool(false),
         ])
     }()
@@ -132,6 +133,10 @@ enum QuestPlanner {
     - You may drop other accessories or a set when readiness or recovery calls for it, but keep the goals.focus exercises. Do not add exercises from other days.
     - If splitAdvice says today's heavy lift would break the heavy-leg limits, make today a run-only day: write no lifts and headerLine "Training". The same split day comes back next time.
 
+    Rest day (one in every seven quest days, you pick which):
+    - rest.available true means this week's rest day is still open: rest.trainedDaysInARow days trained since the last one, and the app forces a rest after rest.forcedAfterDays. You decide which day rests. Make today the rest day when the data calls for it: red recovery, HRV well under its 30-day average, deloadRecommended, or runsToday empty with a heavy leg day next. Never rest two days in a row.
+    - To rest, return restToday true with quests []: the app writes the Rest Day itself (no runs, no lifts, no penalty). Otherwise restToday is false. When rest.available is false, restToday must be false.
+
     Fatigue (adjust instead of pushing through):
     - Each entry in trainingHistory.lifts has a trend and advice from its newest sessions: improving, steady, stalled, declining, or dropping. Follow the advice for that lift.
     - declining: cut that lift's sets by a third and use 5-10% less weight than its last top set. dropping: half the sets at 60-70%. stalled: repeat the weight and add a rep, or drop 5% and build back. Never add weight to a declining or dropping lift; the backend rejects it.
@@ -146,7 +151,7 @@ enum QuestPlanner {
 
     Readiness:
     - modeDecision.trainingBand is WHOOP readiness, one step lower after sleep performance under 60%. Green: full plan. Yellow and red: same exercises, one fewer back-off set and top sets at RPE 7. Every band still gets the run and strength work.
-    - If constraints.noGymToday is true, the player has no gym today: write no strength quests and give two 10K runs instead. These two 10Ks stand outside the run window rule: write them whatever runsToday says, and the app does not hold them to plannedKmToday.
+    - If constraints.noGymToday is true, the player has no gym today: write no strength quests. Write the window's runs (runsToday) plus one added 10K Run, as long as the day stays at 20 km or under. The added 10K never counts toward the 50 km window: the app takes 10 km off that day when it builds later windows.
 
     App rules:
     - Obey modeDecision.selectedMode. Do not change it. lockedByRules is authoritative.
@@ -308,6 +313,8 @@ enum QuestPlanner {
 
         enum Step: Equatable {
             case accept(JSONValue)
+            /// The model made today the week's rest day. The app writes the Rest Day itself.
+            case rest
             case retry
             case stop
         }
@@ -318,6 +325,13 @@ enum QuestPlanner {
             gotReply = true
             // A refusal that every fallback also declined, or a reply cut off at max_tokens, has no usable plan.
             guard stop != "refusal", stop != "max_tokens", var raw = parseJSONObject(text)?.objectValue else { return .retry }
+            if raw["restToday"]?.boolValue == true {
+                guard context["rest"]?["available"]?.boolValue == true else {
+                    feedback = ["rest is not available today: restToday must be false"]
+                    return .retry
+                }
+                return .rest
+            }
             let locked = context["modeDecision"]?["selectedMode"]?.stringValue ?? "None"
             if raw["mode"]?.stringValue != locked {
                 feedback = ["mode must be \(locked)"]
@@ -337,6 +351,8 @@ enum QuestPlanner {
 
     enum PlanOutcome: Equatable {
         case accepted(JSONValue)
+        /// The model made today the week's rest day.
+        case rest
         /// Every reply was refused, cut off, or broke a rule: use the template.
         case rejected
         /// No reply came back at all (offline, app suspended, bad key): keep the catalog and try again later.
@@ -353,6 +369,7 @@ enum QuestPlanner {
             let reply = await send(claudeRequest(context, feedback: attempts.feedback, model: model), remaining)
             switch attempts.take(reply, context: context) {
             case .accept(let bundle): return .accepted(bundle)
+            case .rest: return .rest
             case .retry: continue
             case .stop: return attempts.gotReply ? .rejected : .unreachable
             }
@@ -430,6 +447,7 @@ enum QuestPlanner {
         let day = context["player"]?["localDate"]?.stringValue
         var cleaned = bundle.objectValue ?? [:]
         cleaned["completed"] = nil
+        cleaned["restToday"] = nil
         cleaned["schemaVersion"] = .number(1)
         if let day { cleaned["dayKey"] = .string(day) }
         if let mode, modes.contains(mode) { cleaned["mode"] = .string(mode) }
@@ -684,15 +702,15 @@ enum QuestPlanner {
     }
 
     /// No gym today: the lifts give way to 10Ks, up to two runs, like the app.
+    /// No gym: the window's runs plus one added 10K, while the day stays at two runs and 20 km.
     static func noGymQuests(_ rows: [JSONValue], day: String, mode: String) -> [JSONValue] {
         var runs = rows.filter { $0["stat"]?.stringValue != "STR" }
+        let km = runs.reduce(0.0) { $0 + (($1["verification"]?["params"]?["minDistanceMeters"]?.doubleValue ?? 0) / 1000) }
+        guard runs.count < NoGymDay.runCount, km + Double(TrainingHistory.noGymAddedKm) <= Double(TrainingHistory.maxRunKmPerDay) else { return runs }
         let taken = Set(runs.compactMap { $0["id"]?.stringValue })
-        var index = runs.count
-        while index < 2 {
-            let slug = ["run_10k_\(index + 1)", "run_10k_extra_\(index + 1)"].first { !taken.contains("q_\(day)_\($0)") } ?? "run_10k_extra_\(index + 1)"
-            runs.append(quest(day, slug, "10K Run", "daily", "END", "strava_activity", ["types": .array([.string("Run")]), "minDistanceMeters": .number(tenKMeters)], "normal", 10, "km", mode))
-            index += 1
-        }
+        let index = runs.count
+        let slug = ["run_10k_\(index + 1)", "run_10k_extra_\(index + 1)"].first { !taken.contains("q_\(day)_\($0)") } ?? "run_10k_extra_\(index + 1)"
+        runs.append(quest(day, slug, "10K Run", "daily", "END", "strava_activity", ["types": .array([.string("Run")]), "minDistanceMeters": .number(tenKMeters)], "normal", 10, "km", mode))
         return runs
     }
 

@@ -11,6 +11,8 @@ struct QuestGeneration {
     var bundle: QuestBundle
     /// True when the planner got no reply (offline, suspended, bad key). The catalog stays and the app may try again later.
     var retryLater: Bool
+    /// True when the planner made today the week's rest day. `bundle` is then the catalog's and the app writes the Rest Day.
+    var restToday = false
 }
 
 extension QuestGenerating {
@@ -96,6 +98,8 @@ struct OnDeviceQuestGenerateClient: QuestGenerating {
         switch outcome {
         case .accepted(let plan):
             raw = plan
+        case .rest:
+            return QuestGeneration(bundle: fallback.bundle, retryLater: false, restToday: true)
         case .rejected:
             raw = QuestPlanner.templateBundle(full)
         case .unreachable:

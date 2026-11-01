@@ -76,6 +76,11 @@ enum ContextBuilder {
                 rotation: GymSplit.rotation.map(\.name),
                 today: GymSplit.today(history: snapshot.questHistory, dayKey: dayKey, goals: targets.custom),
                 lastDone: GymSplit.lastDone(history: snapshot.questHistory)
+            ),
+            rest: MorningRest(
+                available: snapshot.restAvailable(on: dayKey),
+                trainedDaysInARow: snapshot.trainedDaysInARow(before: dayKey),
+                forcedAfterDays: ModePicker.restEveryDays - 1
             )
         )
     }

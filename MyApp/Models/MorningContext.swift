@@ -188,6 +188,15 @@ struct MorningGoals: Codable, Equatable {
     var bodyWeight: MorningBodyWeight
 }
 
+/// The week's rest day, as the planner sees it. One rest in every seven quest days; the planner picks which,
+/// and the app forces one after `forcedAfterDays` trained days in a row.
+struct MorningRest: Codable, Equatable {
+    /// The planner may make today the rest day.
+    var available: Bool
+    var trainedDaysInARow: Int
+    var forcedAfterDays: Int
+}
+
 /// Redacted morning summary. Mercury is category totals only, and only after a backend snapshot.
 struct MorningContext: Codable, Equatable {
     var schemaVersion: Int
@@ -204,4 +213,5 @@ struct MorningContext: Codable, Equatable {
     var recentDays: [QuestDayRecord] = []
     var goals: MorningGoals? = nil
     var split: MorningSplit? = nil
+    var rest: MorningRest? = nil
 }
