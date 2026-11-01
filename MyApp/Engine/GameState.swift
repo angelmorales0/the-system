@@ -162,6 +162,9 @@ struct GameSnapshot: Codable, Equatable {
         if signals.spendingFullRecovery || fullRecoveryDayKey == today {
             return "Full Recovery is already assigned for today."
         }
+        if bundle.dayKey == today, isRestDay {
+            return "Today is already a rest day. The token stays in the bank."
+        }
         if queuedFullRecoveryDayKey != nil {
             return "A Full Recovery day is already queued."
         }
@@ -270,15 +273,43 @@ struct GameSnapshot: Codable, Equatable {
     /// Picker input from today's reading only. Yesterday's reading never sizes today.
     /// With no reading today the band is green and sleep makes no adjustment, like the planner's default.
     func modeInput(now: Date) -> ModePickerInput {
-        Self.modeInput(spendingFullRecovery: signals.spendingFullRecovery, readiness: readiness(on: QuestDay.key(for: now)))
+        let dayKey = QuestDay.key(for: now)
+        return Self.modeInput(spendingFullRecovery: signals.spendingFullRecovery, readiness: readiness(on: dayKey), restDue: restDue(on: dayKey))
     }
 
-    static func modeInput(spendingFullRecovery: Bool, readiness: ReadinessSnapshot?) -> ModePickerInput {
+    static func modeInput(spendingFullRecovery: Bool, readiness: ReadinessSnapshot?, restDue: Bool = false) -> ModePickerInput {
         ModePickerInput(
             spendingFullRecovery: spendingFullRecovery,
             readinessBand: readiness?.band ?? .green,
-            sleepPerformance: readiness?.sleepPerformance
+            sleepPerformance: readiness?.sleepPerformance,
+            restDue: restDue
         )
+    }
+
+    /// Header of the free weekly rest day. A token day keeps the catalog's "Full Recovery Day".
+    static let restDayHeader = "Rest Day"
+
+    /// The seventh day rests. True when the six quest days before `dayKey` are all on record and none was a
+    /// Full Recovery day, from a token or an earlier rest. A day the app never saw counts as rest.
+    /// An open penalty is served first: no rest day while the tier is above 0.
+    func restDue(on dayKey: String) -> Bool {
+        guard player.penaltyTier == 0 else { return false }
+        let modes = Dictionary(questHistory.map { ($0.dayKey, $0.mode) }, uniquingKeysWith: { first, _ in first })
+        for daysAgo in 1..<ModePicker.restEveryDays {
+            guard let mode = modes[QuestDay.key(byAddingDays: -daysAgo, to: dayKey)], mode != .fullRecovery else { return false }
+        }
+        return true
+    }
+
+    /// Today is the free weekly rest day, not a token day.
+    var isRestDay: Bool {
+        bundle.mode == .fullRecovery && !signals.spendingFullRecovery && fullRecoveryDayKey != bundle.dayKey && restDue(on: bundle.dayKey)
+    }
+
+    /// Offline stand-in for the planner's run window: km logged on the run rows of the six quest days before `dayKey`.
+    func loggedRunKm(before dayKey: String) -> Double {
+        let keys = Set((1..<ModePicker.restEveryDays).map { QuestDay.key(byAddingDays: -$0, to: dayKey) })
+        return questHistory.filter { keys.contains($0.dayKey) }.flatMap(\.quests).filter { $0.unit == "km" }.reduce(0) { $0 + $1.done }
     }
 
     /// Readiness band that sizes the bundle day's Training quests, after the sleep adjustment.
@@ -379,14 +410,22 @@ struct GameSnapshot: Codable, Equatable {
         )
         // Offline, the day still follows the split: its exercises without loads.
         let today = GymSplit.today(history: questHistory, dayKey: dayKey, goals: catalog.strengthGoals)
-        let split = GymSplit.apply(today, to: catalogDay, band: decision.trainingBand, now: now)
+        var split = GymSplit.apply(today, to: catalogDay, band: decision.trainingBand, now: now)
+        // The 50 km window is already full: a rest day from running. The lifts stay.
+        if decision.selectedMode == .performanceTraining, loggedRunKm(before: dayKey) >= Double(TrainingDay.runKmPer7Days) {
+            split.quests.removeAll { $0.kind != .penalty && TrainingDay.isRaceRun($0) }
+        }
         bundle = finished(split, catalog: catalog, now: now)
     }
 
     /// Adds the fixed rows every day gets: Stretching, then any open penalty.
     /// On a "No gym today" day, the lifts first give way to a second 10K.
     func finished(_ bundle: QuestBundle, catalog: FallbackCatalog, now: Date) -> QuestBundle {
-        let day = noGymDayKey == bundle.dayKey ? NoGymDay.cardioOnly(bundle, now: now) : bundle
+        var day = noGymDayKey == bundle.dayKey ? NoGymDay.cardioOnly(bundle, now: now) : bundle
+        if day.mode == .fullRecovery, !signals.spendingFullRecovery, fullRecoveryDayKey != day.dayKey, restDue(on: day.dayKey) {
+            day.headerLine = Self.restDayHeader
+            day.narrative = "The seventh day. Training is waived; the body does the work."
+        }
         return PenaltyQuests.ensure(
             in: DailyStretch.ensure(in: ScreenTime.ensure(in: day, now: now), now: now),
             tier: player.penaltyTier,

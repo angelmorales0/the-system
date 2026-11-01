@@ -516,9 +516,11 @@ enum TrainingHistory {
         if tenKs > maxTenKsPerDay { problems.append("more than \(maxTenKsPerDay) 10Ks in one day") }
         let km = plannedRunKm(quests)
         if km > maxRunKmPerDay { problems.append("more than \(maxRunKmPerDay) km of runs in one day") }
-        if let planned = history?["runWindow"]?["plannedKmToday"]?.intValue, km < planned {
+        if let planned = history?["runWindow"]?["plannedKmToday"]?.intValue, km != planned {
             let goal = history?["runWindow"]?["goalKm"]?.intValue.map(String.init) ?? "None"
-            problems.append("today needs \(planned) km of runs to keep \(goal) km in 7 days, the plan has \(km)")
+            problems.append(planned == 0
+                ? "the last 6 days already hold \(goal) km; today is a rest day from running with 0 km of runs, the plan has \(km)"
+                : "today needs exactly \(planned) km of runs to keep \(goal) km in 7 days, the plan has \(km)")
         }
         guard quests.contains(where: { questIsHeavyLower($0, lifts: lifts) }) else { return problems }
         if tenKs >= 2 { problems.append("heavy squats or deadlifts on a two-10K day") }
@@ -706,6 +708,18 @@ enum TrainingHistory {
         windowed["runWindow"] = window
         if !limitProblems(bundle(tenKQuest, hevy("Bench Press", ["minReps": .number(5)])), .object(windowed)).contains(where: { $0.contains("km of runs") }) {
             errors.append("one 10K should be rejected when the window needs 20 km today")
+        }
+        // The window is full: no run today, and a run is rejected. The lifts still pass.
+        let full = runWindow((1...5).map { tenK($0, 10) }, goalKm: 50)
+        if full["plannedKmToday"]?.intValue != 0 || full["runsToday"] != .array([]) { errors.append("50 km in six days should plan no run, got \(full)") }
+        var rested = limits
+        rested["runWindow"] = full
+        if !limitProblems(bundle(tenKQuest, hevy("Bench Press", ["minReps": .number(5)])), .object(rested)).contains(where: { $0.contains("rest day from running") }) {
+            errors.append("a run should be rejected when the window is already full")
+        }
+        if !limitProblems(bundle(hevy("Bench Press", ["minReps": .number(5)])), .object(rested)).isEmpty { errors.append("lifts alone should pass on a run rest day") }
+        if limitProblems(bundle(tenKQuest, tenKQuest, hevy("Bench Press", ["minReps": .number(5)])), .object(windowed)).contains(where: { $0.contains("km of runs") }) {
+            errors.append("two 10Ks should pass when the window needs 20 km")
         }
         if !limitProblems(.object(["mode": .string("full_recovery"), "quests": .array([tenKQuest, tenKQuest, tenKQuest])]), base).isEmpty {
             errors.append("limits apply only to Training days")

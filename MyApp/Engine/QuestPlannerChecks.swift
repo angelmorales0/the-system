@@ -137,6 +137,13 @@ extension QuestPlanner {
         let fullWindow = setting(setting(window, ["trainingHistory"], to: .object(["runWindow": .object(["plannedKmToday": .number(20), "runsToday": .array([.string("10K"), .string("10K")])])])),
                                  ["constraints", "noGymToday"], to: .bool(true))
         if titles(templateBundle(fullWindow)) != ["10K Run", "10K Run"] { errors.append("a no-gym day with two 10Ks planned should not add a third") }
+        let restWindow = setting(sampleRequest(), ["trainingHistory"], to: .object(["runWindow": .object(["plannedKmToday": .number(0), "goalKm": .number(50), "runsToday": .array([])])]))
+        if titles(templateBundle(restWindow)).contains(where: { $0.hasSuffix("Run") }) || !validateBundle(sanitize(templateBundle(restWindow), restWindow), restWindow).isEmpty {
+            errors.append("a full window should give a template with no run, got \(titles(templateBundle(restWindow)))")
+        }
+        if !validateBundle(templateBundle(sampleRequest()), restWindow).contains(where: { $0.contains("rest day from running") }) {
+            errors.append("a 10K on a full window should be rejected")
+        }
         let paced = setting(setting(base, ["quests", 0, "title"], to: .string("Easy 10K @ 5:30/km")), ["narrative"], to: .string("Run it easy."))
         if titles(sanitize(paced, sampleRequest())).first != "10K Run" { errors.append("a run title should be only 10K Run") }
         if decodedBundle(sanitize(templateBundle(sampleRequest()), sampleRequest())) == nil { errors.append("a sanitized template should decode as a QuestBundle") }

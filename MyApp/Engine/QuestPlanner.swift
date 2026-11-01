@@ -141,7 +141,7 @@ enum QuestPlanner {
     Running with lifting:
     - Heavy lower-body work interferes with running. Obey trainingHistory.limits: at most heavyLowerMaxPer7Days heavy squat or deadlift days in 7, at least heavyLowerMinDaysApart days apart, and no heavy squats or deadlifts on a two-10K day. The backend rejects any plan that breaks these.
     - Put upper-body and light lower-body work on days next to heavy leg days.
-    - Write at least trainingHistory.runWindow.runsToday as run quests. You may add runs when the window has room for recovery, but never more than 20 km or maxTenKsPerDay 10Ks in a day. The backend rejects a day with fewer km than plannedKmToday. If runsToday is empty, the window is already full: a 10K is still the default.
+    - Write exactly trainingHistory.runWindow.runsToday as run quests: never more, never fewer, never over 20 km or maxTenKsPerDay 10Ks in a day. The app rejects a day whose run km differ from plannedKmToday. If runsToday is empty, the last 6 days already hold goals.runKmPer7Days km: write no run quest. Today is a rest day from running; the lifts stay.
     - A run quest's title is exactly "10K Run" or "5K Run". Give no pace, speed, heart rate, or effort for runs, in titles or the narrative: the player sets the pace.
 
     Readiness:
@@ -648,10 +648,11 @@ enum QuestPlanner {
         return [run, bench]
     }
 
-    /// Today's runs from the 50 km window: two 10Ks, a 10K and a 5K, or the default 10K.
+    /// Today's runs from the 50 km window: two 10Ks, a 10K and a 5K, or none when the window is already full.
+    /// Without a window (no history yet) the rows keep their default 10K.
     static func windowRuns(_ rows: [JSONValue], context: JSONValue, day: String, mode: String) -> [JSONValue] {
-        let planned = (context["trainingHistory"]?["runWindow"]?["runsToday"]?.arrayValue ?? []).compactMap(\.stringValue)
-        guard !planned.isEmpty else { return rows }
+        guard let window = context["trainingHistory"]?["runWindow"], window.objectValue != nil else { return rows }
+        let planned = (window["runsToday"]?.arrayValue ?? []).compactMap(\.stringValue)
         let lifts = rows.filter { $0["stat"]?.stringValue != "END" }
         let runs = planned.enumerated().map { index, label in
             let meters = label == "10K" ? tenKMeters : fiveKMeters
