@@ -446,7 +446,8 @@ struct PlayerState: Codable, Equatable {
     }
 }
 
-/// Placeholder morning inputs. WHOOP replaces these later.
+/// Placeholder morning inputs. Only `spendingFullRecovery` drives the day.
+/// The band and sleep stay for old saves. The picker reads `GameSnapshot.readiness` captured today.
 struct MorningSignals: Codable, Equatable {
     var readinessBand: ReadinessBand
     var sleepPerformance: Int?

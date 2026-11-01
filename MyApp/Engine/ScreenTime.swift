@@ -7,6 +7,8 @@ import FamilyControls
 
 /// The daily screen time quest: phone minutes from Screen Time, work minutes (the Mac) from the backend.
 /// Only the combined total can fail it. A sub-cap over its limit only turns its line red.
+/// Phone minutes that overlap Mac minutes count once. Until the Macs report their minutes, the full
+/// possible overlap is taken out, so the total is never inflated (see `ScreenTimeDay.sharedMinutes`).
 /// At 500 minutes the row turns yellow. Past the 30-minute grace (over 530) the quest fails,
 /// the day misses its required set, and a penalty opens at the day's end.
 enum ScreenTime {
@@ -65,10 +67,17 @@ struct ScreenTimeDay: Codable, Equatable {
     var phoneMeasured = false
     var workMeasured = false
     /// Phone minutes that surely happened while a Mac was also counting (see `ScreenOverlap`). Counted once.
-    /// Optional, so days saved before it existed still load.
+    /// Nil until the Macs' minute bitmap arrives. Optional, so days saved before it existed still load.
     var overlapMinutes: Int?
 
-    var sharedMinutes: Int { min(overlapMinutes ?? 0, phoneMinutes, workMinutes) }
+    /// True once the Macs' minute bitmap gave a real overlap count.
+    var overlapMeasured: Bool { overlapMinutes != nil }
+    /// Minutes counted once. With no measurement, every phone minute may have been a Mac minute too,
+    /// so the full possible overlap is taken out: the total is never inflated by double counting.
+    var sharedMinutes: Int {
+        guard let overlapMinutes else { return min(phoneMinutes, workMinutes) }
+        return min(overlapMinutes, phoneMinutes, workMinutes)
+    }
     var totalMinutes: Int { phoneMinutes + workMinutes - sharedMinutes }
     /// Red line, no failure.
     var phoneOver: Bool { phoneMinutes > ScreenTime.phoneCapMinutes }
@@ -246,7 +255,7 @@ enum ScreenTimeRules {
         }
 
         // 8 h of work and 30 min of phone is 510, past the 500 cap: work is red, the row is yellow, the quest still holds.
-        snapshot.applyScreenTime(phoneMinutes: 30, workMinutes: 480)
+        snapshot.applyScreenTime(phoneMinutes: 30, workMinutes: 480, overlapMinutes: 0)
         let day = snapshot.screenTimeToday
         let quest = snapshot.bundle.quests.first { $0.id == ScreenTime.questId }
         if !day.workOver || day.phoneOver || day.overTotal || !day.atCap || quest?.status != .pending || quest?.progress.current != 510 {
@@ -292,6 +301,7 @@ enum ScreenTimeRules {
         var exact = ScreenTimeDay(dayKey: "x")
         exact.workMinutes = 420
         exact.phoneMinutes = 90
+        exact.overlapMinutes = 0
         if exact.workOver || exact.phoneOver || exact.overTotal || !exact.atCap {
             errors.append("7 h work and 1.5 h phone should be inside both sub-caps and the grace")
         }
@@ -316,9 +326,31 @@ enum ScreenTimeRules {
             both.phoneMinutes = 60
             both.workMinutes = 60
             both.overlapMinutes = 50
-            if both.totalMinutes != 70 || both.sharedMinutes != 50 {
+            if both.totalMinutes != 70 || both.sharedMinutes != 50 || !both.overlapMeasured {
                 errors.append("an hour on each with 50 shared minutes should total 70, got \(both.totalMinutes)")
             }
+        }
+        // No overlap measurement yet: the phone minutes may all be Mac minutes too, so the total is the larger side.
+        var unknown = ScreenTimeDay(dayKey: "x")
+        unknown.phoneMinutes = 90
+        unknown.workMinutes = 480
+        if unknown.overlapMeasured || unknown.sharedMinutes != 90 || unknown.totalMinutes != 480 || unknown.overTotal {
+            errors.append("without an overlap count 90 phone + 480 work should total 480, got \(unknown.totalMinutes)")
+        }
+        // One side alone past the grace still fails, with or without the measurement.
+        unknown.phoneMinutes = 531
+        if !unknown.overTotal || unknown.totalMinutes != 531 {
+            errors.append("531 phone minutes should fail even before the overlap is measured, got \(unknown.totalMinutes)")
+        }
+        // The same day through the snapshot: no measurement holds the row, then a measured overlap of 10 makes it 560 and fails it.
+        var pending = GameSnapshot.fresh(catalog: catalog, now: now)
+        pending.applyScreenTime(phoneMinutes: 90, workMinutes: 480)
+        if pending.screenTimeToday.totalMinutes != 480 || pending.bundle.quests.first(where: { $0.id == ScreenTime.questId })?.status != .pending {
+            errors.append("90 phone + 480 work with no overlap count must not fail the day, got \(pending.screenTimeToday.totalMinutes)")
+        }
+        pending.applyScreenTime(phoneMinutes: nil, workMinutes: nil, overlapMinutes: 10)
+        if pending.screenTimeToday.totalMinutes != 560 || pending.bundle.quests.first(where: { $0.id == ScreenTime.questId })?.status != .failed {
+            errors.append("a measured overlap of 10 should make 90 + 480 total 560 and fail, got \(pending.screenTimeToday.totalMinutes)")
         }
         if ScreenTime.clock(280) != "4h 40m" || ScreenTime.clock(32) != "32m" || ScreenTime.clock(420) != "7h" {
             errors.append("screen time clock format wrong")

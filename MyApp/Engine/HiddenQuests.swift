@@ -151,11 +151,9 @@ enum HiddenQuestRules {
 
         /// A fresh green Performance Training day with the 10K Run, completed by `workouts` through the real verifier.
         func day(_ workouts: [CanonicalWorkout], band: ReadinessBand = .green, bank: Int = 0) -> (GameSnapshot, DayIntegrationSnapshot, Quest?) {
-            var signals = MorningSignals.placeholder
-            signals.readinessBand = band
             var player = PlayerState.starter
             player.fullRecoveryBank = bank
-            var snapshot = GameSnapshot.fresh(catalog: catalog, now: now, signals: signals, player: player)
+            var snapshot = GameSnapshot.fresh(catalog: catalog, now: now, player: player, readiness: .sample(band, on: dayKey))
             let data = integrations(workouts)
             guard let quest = snapshot.bundle.quests.first(where: { HiddenQuests.isEligible($0) }) else { return (snapshot, data, nil) }
             let context = snapshot.verificationContext(for: quest, now: now, timerElapsed: nil, userConfirmed: false, integrations: data)

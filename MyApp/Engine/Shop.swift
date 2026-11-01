@@ -56,7 +56,7 @@ enum Potion: String, Codable, CaseIterable, Equatable {
     var name: String {
         switch self {
         case .gildedIndulgence: "Gilded Indulgence Philter"
-        case .nightfall: "Nightfall Elixir"
+        case .nightfall: "Insomniac's Elixir"
         case .idleHours: "Veil of Idle Hours"
         case .ironblood: "Ironblood Draught"
         case .secondWind: "Second Wind Tonic"
@@ -79,7 +79,7 @@ enum Potion: String, Codable, CaseIterable, Equatable {
         case .gildedIndulgence:
             "\(rank). Gold dust in a sealed flask. Spend up to \(FinanceLevel.usd(Self.indulgenceUsd)) over budget today. The ledger does not count it."
         case .nightfall:
-            "\(rank). Tastes of smoke and city lights. Skips tonight's sleep quest. The night out and tomorrow's tired morning do not count against REC."
+            "\(rank). Eyes stay open until dawn. Skips tonight's sleep quest. The sleepless night and tomorrow's tired morning do not count against REC."
         case .idleHours:
             "\(rank). A grey veil over the clock. Lifts today's screen time cap. The lost hours do not count against FOC."
         case .ironblood:
@@ -396,12 +396,12 @@ enum ShopRules {
         _ = excuse.usePotion(.nightfall)
         let excuses = excuse.potionExcuses
         if !excuses.recoveryDayKeys.contains(dayKey) || !excuses.recoveryDayKeys.contains(QuestDay.key(byAddingDays: 1, to: dayKey)) {
-            errors.append("Nightfall should excuse the night and the next morning from REC")
+            errors.append("Insomniac's Elixir should excuse the night and the next morning from REC")
         }
         finishRequired(&excuse, now: dayOne)
         excuse.refreshIfNeeded(catalog: catalog, now: dayTwo)
         if excuse.potionBlocker(.nightfall)?.contains("cooldown") != true {
-            errors.append("Nightfall should be on a 14-day cooldown, got \(String(describing: excuse.potionBlocker(.nightfall)))")
+            errors.append("Insomniac's Elixir should be on a 14-day cooldown, got \(String(describing: excuse.potionBlocker(.nightfall)))")
         }
         if excuse.potionBlocker(.idleHours, dose: .half) == nil {
             errors.append("Veil of Idle Hours should have no half dose")

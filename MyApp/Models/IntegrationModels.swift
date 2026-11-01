@@ -17,6 +17,29 @@ extension ReadinessBand {
         if score >= 34 { return .yellow }
         return .red
     }
+
+    /// A score inside the band, for self-checks.
+    var sampleRecoveryScore: Int {
+        switch self {
+        case .green: 80
+        case .yellow: 50
+        case .red: 20
+        }
+    }
+}
+
+extension ReadinessSnapshot {
+    /// A reading in `band`, captured on `dayKey`. Self-checks use it to set a day's readiness.
+    static func sample(_ band: ReadinessBand, on dayKey: String, sleepPerformance: Int? = nil) -> ReadinessSnapshot {
+        ReadinessSnapshot(
+            recoveryScore: band.sampleRecoveryScore,
+            restingHr: nil,
+            hrv: nil,
+            sleepPerformance: sleepPerformance,
+            band: band,
+            capturedOn: dayKey
+        )
+    }
 }
 
 enum HealthAccess: String, Codable, Equatable {

@@ -154,7 +154,7 @@ enum PenaltyRules {
         let bundled = FallbackCatalog.bundled()
         for band in ReadinessBand.allCases {
             var day = GameSnapshot.fresh(catalog: bundled, now: dayOne, signals: .placeholder)
-            day.signals.readinessBand = band
+            day.readiness = .sample(band, on: QuestDay.key(for: dayOne))
             day.player.penaltyTier = 3
             day.rebuildForTest(catalog: bundled, now: dayOne)
             let runs = PenaltyQuests.rows(in: day.bundle)

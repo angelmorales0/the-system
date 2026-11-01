@@ -66,6 +66,37 @@ enum IntegrationRules {
             errors.append("WHOOP bands should be green/yellow/red at 67 and 34")
         }
 
+        // A red reading with poor sleep captured yesterday sizes nothing today: the band is green with no sleep adjustment.
+        let dayOne = QuestDay.date(from: "2026-10-01") ?? start
+        var stale = snapshot
+        var yesterday = whoopReading
+        yesterday.dayKey = "2026-09-30"
+        yesterday.recoveryScore = 20
+        yesterday.sleepPerformance = 40
+        _ = stale.applyWhoopReadiness(yesterday, catalog: catalog, now: dayOne)
+        if stale.readiness?.capturedOn != "2026-09-30" || stale.readiness?.band != .red {
+            errors.append("the stale reading should still be stored, got \(String(describing: stale.readiness))")
+        }
+        if stale.trainingBand != .green || stale.modeInput(now: dayOne).readinessBand != .green || stale.modeInput(now: dayOne).sleepPerformance != nil {
+            errors.append("a reading captured yesterday must not set today's training band, got \(stale.trainingBand)")
+        }
+        // An unavailable reading today keeps yesterday's snapshot, and the band stays green.
+        var unavailable = yesterday
+        unavailable.dayKey = "2026-10-01"
+        unavailable.available = false
+        unavailable.recoveryScore = nil
+        _ = stale.applyWhoopReadiness(unavailable, catalog: catalog, now: dayOne)
+        if stale.readiness?.capturedOn != "2026-09-30" || stale.trainingBand != .green {
+            errors.append("an unavailable reading must not revive yesterday's band")
+        }
+        // The same reading captured today sizes the day red.
+        var today = yesterday
+        today.dayKey = "2026-10-01"
+        _ = stale.applyWhoopReadiness(today, catalog: catalog, now: dayOne)
+        if stale.trainingBand != .red || stale.modeInput(now: dayOne).sleepPerformance != 40 {
+            errors.append("a red reading captured today should set a red training band, got \(stale.trainingBand)")
+        }
+
         let day = DayIntegrationSnapshot.make(
             whoop: .disconnected(dayKey: "2026-10-01", reason: "TODO: WHOOP is not connected."),
             strava: .disconnected(dayKey: "2026-10-01", reason: "TODO: Strava is not connected."),

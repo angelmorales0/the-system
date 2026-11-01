@@ -40,7 +40,6 @@ struct ShopSheet: View {
             fullRecoveryRow
 
             QuestSectionTitle(text: "Potions")
-            note("One potion a day. A day that uses a potion pays no gold. Each use in \(Potion.repeatWindowDays) days raises that potion's price by 50%.")
             VStack(spacing: 22) {
                 ForEach(Potion.allCases, id: \.self) { potion in
                     potionRow(potion)
@@ -77,9 +76,7 @@ struct ShopSheet: View {
             }
             .accessibilityElement(children: .combine)
             if let reward = snapshot.lastGoldReward {
-                note("Last perfect day paid \(reward.amount.formatted()) gold.")
-            } else {
-                note("A perfect day pays \(Gold.perfectDayRange.lowerBound.formatted())–\(Gold.perfectDayRange.upperBound.formatted()) gold.")
+                note("+\(reward.amount.formatted()) gold yesterday.")
             }
         }
     }
@@ -97,7 +94,6 @@ struct ShopSheet: View {
                     .font(.caption)
                     .foregroundStyle(SystemTheme.muted)
             }
-            note("A day off with no penalty. Spend it from Settings.")
             HStack(spacing: 10) {
                 buyButton("BUY · \(Gold.fullRecoveryPrice.formatted())", enabled: blocker == nil) {
                     pending = .fullRecovery
@@ -120,11 +116,6 @@ struct ShopSheet: View {
                     .foregroundStyle(SystemTheme.muted)
             }
             note(potion.details)
-            if let cooldown = potion.cooldownDays {
-                Text("Cooldown: \(cooldown) days")
-                    .font(.caption2)
-                    .foregroundStyle(SystemTheme.muted.opacity(0.8))
-            }
             HStack(spacing: 10) {
                 buyButton("DRINK · \(snapshot.potionPrice(potion, dose: .full).formatted())", enabled: fullBlocker == nil) {
                     pending = .potion(potion, .full)
@@ -164,11 +155,11 @@ struct ShopSheet: View {
     private func confirmMessage(_ purchase: Purchase) -> String {
         switch purchase {
         case .fullRecovery:
-            "The token goes to your Full Recovery bank."
+            ""
         case .potion(let potion, let dose):
             dose == .half
-                ? "It completes today's \(potion.stat.rawValue) quests for half the XP. Today pays no gold."
-                : "It clears today's \(potion.stat.rawValue) quests with no XP. Today pays no gold."
+                ? "It completes today's \(potion.stat.rawValue) quests for half the XP."
+                : "It clears today's \(potion.stat.rawValue) quests with no XP."
         }
     }
 

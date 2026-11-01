@@ -236,10 +236,11 @@ private struct ScreenTimeSplit: View {
             line("Work", day.workMinutes, ScreenTime.workCapMinutes, over: day.workOver, measured: day.workMeasured)
             line("Phone", day.phoneMinutes, ScreenTime.phoneCapMinutes, over: day.phoneOver, measured: day.phoneMeasured)
             // Minutes on the phone while a Mac was counting too. The row's total counts them once.
+            // Before the Macs report their minutes, the full possible overlap is taken out.
             if day.sharedMinutes > 0 {
-                Text("Shared −\(ScreenTime.clock(day.sharedMinutes))")
+                Text(day.overlapMeasured ? "Shared −\(ScreenTime.clock(day.sharedMinutes))" : "Shared up to −\(ScreenTime.clock(day.sharedMinutes))")
                     .foregroundStyle(QuestLight.ink.opacity(0.75))
-                    .accessibilityLabel("\(day.sharedMinutes) shared minutes counted once")
+                    .accessibilityLabel(day.overlapMeasured ? "\(day.sharedMinutes) shared minutes counted once" : "up to \(day.sharedMinutes) shared minutes counted once, overlap not measured yet")
             }
             Spacer(minLength: 0)
         }

@@ -33,20 +33,26 @@ enum QuestGenerationRules {
             errors.append("full recovery spend should lock full_recovery")
         }
         snapshot.signals.spendingFullRecovery = false
-        snapshot.signals.readinessBand = .red
+        snapshot.readiness = .sample(.red, on: dayKey)
         let red = ContextBuilder.make(snapshot: snapshot, now: now)
-        if red.modeDecision.selectedMode != .performanceTraining || red.modeDecision.trainingBand != .red {
+        if red.modeDecision.selectedMode != .performanceTraining || red.modeDecision.trainingBand != .red || red.whoop.readinessBand != .red {
             errors.append("red readiness should lock a red Training day")
         }
-        snapshot.signals.readinessBand = .green
-        snapshot.signals.sleepPerformance = 50
+        snapshot.readiness = .sample(.green, on: dayKey, sleepPerformance: 50)
         let shortSleep = ContextBuilder.make(snapshot: snapshot, now: now)
         if shortSleep.modeDecision.selectedMode != .performanceTraining || shortSleep.modeDecision.trainingBand != .yellow
-            || shortSleep.whoop.readinessBand != .green {
+            || shortSleep.whoop.readinessBand != .green || shortSleep.whoop.sleepPerformance != 50 {
             errors.append("low sleep should drop a green Training day to yellow and keep the WHOOP band")
+        }
+        // The same red reading from yesterday sizes nothing today.
+        snapshot.readiness = .sample(.red, on: "2026-09-30", sleepPerformance: 50)
+        let stale = ContextBuilder.make(snapshot: snapshot, now: now)
+        if stale.modeDecision.trainingBand != .green || stale.whoop.available || stale.whoop.readinessBand != .green || stale.whoop.sleepPerformance != nil {
+            errors.append("yesterday's reading must not size today's Training day, got \(stale.modeDecision.trainingBand)")
         }
 
         snapshot.signals = .placeholder
+        snapshot.readiness = nil
         snapshot.recentQuestTitles = ["keep sk-shouldNotLeaveDevice", "Mobility"]
         let morning = ContextBuilder.make(snapshot: snapshot, now: now)
         if let data = try? JSONEncoder().encode(morning), let encoded = String(data: data, encoding: .utf8) {
