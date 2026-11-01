@@ -21,12 +21,12 @@ enum QuestGenerationRules {
             errors.append("live integrations should stay unavailable")
         }
 
-        snapshot.player.penaltyTier = 1
+        snapshot.player.penaltyOpen = true
         let penalty = ContextBuilder.make(snapshot: snapshot, now: now)
-        if penalty.modeDecision.selectedMode != .performanceTraining || penalty.player.penaltyTier != 1 {
+        if penalty.modeDecision.selectedMode != .performanceTraining || !penalty.player.penaltyOpen {
             errors.append("an open penalty should not change the day mode")
         }
-        snapshot.player.penaltyTier = 0
+        snapshot.player.penaltyOpen = false
         snapshot.signals.spendingFullRecovery = true
         let recoverySpend = ContextBuilder.make(snapshot: snapshot, now: now)
         if recoverySpend.modeDecision.selectedMode != .fullRecovery {
@@ -180,7 +180,7 @@ enum QuestGenerationRules {
     }
 
     /// Saves from before Targets were removed hold a `targets` array, Target quests, and the Hybrid mode.
-    /// They must still load, so the player keeps the bank and the tier.
+    /// They must still load, so the player keeps the bank and the penalty.
     private static func legacyTargetSaveLoads(catalog: FallbackCatalog, now: Date) -> [String] {
         var saved = GameSnapshot.fresh(catalog: catalog, now: now)
         saved.player.fullRecoveryBank = 77
@@ -279,7 +279,7 @@ enum QuestGenerationRules {
                 statLevels: Dictionary(uniqueKeysWithValues: Stat.allCases.map { ($0.rawValue, 100) }),
                 maxStatLevel: StatLevel.maxLevel,
                 fullRecoveryBank: 2,
-                penaltyTier: 0,
+                penaltyOpen: false,
                 streaks: .unknown
             ),
             modeDecision: MorningModeDecision(

@@ -17,8 +17,6 @@ struct PenaltyLiveActivity: Widget {
                     .font(.caption.weight(.bold))
                 Text(context.state.questTitle)
                     .font(.headline)
-                Text("Tier \(context.state.tier)")
-                    .font(.caption)
             }
             .padding()
         } dynamicIsland: { context in
@@ -28,7 +26,7 @@ struct PenaltyLiveActivity: Widget {
                         .font(.headline)
                 }
             } compactLeading: {
-                Text("P\(context.state.tier)")
+                Text("P")
             } compactTrailing: {
                 Text(context.state.questTitle)
                     .lineLimit(1)

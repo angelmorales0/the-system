@@ -6,7 +6,7 @@ extension QuestPlanner {
     static func sampleRequest(_ mode: String = "performance_training", _ band: String = "green") -> JSONValue {
         .object([
             "schemaVersion": .number(1),
-            "player": .object(["timezone": .string("America/Los_Angeles"), "localDate": .string("2026-10-01"), "level": .number(42), "maxLevel": .number(146), "statLevels": .object([:]), "maxStatLevel": .number(350), "penaltyTier": .number(0)]),
+            "player": .object(["timezone": .string("America/Los_Angeles"), "localDate": .string("2026-10-01"), "level": .number(42), "maxLevel": .number(146), "statLevels": .object([:]), "maxStatLevel": .number(350), "penaltyOpen": .bool(false)]),
             "modeDecision": .object(["selectedMode": .string(mode), "trainingBand": .string(band), "reasonCodes": .array([.string("fixture")]), "lockedByRules": .bool(true)]),
             "whoop": .object(["available": .bool(false), "readinessBand": .string(band)]),
             "constraints": .object(["maxRequiredQuests": .number(8), "maxOptionalQuests": .number(1)]),

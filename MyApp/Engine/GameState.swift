@@ -71,7 +71,7 @@ struct GameSnapshot: Codable, Equatable {
     }
 
     /// New local day swaps in a fallback bundle, then the store may replace it once from generation.
-    /// A missed required set raises `penaltyTier` (1...3) unless that day was Full Recovery.
+    /// A missed required set opens a penalty unless that day was Full Recovery.
     mutating func refreshIfNeeded(catalog: FallbackCatalog, now: Date = .now) {
         let key = QuestDay.key(for: now)
         // Flying west across midnight moves the local date back. Keep the later day, so it is not judged twice.
@@ -132,10 +132,10 @@ struct GameSnapshot: Codable, Equatable {
     /// Incomplete required quests escalate the penalty. A Full Recovery day does not.
     mutating func recordMissedDayIfNeeded() {
         guard missesRequiredSet else { return }
-        player.penaltyTier = min(3, player.penaltyTier + 1)
+        player.penaltyOpen = true
     }
 
-    /// True when ending the day now would raise the penalty tier.
+    /// True when ending the day now would open a penalty.
     var missesRequiredSet: Bool {
         let required = bundle.quests.filter { $0.kind != .optional }
         // A Screen Time row still under its cap holds until the day ends; only a failed one is a miss.
@@ -325,16 +325,16 @@ struct GameSnapshot: Codable, Equatable {
     }
 
     /// Today rests: the planner picked it, or six quest days trained in a row and the seventh is forced.
-    /// An open penalty is served first: no rest day while the tier is above 0.
+    /// An open penalty is served first: no rest day while one is open.
     func restDue(on dayKey: String) -> Bool {
-        guard player.penaltyTier == 0 else { return false }
+        guard !player.penaltyOpen else { return false }
         return plannerRestDayKey == dayKey || trainedDaysInARow(before: dayKey) >= ModePicker.restEveryDays - 1
     }
 
     /// The planner may make `dayKey` the rest day: no penalty, no rest in the last six days, not already forced,
     /// and at least `ModePicker.restMinTrainedDays` trained days behind it, so two rests never touch.
     func restAvailable(on dayKey: String) -> Bool {
-        player.penaltyTier == 0 && !restDue(on: dayKey) && !restTaken(before: dayKey)
+        !player.penaltyOpen && !restDue(on: dayKey) && !restTaken(before: dayKey)
             && trainedDaysInARow(before: dayKey) >= ModePicker.restMinTrainedDays
     }
 
@@ -470,7 +470,7 @@ struct GameSnapshot: Codable, Equatable {
         }
         return PenaltyQuests.ensure(
             in: DailyStretch.ensure(in: ScreenTime.ensure(in: day, now: now), now: now),
-            tier: player.penaltyTier,
+            open: player.penaltyOpen,
             band: trainingBand,
             catalog: catalog,
             now: now
@@ -488,10 +488,10 @@ struct GameSnapshot: Codable, Equatable {
         liftPenaltyIfCleared()
     }
 
-    /// Every penalty row is done. Tier drops to 0.
+    /// Every penalty row is done. The penalty closes.
     private mutating func liftPenaltyIfCleared() {
-        guard PenaltyQuests.isCleared(in: bundle), player.penaltyTier > 0 else { return }
-        player.penaltyTier = 0
+        guard PenaltyQuests.isCleared(in: bundle), player.penaltyOpen else { return }
+        player.penaltyOpen = false
     }
 
     private static func encoder() -> JSONEncoder {

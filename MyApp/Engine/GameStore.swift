@@ -134,7 +134,7 @@ final class GameStore: ObservableObject {
         enforcePenalty()
     }
 
-    /// From the penalty screen: one token ends the open penalty. The cleared cue plays from the tier change.
+    /// From the penalty screen: one token ends the open penalty. The cleared cue plays from the flag change.
     func clearPenaltyWithFullRecovery(now: Date = .now) {
         var next = snapshot
         let message = next.clearPenaltyWithFullRecovery()
@@ -651,11 +651,11 @@ final class GameStore: ObservableObject {
 
     private func enforcePenalty() {
         let open = PenaltyQuests.rows(in: snapshot.bundle).first(where: { $0.status != .completed })
-        let visible = snapshot.player.penaltyTier > 0 && open != nil
+        let visible = snapshot.player.penaltyOpen && open != nil
         let title = open?.title ?? snapshot.bundle.headerLine
         PenaltyEnforcement.sync(
             penaltyVisible: visible,
-            tier: snapshot.player.penaltyTier,
+            penaltyOpen: snapshot.player.penaltyOpen,
             questTitle: title,
             shieldLine: open.map(Self.shieldLine) ?? title,
             dayKey: snapshot.bundle.dayKey,
@@ -673,7 +673,7 @@ final class GameStore: ObservableObject {
 
     /// The penalty row still open today, or nil. While it exists, `PenaltyQuestView` covers every page.
     var openPenaltyQuest: Quest? {
-        guard snapshot.player.penaltyTier > 0 else { return nil }
+        guard snapshot.player.penaltyOpen else { return nil }
         return PenaltyQuests.rows(in: snapshot.bundle).first { $0.status != .completed }
     }
 

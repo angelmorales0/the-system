@@ -13,8 +13,6 @@ struct PenaltyQuestView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let quest: Quest
     let startedAt: Date
-    /// Missed days in a row, 1...3. Shown under the run row.
-    var tier: Int = 1
     @State private var arrived = false
     @State private var flicker = false
     @State private var confirmFullRecovery = false
@@ -96,12 +94,6 @@ struct PenaltyQuestView: View {
         .onTapGesture { store.refreshForToday() }
     }
 
-    /// "PENALTY TIER 2 OF 3 · 2 DAYS MISSED IN A ROW". Every tier runs the same 10K; the tier counts the misses.
-    private var tierLine: String {
-        let tier = min(max(tier, 1), 3)
-        return "PENALTY TIER \(tier) OF 3 · \(tier) \(tier == 1 ? "DAY" : "DAYS") MISSED IN A ROW"
-    }
-
     /// `ghost` is how strong the dim copy under each line draws: none when fresh, the scene's look after a few hours.
     private func content(ghost: Double) -> some View {
         VStack(spacing: 0) {
@@ -136,10 +128,7 @@ struct PenaltyQuestView: View {
             .foregroundStyle(QuestLight.cyan)
             .shadow(color: QuestLight.cyan.opacity(0.6), radius: 5)
             .accessibilityElement(children: .combine)
-            Spacer().frame(height: 12)
-            GhostText(Text(tierLine).tracking(1.4), font: .caption2, alignment: .leading, ghost: ghost)
-                .foregroundStyle(QuestLight.penalty)
-            Spacer().frame(height: 24)
+            Spacer().frame(height: 26)
             fullRecoveryButton
         }
         .foregroundStyle(QuestLight.ink)
@@ -284,6 +273,6 @@ private struct GhostText: View {
 
 #Preview {
     let store = GameStore(persistence: .memory)
-    return PenaltyQuestView(quest: store.snapshot.bundle.quests[0], startedAt: .now.addingTimeInterval(-12 * 3600), tier: 2)
+    return PenaltyQuestView(quest: store.snapshot.bundle.quests[0], startedAt: .now.addingTimeInterval(-12 * 3600))
         .environmentObject(store)
 }

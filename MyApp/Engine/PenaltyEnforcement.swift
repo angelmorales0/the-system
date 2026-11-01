@@ -66,7 +66,8 @@ enum PenaltySelectionStore {
 enum PenaltyEnforcement {
     /// `openDayKey` is the quest day whose required set is still open, or nil when it is done or waived.
     /// `shieldLine` is the open penalty row with its progress, shown on every shield.
-    static func sync(penaltyVisible: Bool, tier: Int, questTitle: String, shieldLine: String, dayKey: String, openDayKey: String?) {
+    /// `penaltyOpen` is the player's penalty flag; `penaltyVisible` adds that a penalty row is still open today.
+    static func sync(penaltyVisible: Bool, penaltyOpen: Bool, questTitle: String, shieldLine: String, dayKey: String, openDayKey: String?) {
         #if os(iOS)
         let defaults = PenaltyGroup.defaults
         defaults.set(shieldLine, forKey: PenaltyGroup.shieldLineKey)
@@ -76,9 +77,9 @@ enum PenaltyEnforcement {
             defaults.removeObject(forKey: PenaltyGroup.openDayKey)
         }
         scheduleDawnCheck()
-        if tier == 0 || !penaltyVisible {
+        if !penaltyOpen || !penaltyVisible {
             defaults.set(false, forKey: PenaltyGroup.penaltyActiveKey)
-            if tier == 0 {
+            if !penaltyOpen {
                 defaults.removeObject(forKey: PenaltyGroup.startedAtKey)
             }
             clearShields()
@@ -94,10 +95,10 @@ enum PenaltyEnforcement {
         startMonitoring()
         let started = Date(timeIntervalSince1970: defaults.double(forKey: PenaltyGroup.startedAtKey))
         Task {
-            await startOrUpdateLiveActivity(questTitle: questTitle, tier: tier, dayKey: dayKey, startedAt: started)
+            await startOrUpdateLiveActivity(questTitle: questTitle, dayKey: dayKey, startedAt: started)
         }
         #else
-        _ = (penaltyVisible, tier, questTitle, shieldLine, dayKey, openDayKey)
+        _ = (penaltyVisible, penaltyOpen, questTitle, shieldLine, dayKey, openDayKey)
         #endif
     }
 
@@ -144,10 +145,10 @@ enum PenaltyEnforcement {
         DeviceActivityCenter().stopMonitoring([DeviceActivityName(PenaltyGroup.activityName)])
     }
 
-    private static func startOrUpdateLiveActivity(questTitle: String, tier: Int, dayKey: String, startedAt: Date) async {
+    private static func startOrUpdateLiveActivity(questTitle: String, dayKey: String, startedAt: Date) async {
         let stale = startedAt.addingTimeInterval(PenaltyGroup.liveActivityLimit)
         guard Date() < stale else { return }
-        let state = PenaltyAttributes.ContentState(questTitle: questTitle, tier: tier, startedAt: startedAt)
+        let state = PenaltyAttributes.ContentState(questTitle: questTitle, startedAt: startedAt)
         let content = ActivityContent(state: state, staleDate: stale)
         if let current = Activity<PenaltyAttributes>.activities.first {
             await current.update(content)

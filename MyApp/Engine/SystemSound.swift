@@ -134,7 +134,7 @@ enum SoundCues {
             }
             if failed { cues.append(.questFail) }
         }
-        if old.player.penaltyTier > 0, new.player.penaltyTier == 0 {
+        if old.player.penaltyOpen, !new.player.penaltyOpen {
             cues.append(.penaltyCleared)
         }
         if let before = old.hitPoints, let after = new.hitPoints,

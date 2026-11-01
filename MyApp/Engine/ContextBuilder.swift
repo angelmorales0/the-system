@@ -24,7 +24,7 @@ enum ContextBuilder {
                 statLevels: Dictionary(uniqueKeysWithValues: Stat.allCases.map { ($0.rawValue, levels[$0]) }),
                 maxStatLevel: StatLevel.maxLevel,
                 fullRecoveryBank: player.fullRecoveryBank,
-                penaltyTier: player.penaltyTier,
+                penaltyOpen: player.penaltyOpen,
                 streaks: .unknown
             ),
             modeDecision: MorningModeDecision(decision),

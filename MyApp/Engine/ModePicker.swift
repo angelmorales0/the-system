@@ -132,8 +132,8 @@ enum RestRules {
         }
         let gold = week.gold
         week.refreshIfNeeded(catalog: catalog, now: day(7))
-        if week.player.penaltyTier != 0 || week.gold != gold || week.bundle.mode != .performanceTraining {
-            errors.append("the day after a Rest Day should train again with no penalty, got tier \(week.player.penaltyTier) mode \(week.bundle.mode)")
+        if week.player.penaltyOpen || week.gold != gold || week.bundle.mode != .performanceTraining {
+            errors.append("the day after a Rest Day should train again with no penalty, got penalty \(week.player.penaltyOpen) mode \(week.bundle.mode)")
         }
 
         // The planner picks the rest day: not on day 1 or 2, open from day 3, closed for six days after it.
@@ -191,7 +191,7 @@ enum RestRules {
             finishRequired(&owed, now: day(offset))
             owed.refreshIfNeeded(catalog: catalog, now: day(offset + 1))
         }
-        owed.player.penaltyTier = 1
+        owed.player.penaltyOpen = true
         if owed.restDue(on: QuestDay.key(for: day(6))) { errors.append("a penalty should be served before the rest day") }
 
         // Run rest offline: 50 km in the last six quest days drops today's run rows and keeps the lifts.

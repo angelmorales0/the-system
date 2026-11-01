@@ -21,7 +21,7 @@ struct ShopSheet: View {
     }
 
     private var snapshot: GameSnapshot { store.snapshot }
-    private var closed: Bool { snapshot.player.penaltyTier > 0 }
+    private var closed: Bool { snapshot.player.penaltyOpen }
 
     var body: some View {
         QuestSheet(title: "Shop") {

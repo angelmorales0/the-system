@@ -266,7 +266,7 @@ enum ScreenTimeRules {
         // At the day's end it completes and no penalty opens.
         var held = snapshot
         held.refreshIfNeeded(catalog: catalog, now: now.addingTimeInterval(86_400))
-        if held.player.penaltyTier != 0 || held.questHistory.first?.quests.first(where: { $0.title == ScreenTime.title })?.status != .completed {
+        if held.player.penaltyOpen || held.questHistory.first?.quests.first(where: { $0.title == ScreenTime.title })?.status != .completed {
             errors.append("a held Screen Time day should complete and open no penalty")
         }
 
@@ -286,8 +286,8 @@ enum ScreenTimeRules {
             errors.append("a lower reading must not lower the count or clear the failure")
         }
         snapshot.refreshIfNeeded(catalog: catalog, now: now.addingTimeInterval(86_400))
-        if snapshot.player.penaltyTier != 1 || snapshot.screenTimeToday.totalMinutes != 0 {
-            errors.append("a failed Screen Time day should open penalty tier 1 and start the next day at 0, got tier \(snapshot.player.penaltyTier)")
+        if !snapshot.player.penaltyOpen || snapshot.screenTimeToday.totalMinutes != 0 {
+            errors.append("a failed Screen Time day should open a penalty and start the next day at 0, got penalty \(snapshot.player.penaltyOpen)")
         }
 
         // 7 h + 1.5 h is 510, inside the grace: both lines stay normal and the row is yellow.

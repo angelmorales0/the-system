@@ -157,7 +157,7 @@ extension GameSnapshot {
     }
 
     mutating func buyFullRecovery() -> String {
-        guard player.penaltyTier == 0 else { return "The shop is closed during a penalty." }
+        guard !player.penaltyOpen else { return "The shop is closed during a penalty." }
         guard gold >= Gold.fullRecoveryPrice else {
             return "Not enough gold. Full Recovery costs \(Gold.fullRecoveryPrice) gold. You have \(gold)."
         }
@@ -187,7 +187,7 @@ extension GameSnapshot {
 
     /// Why the potion cannot be used now, or nil when it can.
     func potionBlocker(_ potion: Potion) -> String? {
-        if player.penaltyTier > 0 { return "The shop is closed during a penalty." }
+        if player.penaltyOpen { return "The shop is closed during a penalty." }
         if potionUsedToday { return "One potion per day. You already used one today." }
         if let cooldown = potion.cooldownDays, let last = uses(of: potion, sinceDaysAgo: cooldown).last {
             let ready = QuestDay.key(byAddingDays: cooldown, to: last.dayKey)
@@ -322,8 +322,8 @@ enum ShopRules {
         finishRequired(&shop, now: dayOne)
         let goldBefore = shop.gold
         shop.refreshIfNeeded(catalog: catalog, now: dayTwo)
-        if shop.gold != goldBefore || shop.player.penaltyTier != 0 {
-            errors.append("a potion day should pay no gold and open no penalty, got gold \(shop.gold - goldBefore) tier \(shop.player.penaltyTier)")
+        if shop.gold != goldBefore || shop.player.penaltyOpen {
+            errors.append("a potion day should pay no gold and open no penalty, got gold \(shop.gold - goldBefore) penalty \(shop.player.penaltyOpen)")
         }
         if let title = cleared.first?.title,
            shop.questHistory.first?.quests.first(where: { $0.title == title })?.status != .expired {
@@ -348,11 +348,11 @@ enum ShopRules {
         if excuse.potionBlocker(.nightfall)?.contains("cooldown") != true {
             errors.append("Insomniac's Elixir should be on a 14-day cooldown, got \(String(describing: excuse.potionBlocker(.nightfall)))")
         }
-        excuse.player.penaltyTier = 1
+        excuse.player.penaltyOpen = true
         if excuse.potionBlocker(.gildedIndulgence)?.contains("penalty") != true || !excuse.buyFullRecovery().contains("penalty") {
             errors.append("the shop should be closed during a penalty")
         }
-        excuse.player.penaltyTier = 0
+        excuse.player.penaltyOpen = false
         _ = excuse.usePotion(.gildedIndulgence)
         let month = FinanceMonth(month: String(excuse.bundle.dayKey.prefix(7)), postTaxIncomeUsd: 5_000, spendingUsd: 1_100, budgetUsd: 1_000, complete: true)
         if excuse.potionExcuses.excusing(month).spendingUsd != 1_100 - Potion.indulgenceUsd {

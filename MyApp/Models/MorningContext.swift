@@ -20,7 +20,8 @@ struct MorningPlayer: Codable, Equatable {
     var statLevels: [String: Int]
     var maxStatLevel: Int
     var fullRecoveryBank: Int
-    var penaltyTier: Int
+    /// A penalty 10K is open today. The app adds that row itself.
+    var penaltyOpen: Bool
     var streaks: MorningStreaks
 }
 
@@ -132,7 +133,7 @@ struct QuestDayRecord: Codable, Equatable {
     /// `GymSplit.Day.id` when the day was a split day. Nil for older saves and days without lifts.
     var splitDay: String? = nil
     var generatedBy: String
-    /// A required quest was still open at the end of the day, so the penalty tier rose.
+    /// A required quest was still open at the end of the day, so a penalty opened.
     var missedRequired: Bool
     var quests: [QuestRecord]
 }

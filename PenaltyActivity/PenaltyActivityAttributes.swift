@@ -5,7 +5,6 @@ import Foundation
 nonisolated struct PenaltyAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var questTitle: String
-        var tier: Int
         var startedAt: Date
     }
 

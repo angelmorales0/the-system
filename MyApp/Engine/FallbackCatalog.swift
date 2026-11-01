@@ -113,7 +113,7 @@ struct FallbackCatalog {
         ).strippingModelCompletion(assignedAt: now)
     }
 
-    /// Base (tier 1) penalty rows for the band. `PenaltyQuests` scales them by tier.
+    /// The penalty rows for the band: one flat 10K.
     func penaltyTemplates(band: ReadinessBand) -> [QuestTemplate] {
         if let match = penaltyTable[band] { return match }
         if let yellow = penaltyTable[.yellow] { return yellow }

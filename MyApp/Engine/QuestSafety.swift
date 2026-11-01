@@ -56,7 +56,7 @@ enum QuestSafety {
                 issues.append("duplicate quest id")
             }
             if quest.kind == .penalty || quest.difficulty == .penalty {
-                // Only the app adds penalty rows, from the tier.
+                // Only the app adds penalty rows.
                 issues.append("generated penalty quest")
             }
             let title = quest.title.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -19,7 +19,7 @@ enum QuestMode: String, Codable, CaseIterable, Equatable {
 
     /// Old saves can name removed modes (`recovery`, `hybrid`, `interview_prep`, `study_block`, `nutrition_focus`,
     /// `finance_discipline`, `focus_deepwork`, `penalty`). Read those as Performance Training.
-    /// An old Penalty day keeps its `kind: .penalty` rows, so clearing them still drops the tier.
+    /// An old Penalty day keeps its `kind: .penalty` rows, so clearing them still closes the penalty.
     init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
         self = QuestMode(rawValue: raw) ?? .performanceTraining
@@ -306,15 +306,16 @@ extension QuestBundle {
 
 /// What the player carries between days. The level and the seven stats are not here: `StatLevelSet` computes
 /// them from the real histories, and old saves' `level`, `xp`, `xpToNext`, and `stats` keys are ignored, as are a quest's old `xp` and `reward` keys.
-struct PlayerState: Codable, Equatable {
+struct PlayerState: Equatable {
     var displayName: String
     var fullRecoveryBank: Int
-    var penaltyTier: Int
+    /// A penalty is open: a missed required set owes a 10K.
+    var penaltyOpen: Bool
 
     static let starter = PlayerState(
         displayName: "Angel",
         fullRecoveryBank: 7,
-        penaltyTier: 0
+        penaltyOpen: false
     )
 
     var statusDisplayName: String {
@@ -329,6 +330,26 @@ struct PlayerState: Codable, Equatable {
 
     mutating func withdrawRecoveryToken() {
         if fullRecoveryBank > 0 { fullRecoveryBank -= 1 }
+    }
+}
+
+extension PlayerState: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case displayName, fullRecoveryBank, penaltyOpen
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        displayName = try container.decodeIfPresent(String.self, forKey: .displayName) ?? "Angel"
+        fullRecoveryBank = try container.decodeIfPresent(Int.self, forKey: .fullRecoveryBank) ?? 0
+        penaltyOpen = try container.decodeIfPresent(Bool.self, forKey: .penaltyOpen) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(displayName, forKey: .displayName)
+        try container.encode(fullRecoveryBank, forKey: .fullRecoveryBank)
+        try container.encode(penaltyOpen, forKey: .penaltyOpen)
     }
 }
 

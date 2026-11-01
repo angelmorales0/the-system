@@ -145,9 +145,9 @@ enum DayClockRules {
 
         // A snapshot does not roll back to an earlier quest day, so the day is not judged twice.
         var later = GameSnapshot.fresh(catalog: FallbackCatalog.bundled(), now: at(3, 6))
-        let tier = later.player.penaltyTier
+        let penalty = later.player.penaltyOpen
         later.refreshIfNeeded(catalog: FallbackCatalog.bundled(), now: at(3, 4))
-        if later.bundle.dayKey != "2026-10-03" || later.player.penaltyTier != tier {
+        if later.bundle.dayKey != "2026-10-03" || later.player.penaltyOpen != penalty {
             errors.append("an earlier quest day should not roll the quest day back")
         }
         return errors
