@@ -10,6 +10,7 @@ struct StatusSettingsSheet: View {
     @State private var showEmergency = false
     @State private var showConnections = false
     @State private var showShop = false
+    @AppStorage(SoundPlayer.enabledKey) private var soundOn = true
 
     var body: some View {
         QuestSheet(title: "Settings") {
@@ -51,6 +52,22 @@ struct StatusSettingsSheet: View {
                 }
                 .tint(SystemTheme.cyan)
                 .disabled(store.snapshot.bundle.mode != .performanceTraining)
+                Toggle(isOn: $soundOn) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("SOUND")
+                            .font(.caption.weight(.semibold))
+                            .tracking(1.1)
+                            .foregroundStyle(SystemTheme.muted)
+                        Text("System cues for quests, windows, and penalties")
+                            .font(.caption2)
+                            .foregroundStyle(SystemTheme.muted.opacity(0.8))
+                    }
+                }
+                .tint(SystemTheme.cyan)
+                // A sample on switch-on, so the new setting is heard at once.
+                .onChange(of: soundOn) { _, on in
+                    if on { SystemSound.systemOpen.play() }
+                }
                 SystemDivider()
                 link("SHOP") { showShop = true }
                 link("PENALTY ZONE") { showShields = true }

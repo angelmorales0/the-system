@@ -58,15 +58,21 @@ enum SystemSound: String, CaseIterable {
     }
 }
 
-/// Loads each cue once and plays it on demand. Silent in SwiftUI previews.
+/// Loads each cue once and plays it on demand. Silent in SwiftUI previews and when the Sound setting is off.
 @MainActor
 final class SoundPlayer {
     static let shared = SoundPlayer()
+    /// The Sound switch on the settings sheet. Absent means on.
+    static let enabledKey = "soundEnabled"
 
     private var players: [SystemSound: AVAudioPlayer] = [:]
     private var sessionReady = false
     /// A preview would play on the Mac for no one.
-    private let enabled = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] != "1"
+    private let inPreview = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+
+    private var enabled: Bool {
+        !inPreview && (UserDefaults.standard.object(forKey: Self.enabledKey) as? Bool ?? true)
+    }
 
     func play(_ sound: SystemSound) {
         guard enabled, let player = player(for: sound) else { return }
