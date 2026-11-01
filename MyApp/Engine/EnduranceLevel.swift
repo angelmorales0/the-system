@@ -5,7 +5,8 @@ enum RunDistance: String, Codable, Equatable, CaseIterable {
     case mile, fiveK, tenK
 }
 
-/// One timed effort at a race distance: a Strava `best_efforts` split, or a whole run of that distance.
+/// One timed effort at a race distance: a Strava or Apple Health run near that distance, at its average pace
+/// over the distance (see `EnduranceEfforts`).
 struct RunEffort: Codable, Equatable {
     var distance: RunDistance
     var seconds: Double
@@ -13,22 +14,22 @@ struct RunEffort: Codable, Equatable {
     var source: String
 }
 
-/// One timed 1-mile swim (1,609 m, or 1,760 yd in a yard pool), from Strava, Apple Health, or a manual entry.
-/// A longer swim counts only if the source gives a 1-mile split.
+/// One timed 1-mile swim (1,609 m, or 1,760 yd in a yard pool), from a Strava or Apple Health swim near that
+/// distance at its average pace (see `EnduranceEfforts`).
 struct SwimEffort: Codable, Equatable {
     var seconds: Double
     var date: Date
     var source: String
 }
 
-/// One VO₂ max estimate in mL/kg/min, from Apple Health (HealthKit VO2Max) or WHOOP.
+/// One VO₂ max estimate in mL/kg/min, from Apple Health (an Apple Watch writes one after outdoor runs and walks).
 struct VO2MaxReading: Codable, Equatable {
     var value: Double
     var date: Date
     var source: String
 }
 
-/// The longest unbroken time in heart-rate zone 2 within one activity.
+/// The longest unbroken time in heart-rate zone 2 within one activity, from Apple Health heart rate samples (see `ZoneTwo`).
 /// Separate sessions never add up: two 45-minute sessions are two 45-minute rows.
 struct ZoneTwoSession: Codable, Equatable {
     var minutes: Double

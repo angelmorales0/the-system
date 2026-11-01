@@ -59,6 +59,9 @@ struct StatTargetsSheet: View {
                         .buttonStyle(.plain)
                         .padding(.top, 6)
                     }
+                    if stat == .AGI {
+                        note("Every test is read from Hevy. Log each one as its own exercise, named as shown under the target, with the result as reps (cm, inches, or switches) or as a distance in metres. The newest result in 90 days counts.")
+                    }
                 }
 
                 QuestSectionTitle(text: "Targets")
@@ -112,6 +115,9 @@ struct StatTargetsSheet: View {
                 if let goal = store.statTargets.goal(for: requirement.category) {
                     Text(goal)
                         .font(.footnote)
+                }
+                if stat == .AGI, !AgilityHevy.hevyNames(forCategory: requirement.category).isEmpty {
+                    note("Hevy: " + AgilityHevy.hevyNames(forCategory: requirement.category).joined(separator: ", "))
                 }
                 if let custom = store.statTargets.custom.first(where: { $0.category == requirement.category }) {
                     note("Your goal. Trained on \(GymSplit.day(id: custom.day)?.name ?? "its split day").")

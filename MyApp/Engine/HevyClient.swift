@@ -7,8 +7,8 @@ enum HevyClient {
     /// Hevy pages are at most 10 workouts. Newest first, so a few pages reach any recent day.
     static let pageSize = 10
     static let maxPages = 5
-    /// The 30-day history reads up to this many pages.
-    static let historyPages = 20
+    /// The 180-day history for the STR and AGI stats reads up to this many pages (300 workouts).
+    static let historyPages = 30
 
     static func page(_ page: Int, size: Int = pageSize) -> URL? {
         OnDeviceHTTP.url("\(api)/v1/workouts", [("page", String(page)), ("pageSize", String(size))])
@@ -93,7 +93,8 @@ enum HevyClient {
                     reps: entry["reps"]?.doubleValue.map { Int($0) },
                     weightKg: entry["weight_kg"]?.doubleValue,
                     rpe: entry["rpe"]?.doubleValue,
-                    durationSec: entry["duration_seconds"]?.doubleValue
+                    durationSec: entry["duration_seconds"]?.doubleValue,
+                    distanceMeters: entry["distance_meters"]?.doubleValue
                 )
             }
             let template: String? = {

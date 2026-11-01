@@ -86,7 +86,8 @@ enum WhoopClient {
         return payload
     }
 
-    private static func records(_ token: String, _ path: String, _ start: Date, _ end: Date) async -> [JSONValue] {
+    /// Every record of one collection from `start` to `end`, up to `maxPages` pages. `WhoopRecovery` reads it too.
+    static func records(_ token: String, _ path: String, _ start: Date, _ end: Date) async -> [JSONValue] {
         var records: [JSONValue] = []
         var next = ""
         for _ in 0..<maxPages {

@@ -105,6 +105,8 @@ nonisolated struct HevySet: Codable, Equatable {
     var rpe: Double?
     /// Hold time for timed sets such as stretches.
     var durationSec: Double?
+    /// Distance for distance sets: carries, and the AGI tests logged as a distance (see `AgilityHevy`).
+    var distanceMeters: Double? = nil
 
     /// Warm-up sets do not count toward a quest.
     var isWorking: Bool { type.lowercased() != "warmup" }

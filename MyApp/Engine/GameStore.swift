@@ -35,7 +35,9 @@ final class GameStore: ObservableObject {
     private var evaluatingEmergency = false
     private var lastStretchRefresh = Date.distantPast
     /// The last live stat inputs, so a target change can recalculate without a new fetch. Nil until the first refresh.
-    private var statInputs: (codeforces: CodeforcesReading, financeMonths: [FinanceMonth], bodyMass: BodyMassReading?, focusDays: [FocusDay])?
+    /// `inputs` holds the histories (Hevy, WHOOP, Strava, Health), loaded after the day's snapshot by `refreshStatInputs`.
+    private var statInputs: (codeforces: CodeforcesReading, financeMonths: [FinanceMonth], bodyMass: BodyMassReading?, focusDays: [FocusDay], inputs: StatInputs)?
+    private var refreshingStatInputs = false
 
     init(persistence: GamePersistence = .standard) {
         #if DEBUG
@@ -47,6 +49,7 @@ final class GameStore: ObservableObject {
             + NoGymDayRules.check() + PenaltyDecay.check() + SecretStore.check() + ConnectionStatusStore.check()
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MercuryClient.check()
             + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check() + WhoopStressClient.check()
+            + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -215,6 +218,7 @@ final class GameStore: ObservableObject {
             financeMonths: statInputs.financeMonths,
             bodyMass: statInputs.bodyMass.map { [$0] } ?? [],
             focusDays: statInputs.focusDays,
+            inputs: statInputs.inputs,
             targets: statTargets,
             excuses: snapshot.potionExcuses,
             now: now
@@ -552,7 +556,7 @@ final class GameStore: ObservableObject {
             next.applyFatigue(integrations: day, whoopStress: whoopStress, now: now)
             self.snapshot = next
             self.integrations = day
-            self.statInputs = (remote.codeforces, remote.financeMonths, bodyMass, focusDays)
+            self.statInputs = (remote.codeforces, remote.financeMonths, bodyMass, focusDays, self.statInputs?.inputs ?? StatInputs())
             self.recomputeStatLevels(now: now)
             if rebuilt {
                 self.runningTimersRemoveMissing()
@@ -562,6 +566,24 @@ final class GameStore: ObservableObject {
             self.requestGenerationIfNeeded(now: now)
             self.persist()
             self.enforcePenalty()
+            self.refreshStatInputs(now: now)
+        }
+    }
+
+    /// The stat histories (Hevy, WHOOP, Strava, Apple Health) load after the day's snapshot, so a slow read never
+    /// delays a quest check. Each source is cached and read again after 15 minutes (`StatInputLoader`).
+    private func refreshStatInputs(now: Date) {
+        guard persistence == .standard, !refreshingStatInputs else { return }
+        refreshingStatInputs = true
+        Task { @MainActor [weak self] in
+            let inputs = await StatInputLoader.load(now: now)
+            guard let self else { return }
+            self.refreshingStatInputs = false
+            guard var current = self.statInputs else { return }
+            current.inputs = inputs
+            self.statInputs = current
+            self.recomputeStatLevels(now: now)
+            self.persist()
         }
     }
 
