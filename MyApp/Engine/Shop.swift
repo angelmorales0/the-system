@@ -50,7 +50,7 @@ enum Potion: String, Codable, CaseIterable, Equatable {
         switch self {
         case .gildedIndulgence: "Gilded Indulgence Philter"
         case .nightfall: "Insomniac's Elixir"
-        case .idleHours: "Veil of Idle Hours"
+        case .idleHours: "Veil of Hours"
         case .ironblood: "Ironblood Draught"
         case .secondWind: "Second Wind Tonic"
         case .quicksilver: "Quicksilver Vial"
