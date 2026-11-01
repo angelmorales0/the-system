@@ -76,8 +76,8 @@ enum TrainingDay {
         let now = Date(timeIntervalSince1970: 1_790_000_000)
         func quest(_ id: String, _ title: String, _ method: VerificationMethod, _ params: [String: JSONValue] = [:], kind: QuestKind = .daily) -> Quest {
             Quest(id: id, title: title, kind: kind, stat: .STR, verification: VerificationSpec(method: method, params: params),
-                  deadline: now, xp: 10, difficulty: .easy, mode: .performanceTraining,
-                  progress: QuestProgress(current: 0, target: 1, unit: "session"), reward: nil, status: .pending)
+                  deadline: now, difficulty: .easy, mode: .performanceTraining,
+                  progress: QuestProgress(current: 0, target: 1, unit: "session"), status: .pending)
         }
         var bundle = QuestBundle.empty
         bundle.mode = .performanceTraining

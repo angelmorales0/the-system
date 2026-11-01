@@ -33,11 +33,9 @@ enum PenaltyQuests {
             stat: template.stat,
             verification: template.verification,
             deadline: QuestDay.endOfDay(now),
-            xp: template.xp,
             difficulty: .penalty,
             mode: bundle.mode,
             progress: QuestProgress(current: 0, target: template.progress.target, unit: template.progress.unit),
-            reward: nil,
             status: .pending,
             evidence: [],
             assignedAt: now

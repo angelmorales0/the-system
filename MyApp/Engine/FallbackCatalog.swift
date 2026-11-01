@@ -6,10 +6,8 @@ struct QuestTemplate: Codable, Equatable {
     var kind: QuestKind
     var stat: Stat
     var verification: VerificationSpec
-    var xp: Int
     var difficulty: Difficulty
     var progress: QuestProgress
-    var reward: QuestReward?
 }
 
 struct CatalogEntry: Codable, Equatable {
@@ -95,11 +93,9 @@ struct FallbackCatalog {
                 stat: template.stat,
                 verification: template.verification,
                 deadline: deadline,
-                xp: template.xp,
                 difficulty: template.difficulty,
                 mode: mode,
                 progress: template.progress,
-                reward: template.reward,
                 status: .pending,
                 evidence: [],
                 assignedAt: now
@@ -149,10 +145,8 @@ struct FallbackCatalog {
                     kind: .daily,
                     stat: .FOC,
                     verification: VerificationSpec(method: .manualConfirm, params: ["prompt": .string("Confirm complete")]),
-                    xp: 20,
                     difficulty: .easy,
-                    progress: QuestProgress(current: 0, target: 1, unit: "session"),
-                    reward: nil
+                    progress: QuestProgress(current: 0, target: 1, unit: "session")
                 )
             ]
         )
@@ -166,16 +160,16 @@ struct FallbackCatalog {
             narrative: "Train. The daily quest is waiting.",
             warnings: [QuestBundle.defaultWarning],
             quests: [
-                template("run_10k", "10K Run", .daily, .END, .stravaActivity, ["types": .array([.string("Run")]), "minDistanceMeters": .number(10_000)], 40, .normal, 10, "km"),
-                template("bench_press", "Bench Press", .daily, .STR, .hevySets, ["exercise": .string("Bench Press"), "sets": .number(4)], 40, .normal, 4, "sets"),
-                template("splits", "Splits", .daily, .AGI, .hevySets, ["exercise": .string("Splits"), "minDurationSec": .number(180)], 20, .easy, 3, "min")
+                template("run_10k", "10K Run", .daily, .END, .stravaActivity, ["types": .array([.string("Run")]), "minDistanceMeters": .number(10_000)], .normal, 10, "km"),
+                template("bench_press", "Bench Press", .daily, .STR, .hevySets, ["exercise": .string("Bench Press"), "sets": .number(4)], .normal, 4, "sets"),
+                template("splits", "Splits", .daily, .AGI, .hevySets, ["exercise": .string("Splits"), "minDurationSec": .number(180)], .easy, 3, "min")
             ]
         )
     }
 
     /// Used only when the JSON catalog has no penalty rows. A flat 10K, like the bundled catalog.
     private static func synthesizedPenalty(band: ReadinessBand) -> [QuestTemplate] {
-        [template("penalty_run", "Penalty 10K", .penalty, .END, .stravaActivity, ["types": .array([.string("Run")]), "minDistanceMeters": .number(TrainingDay.tenKMeters)], 30, .penalty, 10, "km")]
+        [template("penalty_run", "Penalty 10K", .penalty, .END, .stravaActivity, ["types": .array([.string("Run")]), "minDistanceMeters": .number(TrainingDay.tenKMeters)], .penalty, 10, "km")]
     }
 
     private static func template(
@@ -185,7 +179,6 @@ struct FallbackCatalog {
         _ stat: Stat,
         _ method: VerificationMethod,
         _ params: [String: JSONValue],
-        _ xp: Int,
         _ difficulty: Difficulty,
         _ target: Double,
         _ unit: String
@@ -196,10 +189,8 @@ struct FallbackCatalog {
             kind: kind,
             stat: stat,
             verification: VerificationSpec(method: method, params: params),
-            xp: xp,
             difficulty: difficulty,
-            progress: QuestProgress(current: 0, target: target, unit: unit),
-            reward: nil
+            progress: QuestProgress(current: 0, target: target, unit: unit)
         )
     }
 }

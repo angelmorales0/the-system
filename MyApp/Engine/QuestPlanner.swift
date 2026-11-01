@@ -51,7 +51,7 @@ enum QuestPlanner {
     ])
 
     /// The API returns JSON in exactly this shape, so field names, stats, and methods cannot drift.
-    /// Ranges (xp 5-200, id length, title length) are not schema features; `validateBundle` still checks them.
+    /// Ranges (id length, title length) are not schema features; `validateBundle` still checks them.
     static let questBundleSchema: JSONValue = {
         func strings(_ values: Set<String>) -> JSONValue { .array(values.sorted().map(JSONValue.string)) }
         return .object([
@@ -78,7 +78,6 @@ enum QuestPlanner {
                                 "required": .array([.string("method"), .string("params")]),
                                 "additionalProperties": .bool(false),
                             ]),
-                            "xp": .object(["type": .string("integer"), "description": .string("5-200; about 25 for a main lift, 15 for an accessory, 40 for a 10K")]),
                             "difficulty": .object(["type": .string("string"), "enum": .array([.string("easy"), .string("normal"), .string("hard")])]),
                             "progress": .object([
                                 "type": .string("object"),
@@ -90,7 +89,7 @@ enum QuestPlanner {
                                 "additionalProperties": .bool(false),
                             ]),
                         ]),
-                        "required": .array(["id", "title", "kind", "stat", "verification", "xp", "difficulty", "progress"].map(JSONValue.string)),
+                        "required": .array(["id", "title", "kind", "stat", "verification", "difficulty", "progress"].map(JSONValue.string)),
                         "additionalProperties": .bool(false),
                     ]),
                 ]),
@@ -159,7 +158,7 @@ enum QuestPlanner {
     - No run longer than 90 minutes when trainingBand is yellow.
     - Do not invent medical diagnoses or extreme deficits. Do not suggest calories under 1500.
     - Never use the phrases starve, all-nighter, ignore injury, or max debt.
-    - Do not include completed, status, evidence, grantedXP, or assignedAt.
+    - Do not include completed, status, evidence, xp, reward, or assignedAt.
     - Output ONLY valid JSON with schemaVersion, dayKey, mode, headerLine, quests, narrative, and threat.
 
     """
@@ -438,7 +437,7 @@ enum QuestPlanner {
         cleaned["generatedBy"] = .string(["llm", "template", "mock"].contains(author) ? author : "template")
         let quests: [JSONValue] = (cleaned["quests"]?.arrayValue ?? []).compactMap { quest in
             guard var row = quest.objectValue else { return nil }
-            for field in ["completed", "status", "evidence", "grantedXP", "grantedStatPoints", "grantedRecoveryToken", "assignedAt", "skippedWithPotion"] { row[field] = nil }
+            for field in ["completed", "status", "evidence", "xp", "reward", "grantedXP", "grantedStatPoints", "grantedRecoveryToken", "assignedAt", "skippedWithPotion"] { row[field] = nil }
             if let mode, modes.contains(mode) { row["mode"] = .string(mode) }
             if let day {
                 // The app decodes a deadline and expects day-scoped ids, as the template writes them.
@@ -540,7 +539,6 @@ enum QuestPlanner {
             params = .object([:])
             problems.append("verification params")
         }
-        if let xp = quest["xp"]?.intValue, (5...200).contains(xp) {} else { problems.append("xp out of range") }
         let target = quest["progress"]?["target"]?.doubleValue
         let unit = quest["progress"]?["unit"]?.stringValue ?? ""
         if (target ?? 0) <= 0 { problems.append("progress target must be positive") }
@@ -638,15 +636,15 @@ enum QuestPlanner {
 
     static func modeQuests(mode: String, band: String, day: String) -> [JSONValue] {
         if mode == "full_recovery" {
-            return [quest(day, "sleep", "Sleep Hygiene", "daily", "REC", "timer_session", ["minSec": .number(600), "label": .string("Sleep Hygiene")], 20, "easy", 10, "min", mode)]
+            return [quest(day, "sleep", "Sleep Hygiene", "daily", "REC", "timer_session", ["minSec": .number(600), "label": .string("Sleep Hygiene")], "easy", 10, "min", mode)]
         }
         // Training is strength and 10K runs only; the app adds Stretching.
-        let run = quest(day, "run_10k", "10K Run", "daily", "END", "strava_activity", ["types": .array([.string("Run")]), "minDistanceMeters": .number(tenKMeters)], 40, "normal", 10, "km", mode)
+        let run = quest(day, "run_10k", "10K Run", "daily", "END", "strava_activity", ["types": .array([.string("Run")]), "minDistanceMeters": .number(tenKMeters)], "normal", 10, "km", mode)
         if band == "yellow" || band == "red" {
-            let push = quest(day, "push", "Push Session", "daily", "STR", "healthkit_workout", ["activityType": .string("traditionalStrengthTraining"), "minDurationSec": .number(1800)], 30, "normal", 30, "min", mode)
+            let push = quest(day, "push", "Push Session", "daily", "STR", "healthkit_workout", ["activityType": .string("traditionalStrengthTraining"), "minDurationSec": .number(1800)], "normal", 30, "min", mode)
             return [run, push]
         }
-        let bench = quest(day, "bench", "Bench Press", "daily", "STR", "hevy_sets", ["exercise": .string("Bench Press"), "sets": .number(4)], 40, "normal", 4, "sets", mode)
+        let bench = quest(day, "bench", "Bench Press", "daily", "STR", "hevy_sets", ["exercise": .string("Bench Press"), "sets": .number(4)], "normal", 4, "sets", mode)
         return [run, bench]
     }
 
@@ -658,7 +656,7 @@ enum QuestPlanner {
         let runs = planned.enumerated().map { index, label in
             let meters = label == "10K" ? tenKMeters : fiveKMeters
             return quest(day, "run_\(label.lowercased())_\(index + 1)", "\(label) Run", "daily", "END", "strava_activity",
-                         ["types": .array([.string("Run")]), "minDistanceMeters": .number(meters)], label == "10K" ? 40 : 25, "normal", meters / 1000, "km", mode)
+                         ["types": .array([.string("Run")]), "minDistanceMeters": .number(meters)], "normal", meters / 1000, "km", mode)
         }
         return runs + lifts
     }
@@ -673,14 +671,14 @@ enum QuestPlanner {
             let slug = name.lowercased().replacingOccurrences(of: " ", with: "_") + (item["role"]?.stringValue == "light" ? "_light" : "")
             if let seconds = item["secondsPerSet"]?.doubleValue, seconds > 0 {
                 let params: [String: JSONValue] = ["exercise": .string(name), "sets": .number(Double(sets)), "minDurationSec": .number(seconds * Double(sets))]
-                return quest(day, slug, "\(name) \(sets)x\(Int(seconds))s", "daily", "STR", "hevy_sets", params, 15, "normal", seconds * Double(sets) / 60, "min", mode)
+                return quest(day, slug, "\(name) \(sets)x\(Int(seconds))s", "daily", "STR", "hevy_sets", params, "normal", seconds * Double(sets) / 60, "min", mode)
             }
             let low = item["minReps"]?.intValue.flatMap { $0 == 0 ? nil : $0 } ?? 1
             let high = item["maxReps"]?.intValue.flatMap { $0 == 0 ? nil : $0 } ?? 1
             let reps = low == high ? "\(low)" : "\(low)-\(high)"
             let params: [String: JSONValue] = ["exercise": .string(name), "sets": .number(Double(sets)), "minReps": .number(Double(low))]
             let kind = item["optional"]?.boolValue == true ? "optional" : "daily"
-            return quest(day, slug, "\(name) \(sets)x\(reps)", kind, "STR", "hevy_sets", params, main ? 25 : 15, main ? "hard" : "normal", Double(sets), "sets", mode)
+            return quest(day, slug, "\(name) \(sets)x\(reps)", kind, "STR", "hevy_sets", params, main ? "hard" : "normal", Double(sets), "sets", mode)
         }
     }
 
@@ -691,14 +689,14 @@ enum QuestPlanner {
         var index = runs.count
         while index < 2 {
             let slug = ["run_10k_\(index + 1)", "run_10k_extra_\(index + 1)"].first { !taken.contains("q_\(day)_\($0)") } ?? "run_10k_extra_\(index + 1)"
-            runs.append(quest(day, slug, "10K Run", "daily", "END", "strava_activity", ["types": .array([.string("Run")]), "minDistanceMeters": .number(tenKMeters)], 40, "normal", 10, "km", mode))
+            runs.append(quest(day, slug, "10K Run", "daily", "END", "strava_activity", ["types": .array([.string("Run")]), "minDistanceMeters": .number(tenKMeters)], "normal", 10, "km", mode))
             index += 1
         }
         return runs
     }
 
     static func quest(_ day: String, _ slug: String, _ title: String, _ kind: String, _ stat: String, _ method: String, _ params: [String: JSONValue],
-                      _ xp: Int, _ difficulty: String, _ target: Double, _ unit: String, _ mode: String) -> JSONValue {
+                      _ difficulty: String, _ target: Double, _ unit: String, _ mode: String) -> JSONValue {
         .object([
             "id": .string(String("q_\(day)_\(slug)".prefix(64))),
             "title": .string(String(title.prefix(48))),
@@ -706,7 +704,6 @@ enum QuestPlanner {
             "stat": .string(stat),
             "verification": .object(["method": .string(method), "params": .object(params)]),
             "deadline": .string("\(day)T23:59:59Z"),
-            "xp": .number(Double(xp)),
             "difficulty": .string(difficulty),
             "mode": .string(mode),
             "progress": .object(["current": .number(0), "target": .number(target), "unit": .string(unit)]),

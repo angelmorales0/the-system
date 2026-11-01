@@ -63,9 +63,6 @@ enum QuestSafety {
             if title.count < 3 || title.count > 48 {
                 issues.append("quest title length")
             }
-            if quest.xp < 5 || quest.xp > 200 {
-                issues.append("xp out of range")
-            }
             if !quest.progress.target.isFinite || quest.progress.target <= 0 {
                 issues.append("progress target must be positive")
             }

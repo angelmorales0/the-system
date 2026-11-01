@@ -296,11 +296,9 @@ enum VerificationFixtures {
             stat: .AGI,
             verification: VerificationSpec(method: method, params: ["minSec": .number(600), "prompt": .string("Confirm")]),
             deadline: assignedAt.addingTimeInterval(86_400),
-            xp: 20,
             difficulty: .easy,
             mode: .performanceTraining,
             progress: QuestProgress(current: 0, target: 10, unit: "min"),
-            reward: nil,
             status: .pending,
             evidence: [],
             assignedAt: assignedAt

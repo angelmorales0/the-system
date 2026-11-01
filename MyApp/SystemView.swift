@@ -368,7 +368,7 @@ private struct HiddenQuestReveal: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 2)
                     sectionTitle("REWARD").padding(.top, 22)
-                    Text("None. Full Recovery tokens come only on holidays.")
+                    Text(unlock.gold.map { "+\($0.formatted()) gold" } ?? "None")
                         .font(.subheadline)
                         .padding(.top, 10)
                     Button(action: onClose) {

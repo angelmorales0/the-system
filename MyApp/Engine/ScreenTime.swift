@@ -29,11 +29,9 @@ enum ScreenTime {
             stat: .FOC,
             verification: VerificationSpec(method: .screenTimeLimit, params: ["maxMinutes": .number(Double(totalCapMinutes))]),
             deadline: QuestDay.endOfDay(now),
-            xp: 20,
             difficulty: .normal,
             mode: mode,
             progress: QuestProgress(current: 0, target: Double(totalCapMinutes), unit: "min"),
-            reward: nil,
             status: .pending,
             assignedAt: now
         )

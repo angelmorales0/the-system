@@ -61,12 +61,6 @@ enum VerificationMethod: String, Codable, CaseIterable, Equatable {
     }
 }
 
-enum QuestRewardType: String, Codable, Equatable {
-    case fullRecoveryToken = "full_recovery_token"
-    case xpBonus = "xp_bonus"
-    case none
-}
-
 /// Heterogeneous JSON used for verification params. Phase 2 verifiers read these.
 enum JSONValue: Codable, Equatable {
     case string(String)
@@ -161,11 +155,6 @@ struct QuestProgress: Codable, Equatable {
     }
 }
 
-struct QuestReward: Codable, Equatable {
-    var type: QuestRewardType
-    var amount: Int
-}
-
 struct Quest: Identifiable, Codable, Equatable {
     var id: String
     var title: String
@@ -173,11 +162,9 @@ struct Quest: Identifiable, Codable, Equatable {
     var stat: Stat
     var verification: VerificationSpec
     var deadline: Date
-    var xp: Int
     var difficulty: Difficulty
     var mode: QuestMode
     var progress: QuestProgress
-    var reward: QuestReward?
     var status: QuestStatus
     /// Observations that moved this quest. Empty until a verifier applies one.
     var evidence: [Evidence] = []
@@ -189,8 +176,8 @@ struct Quest: Identifiable, Codable, Equatable {
 
 extension Quest {
     private enum CodingKeys: String, CodingKey {
-        case id, title, kind, stat, verification, deadline, xp, difficulty, mode
-        case progress, reward, status
+        case id, title, kind, stat, verification, deadline, difficulty, mode
+        case progress, status
         case evidence, assignedAt, skippedWithPotion
     }
 
@@ -202,11 +189,9 @@ extension Quest {
         stat = try container.decode(Stat.self, forKey: .stat)
         verification = try container.decode(VerificationSpec.self, forKey: .verification)
         deadline = try container.decode(Date.self, forKey: .deadline)
-        xp = try container.decode(Int.self, forKey: .xp)
         difficulty = try container.decode(Difficulty.self, forKey: .difficulty)
         mode = try container.decode(QuestMode.self, forKey: .mode)
         progress = try container.decode(QuestProgress.self, forKey: .progress)
-        reward = try container.decodeIfPresent(QuestReward.self, forKey: .reward)
         // Model JSON omits status. A present value is still cleared by strippingModelCompletion.
         status = try container.decodeIfPresent(QuestStatus.self, forKey: .status) ?? .pending
         evidence = try container.decodeIfPresent([Evidence].self, forKey: .evidence) ?? []
@@ -222,11 +207,9 @@ extension Quest {
         try container.encode(stat, forKey: .stat)
         try container.encode(verification, forKey: .verification)
         try container.encode(deadline, forKey: .deadline)
-        try container.encode(xp, forKey: .xp)
         try container.encode(difficulty, forKey: .difficulty)
         try container.encode(mode, forKey: .mode)
         try container.encode(progress, forKey: .progress)
-        try container.encodeIfPresent(reward, forKey: .reward)
         try container.encode(status, forKey: .status)
         try container.encode(evidence, forKey: .evidence)
         try container.encode(assignedAt, forKey: .assignedAt)
@@ -322,7 +305,7 @@ extension QuestBundle {
 }
 
 /// What the player carries between days. The level and the seven stats are not here: `StatLevelSet` computes
-/// them from the real histories, and old saves' `level`, `xp`, `xpToNext`, and `stats` keys are ignored.
+/// them from the real histories, and old saves' `level`, `xp`, `xpToNext`, and `stats` keys are ignored, as are a quest's old `xp` and `reward` keys.
 struct PlayerState: Codable, Equatable {
     var displayName: String
     var fullRecoveryBank: Int

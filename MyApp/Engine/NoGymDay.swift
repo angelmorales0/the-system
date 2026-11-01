@@ -54,11 +54,9 @@ enum NoGymDay {
                 params: ["types": .array([.string("Run")]), "minDistanceMeters": .number(TrainingDay.tenKMeters)]
             ),
             deadline: QuestDay.endOfDay(now),
-            xp: template?.xp ?? 40,
             difficulty: template?.difficulty ?? .normal,
             mode: bundle.mode,
             progress: QuestProgress(current: 0, target: 10, unit: "km"),
-            reward: nil,
             status: .pending,
             evidence: [],
             assignedAt: now

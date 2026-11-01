@@ -16,11 +16,9 @@ enum DailyStretch {
             stat: .AGI,
             verification: VerificationSpec(method: .hevySets, params: ["stretchMinutes": .number(minutes)]),
             deadline: QuestDay.endOfDay(now),
-            xp: 15,
             difficulty: .easy,
             mode: mode,
             progress: QuestProgress(current: 0, target: minutes, unit: "min"),
-            reward: nil,
             status: .pending,
             assignedAt: now
         )
@@ -50,9 +48,8 @@ enum DailyStretch {
         var errors: [String] = []
         let now = Date(timeIntervalSince1970: 1_790_000_000)
         let other = Quest(id: "run_intervals", title: "Run", kind: .daily, stat: .END,
-                          verification: VerificationSpec(method: .manualConfirm, params: [:]), deadline: now, xp: 10,
-                          difficulty: .easy, mode: .performanceTraining, progress: QuestProgress(current: 0, target: 1, unit: "session"),
-                          reward: nil, status: .pending)
+                          verification: VerificationSpec(method: .manualConfirm, params: [:]), deadline: now, difficulty: .easy, mode: .performanceTraining, progress: QuestProgress(current: 0, target: 1, unit: "session"),
+                          status: .pending)
         var optional = other
         optional.id = "light_spend"
         optional.kind = .optional

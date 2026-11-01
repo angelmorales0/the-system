@@ -277,11 +277,9 @@ enum IntegrationRules {
             stat: .END,
             verification: VerificationSpec(method: method, params: params),
             deadline: Date(timeIntervalSince1970: 1_700_000_000),
-            xp: 20,
             difficulty: .easy,
             mode: .performanceTraining,
             progress: QuestProgress(current: 0, target: 20, unit: "min"),
-            reward: nil,
             status: .pending
         )
     }

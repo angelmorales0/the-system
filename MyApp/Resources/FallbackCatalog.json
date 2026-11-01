@@ -26,14 +26,12 @@
               "minDistanceMeters": 10000
             }
           },
-          "xp": 40,
           "difficulty": "normal",
           "progress": {
             "current": 0,
             "target": 10,
             "unit": "km"
-          },
-          "reward": null
+          }
         },
         {
           "id": "bench_press",
@@ -47,14 +45,12 @@
               "sets": 4
             }
           },
-          "xp": 40,
           "difficulty": "normal",
           "progress": {
             "current": 0,
             "target": 4,
             "unit": "sets"
-          },
-          "reward": null
+          }
         }
       ]
     },
@@ -84,14 +80,12 @@
               "minDistanceMeters": 10000
             }
           },
-          "xp": 40,
           "difficulty": "normal",
           "progress": {
             "current": 0,
             "target": 10,
             "unit": "km"
-          },
-          "reward": null
+          }
         },
         {
           "id": "push_session",
@@ -105,14 +99,12 @@
               "minDurationSec": 1800
             }
           },
-          "xp": 30,
           "difficulty": "normal",
           "progress": {
             "current": 0,
             "target": 30,
             "unit": "min"
-          },
-          "reward": null
+          }
         }
       ]
     },
@@ -140,14 +132,12 @@
               "prompt": "Confirm a full recovery day"
             }
           },
-          "xp": 15,
           "difficulty": "easy",
           "progress": {
             "current": 0,
             "target": 1,
             "unit": "session"
-          },
-          "reward": null
+          }
         }
       ]
     }
@@ -174,14 +164,12 @@
               "minDistanceMeters": 10000
             }
           },
-          "xp": 30,
           "difficulty": "penalty",
           "progress": {
             "current": 0,
             "target": 10,
             "unit": "km"
-          },
-          "reward": null
+          }
         }
       ]
     }

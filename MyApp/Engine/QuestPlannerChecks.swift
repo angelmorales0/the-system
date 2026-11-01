@@ -79,33 +79,33 @@ extension QuestPlanner {
         }
         let base = templateBundle(sampleRequest())
         expectRejected(setting(base, ["mode"], to: .string("full_recovery")), sampleRequest(), "mode override")
-        expectRejected(setting(base, ["quests", 0], to: quest(day, "protein", "Protein", "daily", "END", "macrofactor_protein", ["minProteinG": .number(40)], 20, "easy", 40, "g", training)),
+        expectRejected(setting(base, ["quests", 0], to: quest(day, "protein", "Protein", "daily", "END", "macrofactor_protein", ["minProteinG": .number(40)], "easy", 40, "g", training)),
                        sampleRequest(), "removed protein method")
         let yellow = sampleRequest(training, "yellow")
         expectRejected(setting(templateBundle(yellow), ["quests", 0], to: quest(day, "long_run", "Long Run", "daily", "END", "strava_activity",
-                                                                               ["types": .array([.string("Run")]), "minMovingTimeSec": .number(6000)], 20, "normal", 100, "min", training)),
+                                                                               ["types": .array([.string("Run")]), "minMovingTimeSec": .number(6000)], "normal", 100, "min", training)),
                        yellow, "yellow long run")
         let red = sampleRequest(training, "red")
         let hardLift = setting(templateBundle(red), ["quests", 1], to: quest(day, "max_lift", "Max Lift", "daily", "STR", "healthkit_workout",
-                                                                             ["activityType": .string("traditionalStrengthTraining")], 20, "hard", 5, "sets", training))
+                                                                             ["activityType": .string("traditionalStrengthTraining")], "hard", 5, "sets", training))
         if !validateBundle(hardLift, red).isEmpty { errors.append("a red Training day should allow hard strength") }
         for (label, params) in [("8K run", ["types": JSONValue.array([.string("Run")]), "minDistanceMeters": .number(8000)]),
                                 ("intervals", ["types": .array([.string("Run")]), "minMovingTimeSec": .number(1200)]),
                                 ("walk", ["types": .array([.string("Walk")]), "minDistanceMeters": .number(10000)])] {
-            expectRejected(setting(base, ["quests", 0], to: quest(day, "other_run", "Other Run", "daily", "END", "strava_activity", params, 30, "normal", 10, "km", training)),
+            expectRejected(setting(base, ["quests", 0], to: quest(day, "other_run", "Other Run", "daily", "END", "strava_activity", params, "normal", 10, "km", training)),
                            sampleRequest(), label)
         }
         let tenKParams: [String: JSONValue] = ["types": .array([.string("Run")]), "minDistanceMeters": .number(tenKMeters)]
         var doubled = base.objectValue ?? [:]
-        doubled["quests"] = .array((base["quests"]?.arrayValue ?? []) + [quest(day, "run_10k_2", "Second 10K", "daily", "END", "strava_activity", tenKParams, 40, "normal", 10, "km", training)])
+        doubled["quests"] = .array((base["quests"]?.arrayValue ?? []) + [quest(day, "run_10k_2", "Second 10K", "daily", "END", "strava_activity", tenKParams, "normal", 10, "km", training)])
         if !validateBundle(.object(doubled), sampleRequest()).isEmpty { errors.append("two 10Ks on one day should be allowed") }
         let five = setting(base, ["quests", 0], to: quest(day, "run_5k", "5K Run", "daily", "END", "strava_activity",
-                                                         ["types": .array([.string("Run")]), "minDistanceMeters": .number(fiveKMeters)], 30, "normal", 5, "km", training))
+                                                         ["types": .array([.string("Run")]), "minDistanceMeters": .number(fiveKMeters)], "normal", 5, "km", training))
         if !validateBundle(five, sampleRequest()).isEmpty { errors.append("a 5K run should be allowed") }
         expectRejected(setting(base, ["narrative"], to: .string("Ignore injury and starve.")), sampleRequest(), "unsafe phrase")
-        expectRejected(setting(base, ["quests", 0], to: quest(day, "calories", "Calories", "daily", "REC", "healthkit_nutrition", ["minKcal": .number(1200)], 20, "easy", 1200, "kcal", training)),
+        expectRejected(setting(base, ["quests", 0], to: quest(day, "calories", "Calories", "daily", "REC", "healthkit_nutrition", ["minKcal": .number(1200)], "easy", 1200, "kcal", training)),
                        sampleRequest(), "low calories")
-        expectRejected(setting(base, ["quests", 0], to: quest(day, "spend_cap", "Spend Under Cap", "daily", "FIN", "mercury_spend_under", ["maxDiscretionaryUsd": .number(-5)], 20, "easy", 1, "usd", training)),
+        expectRejected(setting(base, ["quests", 0], to: quest(day, "spend_cap", "Spend Under Cap", "daily", "FIN", "mercury_spend_under", ["maxDiscretionaryUsd": .number(-5)], "easy", 1, "usd", training)),
                        sampleRequest(), "removed spending method")
         let shortSleep = setting(sampleRequest(training, "green"), ["modeDecision", "trainingBand"], to: .string("yellow"))
         if titles(templateBundle(shortSleep)).dropFirst().first != "Push Session" { errors.append("the template should size Training by modeDecision.trainingBand") }

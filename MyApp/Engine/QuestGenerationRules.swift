@@ -311,11 +311,9 @@ enum QuestGenerationRules {
             stat: .END,
             verification: VerificationSpec(method: .timerSession, params: ["minSec": .number(600)]),
             deadline: QuestDay.endOfDay(now),
-            xp: 20,
             difficulty: .easy,
             mode: mode,
             progress: QuestProgress(current: 0, target: 10, unit: "min"),
-            reward: nil,
             status: .pending
         )
         return QuestBundle(

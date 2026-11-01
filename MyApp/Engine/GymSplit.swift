@@ -298,11 +298,9 @@ enum GymSplit {
             stat: .STR,
             verification: VerificationSpec(method: .hevySets, params: params),
             deadline: QuestDay.endOfDay(now),
-            xp: exercise.role == .main ? 25 : 15,
             difficulty: exercise.role == .main ? .hard : .normal,
             mode: .performanceTraining,
             progress: progress,
-            reward: nil,
             status: .pending,
             evidence: [],
             assignedAt: now

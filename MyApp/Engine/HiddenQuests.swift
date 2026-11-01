@@ -11,6 +11,8 @@ struct HiddenQuestUnlock: Codable, Equatable, Identifiable {
     var achieved: Double
     var required: Double
     var unit: String
+    /// Gold this unlock paid. Nil on unlocks from before the reward existed.
+    var gold: Int?
     /// True after the player closes the reveal window.
     var seen: Bool
     var unlockedAt: Date
@@ -35,6 +37,8 @@ enum HiddenQuests {
     static let beyondTheLimitId = "beyond_the_limit"
     static let beyondTheLimitTitle = "Beyond the Limit"
     static let factor = 1.5
+    /// Gold paid at the unlock, on top of the day. Three unlocks buy a Quicksilver Vial.
+    static let goldReward = 500
 
     /// END distance quests checked by Strava or Apple Health. Penalty quests never count.
     static func isEligible(_ quest: Quest) -> Bool {
@@ -76,10 +80,12 @@ extension GameSnapshot {
                 achieved: result.achieved,
                 required: result.required,
                 unit: "km",
+                gold: HiddenQuests.goldReward,
                 seen: false,
                 unlockedAt: now
             )
             hiddenUnlocks.append(unlock)
+            gold += HiddenQuests.goldReward
             return unlock
         }
         return nil
@@ -169,7 +175,11 @@ enum HiddenQuestRules {
         }
         // 15.2 km on a 10 km target unlocks Beyond the Limit. It banks no token.
         let bankBefore = fifteen.player.fullRecoveryBank
+        let goldBefore = fifteen.gold
         let unlock = fifteen.checkHiddenQuests(integrations: fifteenData, now: now)
+        if fifteen.gold != goldBefore + HiddenQuests.goldReward || unlock?.gold != HiddenQuests.goldReward {
+            errors.append("Beyond the Limit should pay \(HiddenQuests.goldReward) gold once, got \(fifteen.gold - goldBefore)")
+        }
         // The 10K Run row itself carries the extra distance.
         let tenKRow = fifteen.bundle.quests.first { $0.id == tenK?.id }
         if tenKRow?.progress.bracketLabel != "[15.2/10km]" || tenKRow?.status != .completed {
@@ -185,7 +195,8 @@ enum HiddenQuestRules {
             errors.append("a new unlock should wait for the reveal window")
         }
         // Once per day: a second check grants nothing.
-        if fifteen.checkHiddenQuests(integrations: fifteenData, now: now) != nil || fifteen.player.fullRecoveryBank != bankBefore {
+        if fifteen.checkHiddenQuests(integrations: fifteenData, now: now) != nil || fifteen.player.fullRecoveryBank != bankBefore
+            || fifteen.gold != goldBefore + HiddenQuests.goldReward {
             errors.append("Beyond the Limit must unlock at most once per day")
         }
         fifteen.markHiddenRevealSeen(id: unlock?.id ?? "")
