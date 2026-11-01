@@ -412,7 +412,8 @@ struct GameSnapshot: Codable, Equatable {
         let today = GymSplit.today(history: questHistory, dayKey: dayKey, goals: catalog.strengthGoals)
         var split = GymSplit.apply(today, to: catalogDay, band: decision.trainingBand, now: now)
         // The 50 km window is already full: a rest day from running. The lifts stay.
-        if decision.selectedMode == .performanceTraining, loggedRunKm(before: dayKey) >= Double(TrainingDay.runKmPer7Days) {
+        // A "No gym today" day stands outside the rule: `NoGymDay.cardioOnly` gives it two 10Ks regardless.
+        if decision.selectedMode == .performanceTraining, noGymDayKey != dayKey, loggedRunKm(before: dayKey) >= Double(TrainingDay.runKmPer7Days) {
             split.quests.removeAll { $0.kind != .penalty && TrainingDay.isRaceRun($0) }
         }
         bundle = finished(split, catalog: catalog, now: now)

@@ -168,6 +168,12 @@ enum RestRules {
         if ran.bundle.quests.contains(where: { TrainingDay.isRaceRun($0) }) || !ran.bundle.quests.contains(where: { TrainingDay.isStrength($0) && $0.id != DailyStretch.questId }) {
             errors.append("50 km in six days should drop the run and keep the lifts, got \(ran.bundle.quests.map(\.title))")
         }
+        // "No gym today" stands outside the rule: two 10Ks on a full window.
+        var noGym = ran
+        _ = noGym.setNoGym(true, catalog: catalog, now: dayOne)
+        if noGym.bundle.quests.filter({ TrainingDay.isRaceRun($0) }).count != 2 {
+            errors.append("a no-gym day should run two 10Ks on a full window, got \(noGym.bundle.quests.map(\.title))")
+        }
         ran.questHistory.removeLast()
         ran.rebuildBundle(catalog: catalog, now: dayOne)
         if !ran.bundle.quests.contains(where: { TrainingDay.isRaceRun($0) }) { errors.append("40 km in six days should keep the run") }

@@ -499,7 +499,9 @@ enum TrainingHistory {
     }
 
     /// Hard limits the model cannot talk its way past. Runs on every generated Training bundle.
-    static func limitProblems(_ bundle: JSONValue, _ history: JSONValue?) -> [String] {
+    /// `noGym`: a "No gym today" day runs two 10Ks whatever the window says, so the window's km rule is skipped.
+    /// The daily caps still hold.
+    static func limitProblems(_ bundle: JSONValue, _ history: JSONValue?, noGym: Bool = false) -> [String] {
         guard bundle["mode"]?.stringValue == "performance_training" else { return [] }
         let quests = (bundle["quests"]?.arrayValue ?? []).filter { $0.objectValue != nil }
         var problems: [String] = []
@@ -516,7 +518,7 @@ enum TrainingHistory {
         if tenKs > maxTenKsPerDay { problems.append("more than \(maxTenKsPerDay) 10Ks in one day") }
         let km = plannedRunKm(quests)
         if km > maxRunKmPerDay { problems.append("more than \(maxRunKmPerDay) km of runs in one day") }
-        if let planned = history?["runWindow"]?["plannedKmToday"]?.intValue, km != planned {
+        if !noGym, let planned = history?["runWindow"]?["plannedKmToday"]?.intValue, km != planned {
             let goal = history?["runWindow"]?["goalKm"]?.intValue.map(String.init) ?? "None"
             problems.append(planned == 0
                 ? "the last 6 days already hold \(goal) km; today is a rest day from running with 0 km of runs, the plan has \(km)"
@@ -718,6 +720,11 @@ enum TrainingHistory {
             errors.append("a run should be rejected when the window is already full")
         }
         if !limitProblems(bundle(hevy("Bench Press", ["minReps": .number(5)])), .object(rested)).isEmpty { errors.append("lifts alone should pass on a run rest day") }
+        // "No gym today" runs two 10Ks outside the window rule, on a full window and on a 20 km day alike.
+        if !limitProblems(bundle(tenKQuest, tenKQuest), .object(rested), noGym: true).isEmpty || !limitProblems(bundle(tenKQuest, tenKQuest), .object(windowed), noGym: true).isEmpty {
+            errors.append("a no-gym day's two 10Ks should pass whatever the window says")
+        }
+        if limitProblems(bundle(tenKQuest, tenKQuest, tenKQuest), .object(rested), noGym: true).isEmpty { errors.append("a no-gym day still keeps the two-10K cap") }
         if limitProblems(bundle(tenKQuest, tenKQuest, hevy("Bench Press", ["minReps": .number(5)])), .object(windowed)).contains(where: { $0.contains("km of runs") }) {
             errors.append("two 10Ks should pass when the window needs 20 km")
         }

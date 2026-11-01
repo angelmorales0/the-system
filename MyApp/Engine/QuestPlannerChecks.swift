@@ -144,6 +144,10 @@ extension QuestPlanner {
         if !validateBundle(templateBundle(sampleRequest()), restWindow).contains(where: { $0.contains("rest day from running") }) {
             errors.append("a 10K on a full window should be rejected")
         }
+        let noGymRest = setting(restWindow, ["constraints", "noGymToday"], to: .bool(true))
+        if titles(templateBundle(noGymRest)).filter({ $0 == "10K Run" }).count != 2 || !validateBundle(sanitize(templateBundle(noGymRest), noGymRest), noGymRest).isEmpty {
+            errors.append("a no-gym day should run two 10Ks even on a full window, got \(titles(templateBundle(noGymRest)))")
+        }
         let paced = setting(setting(base, ["quests", 0, "title"], to: .string("Easy 10K @ 5:30/km")), ["narrative"], to: .string("Run it easy."))
         if titles(sanitize(paced, sampleRequest())).first != "10K Run" { errors.append("a run title should be only 10K Run") }
         if decodedBundle(sanitize(templateBundle(sampleRequest()), sampleRequest())) == nil { errors.append("a sanitized template should decode as a QuestBundle") }

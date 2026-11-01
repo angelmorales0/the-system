@@ -146,7 +146,7 @@ enum QuestPlanner {
 
     Readiness:
     - modeDecision.trainingBand is WHOOP readiness, one step lower after sleep performance under 60%. Green: full plan. Yellow and red: same exercises, one fewer back-off set and top sets at RPE 7. Every band still gets the run and strength work.
-    - If constraints.noGymToday is true, the player has no gym today: write no strength quests and give two 10K runs instead.
+    - If constraints.noGymToday is true, the player has no gym today: write no strength quests and give two 10K runs instead. These two 10Ks stand outside the run window rule: write them whatever runsToday says, and the app does not hold them to plannedKmToday.
 
     App rules:
     - Obey modeDecision.selectedMode. Do not change it. lockedByRules is authoritative.
@@ -507,7 +507,7 @@ enum QuestPlanner {
             texts.append(quest["title"]?.stringValue ?? "")
             texts += (TrainingHistory.params(quest)?.objectValue ?? [:]).values.compactMap(\.stringValue)
         }
-        problems += TrainingHistory.limitProblems(bundle, context["trainingHistory"])
+        problems += TrainingHistory.limitProblems(bundle, context["trainingHistory"], noGym: context["constraints"]?["noGymToday"]?.boolValue == true)
         problems += splitProblems(bundle, context)
         problems += unloggedWeightProblems(bundle, context)
         let haystack = texts.joined(separator: "\n").lowercased()
