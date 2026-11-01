@@ -126,7 +126,7 @@ enum QuestGenerationRules {
         if let decoded = decodeModelJSON() {
             let stripped = decoded.strippingModelCompletion(assignedAt: now.addingTimeInterval(5))
             let quest = stripped.quests[0]
-            if quest.status != .pending || quest.progress.current != 0 || !quest.evidence.isEmpty || quest.grantedXP != 0 {
+            if quest.status != .pending || quest.progress.current != 0 || !quest.evidence.isEmpty {
                 errors.append("model JSON completion was not stripped")
             }
             if quest.assignedAt != now.addingTimeInterval(5) {
@@ -180,10 +180,10 @@ enum QuestGenerationRules {
     }
 
     /// Saves from before Targets were removed hold a `targets` array, Target quests, and the Hybrid mode.
-    /// They must still load, so the player keeps level and XP.
+    /// They must still load, so the player keeps the bank and the tier.
     private static func legacyTargetSaveLoads(catalog: FallbackCatalog, now: Date) -> [String] {
         var saved = GameSnapshot.fresh(catalog: catalog, now: now)
-        saved.player.xp = 77
+        saved.player.fullRecoveryBank = 77
         guard let data = try? saved.encoded(),
               var json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               var bundle = json["bundle"] as? [String: Any],
@@ -207,8 +207,8 @@ enum QuestGenerationRules {
             return ["a save with old Target data should still load"]
         }
         var errors: [String] = []
-        if loaded.player.xp != 77 {
-            errors.append("legacy save should keep XP")
+        if loaded.player.fullRecoveryBank != 77 {
+            errors.append("legacy save should keep the player")
         }
         if loaded.bundle.quests.contains(where: { $0.id == "q_legacy_tgt" }) || loaded.bundle.quests.count != quests.count - 1 {
             errors.append("legacy save should drop only the Target quest")
@@ -275,9 +275,9 @@ enum QuestGenerationRules {
                 localDate: dayKey,
                 weekday: "Thursday",
                 level: 42,
-                xp: 3420,
-                xpToNext: 5000,
-                stats: .starter,
+                maxLevel: StatLevelSet.overallMaxLevel,
+                statLevels: Dictionary(uniqueKeysWithValues: Stat.allCases.map { ($0.rawValue, 100) }),
+                maxStatLevel: StatLevel.maxLevel,
                 fullRecoveryBank: 2,
                 penaltyTier: 0,
                 streaks: .unknown
@@ -316,10 +316,7 @@ enum QuestGenerationRules {
             mode: mode,
             progress: QuestProgress(current: 0, target: 10, unit: "min"),
             reward: nil,
-            status: .pending,
-            grantedXP: 0,
-            grantedStatPoints: 0,
-            grantedRecoveryToken: false
+            status: .pending
         )
         return QuestBundle(
             schemaVersion: 1,

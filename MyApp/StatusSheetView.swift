@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// The System's STATUS window: level, job and title, HP and fatigue, the seven stats, gold, and Full Recoveries.
+/// The System's STATUS window: the overall level and XP, HP and fatigue, the seven stats, gold, and Full Recoveries.
+/// Overall XP is the seven stat levels added up (0...2450); the level is that share of 146.
 /// HP turns red when critical; the fatigue meter turns red at 80 or more.
 /// Tapping a stat opens its targets, the gold opens the shop, and the gear opens the settings.
 struct StatusSheetView: View {
@@ -17,7 +18,7 @@ struct StatusSheetView: View {
                     SystemPanel(padding: 14) {
                         StatusSheetContent(
                             level: store.statLevels.overallLevel,
-                            xp: (store.player.xp, store.player.xpToNext),
+                            xp: (store.statLevels.overallXP, StatLevelSet.overallMaxXP),
                             hp: store.hitPoints,
                             fatigue: store.fatigue,
                             stats: Stat.allCases.map { ($0, store.statLevels[$0]) },
@@ -52,8 +53,8 @@ struct StatusSheetView: View {
 /// The window's content, apart from the store, so the preview can show any values.
 private struct StatusSheetContent: View {
     let level: Int
-    /// Quest XP toward the next XP level: current and the step.
-    var xp: (current: Int, next: Int) = (0, 1)
+    /// Overall XP: the stat levels added up, out of their combined max.
+    var xp: (current: Int, max: Int) = (0, StatLevelSet.overallMaxXP)
     let hp: (current: Int, max: Int)
     let fatigue: Int
     let stats: [(Stat, Int)]
@@ -62,16 +63,11 @@ private struct StatusSheetContent: View {
     var onSelectStat: (Stat) -> Void = { _ in }
     var onSettings: () -> Void = {}
     var onShop: () -> Void = {}
-    /// The app has no jobs or titles yet.
-    var job = "None"
-    var title = "None"
-
     var body: some View {
         VStack(spacing: 22) {
             StatusTitleBox()
                 .overlay(alignment: .trailing) { settingsButton }
             levelRow
-            xpBar
             StatusFrame {
                 HStack(alignment: .center, spacing: 14) {
                     hpMeter
@@ -160,17 +156,14 @@ private struct StatusSheetContent: View {
             }
             .frame(minWidth: 96)
             .accessibilityElement(children: .combine)
-            VStack(alignment: .leading, spacing: 10) {
-                labeled("JOB", job)
-                labeled("TITLE", title)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            xpBar
+                .frame(maxWidth: .infinity)
         }
     }
 
-    /// "XP 3,420 / 5,000" with a bar that fills toward the next XP level.
+    /// "XP 1,230 / 2,450" with a bar: the stat levels added up, as a share of their max. The level is this share of 146.
     private var xpBar: some View {
-        let step = max(xp.next, 1)
+        let step = max(xp.max, 1)
         let fraction = Double(min(max(xp.current, 0), step)) / Double(step)
         return VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
@@ -188,16 +181,6 @@ private struct StatusSheetContent: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("XP")
         .accessibilityValue("\(xp.current) of \(step)")
-    }
-
-    private func labeled(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(label + ":").font(.subheadline.weight(.semibold)).tracking(1.1)
-            Text(value).font(.subheadline)
-        }
-        .lineLimit(1)
-        .minimumScaleFactor(0.75)
-        .accessibilityElement(children: .combine)
     }
 
     private var hpMeter: some View {
@@ -363,7 +346,7 @@ private struct StatCell: View {
         ScrollView {
             VStack(spacing: 24) {
                 SystemPanel(padding: 14) {
-                    StatusSheetContent(level: 61, xp: (3_420, 5_000), hp: (2_911, 3_602), fatigue: 34,
+                    StatusSheetContent(level: 61, xp: (1_030, 2_450), hp: (2_911, 3_602), fatigue: 34,
                                        stats: Stat.allCases.map { ($0, 140) }, fullRecoveryPoints: 7)
                 }
                 SystemPanel(padding: 14) {

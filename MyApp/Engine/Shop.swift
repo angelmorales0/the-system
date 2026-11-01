@@ -28,7 +28,7 @@ enum Gold {
 enum PotionDose: String, Codable, Equatable {
     /// Clears the stat's quests for the day.
     case full
-    /// Costs 40%. Completes the stat's quests once half the work is logged, for half the XP.
+    /// Costs 40%. Completes the stat's quests once half the work is logged.
     case half
 }
 
@@ -79,7 +79,7 @@ enum Potion: String, Codable, CaseIterable, Equatable {
         case .gildedIndulgence:
             "\(rank). Gold dust in a sealed flask. Spend up to \(FinanceLevel.usd(Self.indulgenceUsd)) over budget today. The ledger does not count it."
         case .nightfall:
-            "\(rank). Eyes stay open until dawn. Skips tonight's sleep quest. The sleepless night and tomorrow's tired morning do not count against REC."
+            "\(rank). Eyes stay open until dawn. No quest is skipped. The sleepless night and tomorrow's tired morning do not count against REC."
         case .idleHours:
             "\(rank). A grey veil over the clock. Lifts today's screen time cap. The lost hours do not count against FOC."
         case .ironblood:
@@ -227,17 +227,6 @@ extension GameSnapshot {
         for quest in potionTargets(potion) {
             guard let index = bundle.quests.firstIndex(where: { $0.id == quest.id }) else { continue }
             var row = bundle.quests[index]
-            if dose == .half {
-                let xp = Self.xpGrant(for: row) / 2
-                let points = min(row.difficulty.statWeight / 2, player.stats.room(for: row.stat))
-                player.addXP(xp)
-                player.stats[row.stat] += points
-                row.grantedXP = xp
-                row.grantedStatPoints = points
-            } else {
-                row.grantedXP = 0
-                row.grantedStatPoints = 0
-            }
             row.status = .completed
             row.skippedWithPotion = true
             bundle.quests[index] = row
@@ -333,7 +322,7 @@ enum ShopRules {
             errors.append("buying Full Recovery should cost \(Gold.fullRecoveryPrice) and bank a token")
         }
 
-        // A full dose clears every open quest of its stat with no XP. One potion per day. The day pays no gold.
+        // A full dose clears every open quest of its stat. One potion per day. The day pays no gold.
         guard let potion = Potion.allCases.first(where: { $0.needsQuest && !shop.potionTargets($0).isEmpty }) else {
             return errors + ["the shop test day needs an open STR, END, or AGI quest"]
         }
@@ -341,14 +330,12 @@ enum ShopRules {
             errors.append("a potion without gold should be refused")
         }
         shop.gold = 100_000
-        let xp = shop.player.xp
-        let level = shop.player.level
         let targets = shop.potionTargets(potion).map(\.id)
         _ = shop.usePotion(potion)
         let cleared = shop.bundle.quests.filter { targets.contains($0.id) }
         if cleared.isEmpty || !cleared.allSatisfy({ $0.status == .completed && $0.skippedWithPotion })
-            || shop.player.xp != xp || shop.player.level != level || shop.gold != 100_000 - potion.basePrice {
-            errors.append("\(potion.name) should clear its quests with no XP for \(potion.basePrice) gold")
+            || shop.gold != 100_000 - potion.basePrice {
+            errors.append("\(potion.name) should clear its quests for \(potion.basePrice) gold")
         }
         if shop.potionBlocker(.gildedIndulgence) == nil {
             errors.append("a second potion on the same day should be refused")
@@ -373,7 +360,7 @@ enum ShopRules {
             errors.append("a repeat half dose should cost \(half), got \(shop.potionPrice(potion, dose: .half))")
         }
 
-        // A half dose needs half the work logged, then completes for half the XP.
+        // A half dose needs half the work logged, then completes the quest.
         if let target = shop.potionTargets(potion).first {
             if shop.potionBlocker(potion, dose: .half) == nil {
                 errors.append("a half dose with no work logged should be refused")
@@ -382,11 +369,10 @@ enum ShopRules {
                 guard let index = shop.bundle.quests.firstIndex(where: { $0.id == quest.id }) else { continue }
                 shop.bundle.quests[index].progress.current = (quest.progress.target / 2).rounded(.up)
             }
-            let xpBefore = shop.player.xp
             _ = shop.usePotion(potion, dose: .half)
             let row = shop.bundle.quests.first { $0.id == target.id }
-            if row?.status != .completed || row?.grantedXP != GameSnapshot.xpGrant(for: target) / 2 || shop.player.xp == xpBefore {
-                errors.append("a half dose should complete the quest for half the XP, got \(String(describing: row?.grantedXP))")
+            if row?.status != .completed || row?.skippedWithPotion != true {
+                errors.append("a half dose should complete the quest once half the work is logged")
             }
         }
 

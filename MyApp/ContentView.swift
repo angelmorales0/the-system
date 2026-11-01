@@ -38,7 +38,7 @@ struct ContentView: View {
         // An open penalty covers every page until its run is verified.
         .overlay {
             if let penalty = store.openPenaltyQuest {
-                PenaltyQuestView(quest: penalty, startedAt: store.penaltyStartedAt)
+                PenaltyQuestView(quest: penalty, startedAt: store.penaltyStartedAt, tier: store.player.penaltyTier)
                     .transition(.opacity)
             }
         }

@@ -77,8 +77,7 @@ enum TrainingDay {
         func quest(_ id: String, _ title: String, _ method: VerificationMethod, _ params: [String: JSONValue] = [:], kind: QuestKind = .daily) -> Quest {
             Quest(id: id, title: title, kind: kind, stat: .STR, verification: VerificationSpec(method: method, params: params),
                   deadline: now, xp: 10, difficulty: .easy, mode: .performanceTraining,
-                  progress: QuestProgress(current: 0, target: 1, unit: "session"), reward: nil, status: .pending,
-                  grantedXP: 0, grantedStatPoints: 0, grantedRecoveryToken: false)
+                  progress: QuestProgress(current: 0, target: 1, unit: "session"), reward: nil, status: .pending)
         }
         var bundle = QuestBundle.empty
         bundle.mode = .performanceTraining

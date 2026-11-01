@@ -22,9 +22,6 @@ enum DailyStretch {
             progress: QuestProgress(current: 0, target: minutes, unit: "min"),
             reward: nil,
             status: .pending,
-            grantedXP: 0,
-            grantedStatPoints: 0,
-            grantedRecoveryToken: false,
             assignedAt: now
         )
     }
@@ -55,7 +52,7 @@ enum DailyStretch {
         let other = Quest(id: "run_intervals", title: "Run", kind: .daily, stat: .END,
                           verification: VerificationSpec(method: .manualConfirm, params: [:]), deadline: now, xp: 10,
                           difficulty: .easy, mode: .performanceTraining, progress: QuestProgress(current: 0, target: 1, unit: "session"),
-                          reward: nil, status: .pending, grantedXP: 0, grantedStatPoints: 0, grantedRecoveryToken: false)
+                          reward: nil, status: .pending)
         var optional = other
         optional.id = "light_spend"
         optional.kind = .optional

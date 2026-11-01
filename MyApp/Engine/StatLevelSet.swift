@@ -15,10 +15,17 @@ struct StatLevelSet: Equatable {
 
     var isAllMax: Bool { Stat.allCases.allSatisfy { self[$0] >= StatLevel.maxLevel } }
 
-    /// 0...1: the seven stats together as a share of their combined max. Every stat counts the same.
+    /// Overall XP at the max: every stat at 350, so 2450.
+    static let overallMaxXP = Stat.allCases.count * StatLevel.maxLevel
+
+    /// Overall XP, 0...2450: the seven stat levels added up. Every stat counts the same.
+    var overallXP: Int {
+        Stat.allCases.reduce(0) { $0 + min(max(self[$1], 0), StatLevel.maxLevel) }
+    }
+
+    /// 0...1: `overallXP` as a share of `overallMaxXP`.
     var overallFraction: Double {
-        let total = Stat.allCases.reduce(0) { $0 + min(self[$1], StatLevel.maxLevel) }
-        return Double(total) / Double(Stat.allCases.count * StatLevel.maxLevel)
+        Double(overallXP) / Double(Self.overallMaxXP)
     }
 
     /// 0...146. Only all seven stats at 350 reach 146; anything less stops at 145.
@@ -170,6 +177,9 @@ struct StatLevelSet: Equatable {
         single.levels[.STR] = StatLevel.maxLevel
         if single.overallLevel != 20 || single.overallProgress <= 0 || single.overallProgress >= 1 {
             errors.append("one maxed stat should be overall 20 with partial progress, got \(single.overallLevel) \(single.overallProgress)")
+        }
+        if single.overallXP != StatLevel.maxLevel || uniform(StatLevel.maxLevel).overallXP != Self.overallMaxXP || Self.overallMaxXP != 2_450 {
+            errors.append("overall XP should add the stat levels up to 2450, got \(single.overallXP) \(uniform(StatLevel.maxLevel).overallXP)")
         }
 
         let keys = IntegrationClient.financeMonthKeys(dayKey: "2026-01-05")

@@ -101,9 +101,6 @@ struct FallbackCatalog {
                 progress: template.progress,
                 reward: template.reward,
                 status: .pending,
-                grantedXP: 0,
-                grantedStatPoints: 0,
-                grantedRecoveryToken: false,
                 evidence: [],
                 assignedAt: now
             )

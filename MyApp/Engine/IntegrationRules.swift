@@ -29,8 +29,7 @@ enum IntegrationRules {
             errors.append("the overlapping run was not clustered")
         }
 
-        var player = PlayerState.starter
-        let rec = player.stats.REC
+        let player = PlayerState.starter
         var snapshot = GameSnapshot(
             version: 1,
             player: player,
@@ -55,13 +54,9 @@ enum IntegrationRules {
         )
         let catalog = (try? FallbackCatalog(data: Data(#"{"schemaVersion":1,"entries":[]}"#.utf8))) ?? FallbackCatalog.bundled()
         _ = snapshot.applyWhoopReadiness(whoopReading, catalog: catalog, now: QuestDay.date(from: "2026-10-01") ?? start)
-        if snapshot.player.stats.REC != rec {
-            errors.append("today's recovery score must not overwrite REC")
-        }
         if snapshot.readiness?.band != .green || snapshot.readiness?.recoveryScore != 80 {
             errors.append("readiness should store the WHOOP score separately")
         }
-        player.stats.REC = rec
         if ReadinessBand.from(recoveryScore: 50) != .yellow || ReadinessBand.from(recoveryScore: 20) != .red {
             errors.append("WHOOP bands should be green/yellow/red at 67 and 34")
         }
@@ -226,32 +221,9 @@ enum IntegrationRules {
         }
 
         var rich = GameSnapshot(version: 1, player: .starter, signals: .placeholder, bundle: .empty)
-        let recBefore = rich.player.stats.REC
-        rich.player.stats.FIN = 110
         rich.applyFinance(reading(spent: 10, settled: true, pace: "NORMAL", ytd: 500_000))
-        if rich.player.stats.FIN != 130 {
-            errors.append("FIN projection should add 20 points, got \(rich.player.stats.FIN)")
-        }
-        if rich.player.stats.FIN == 500_000 {
-            errors.append("FIN must not become the YTD dollar total")
-        }
-        rich.player.stats.FIN += 4
-        rich.applyFinance(reading(spent: 10, settled: true, pace: "NORMAL", ytd: 500_000))
-        if rich.player.stats.FIN != 134 {
-            errors.append("applying the same snapshot should keep the quest grant, got \(rich.player.stats.FIN)")
-        }
-        if rich.player.stats.REC != recBefore {
-            errors.append("finance projection must not touch REC")
-        }
-        var full = GameSnapshot(version: 1, player: .starter, signals: .placeholder, bundle: .empty)
-        full.player.stats.FIN = StatValues.maximum - 6
-        full.applyFinance(reading(spent: 10, settled: true, pace: "NORMAL", ytd: 500_000))
-        if full.player.stats.FIN != StatValues.maximum {
-            errors.append("FIN projection must stop at the cap, got \(full.player.stats.FIN)")
-        }
-        full.applyFinance(reading(spent: 10, settled: true, pace: "CRITICAL", ytd: 0))
-        if full.player.stats.FIN != StatValues.maximum - 6 {
-            errors.append("a lower projection should remove only the capped points, got \(full.player.stats.FIN)")
+        if rich.finance?.paceState != "NORMAL" || rich.finance?.discretionarySpendUsd != 10 {
+            errors.append("applyFinance should keep the day's Mercury summary")
         }
         rich.bundle.dayKey = "2026-10-01"
         if let when = QuestDay.date(from: "2026-10-01") {
@@ -310,10 +282,7 @@ enum IntegrationRules {
             mode: .performanceTraining,
             progress: QuestProgress(current: 0, target: 20, unit: "min"),
             reward: nil,
-            status: .pending,
-            grantedXP: 0,
-            grantedStatPoints: 0,
-            grantedRecoveryToken: false
+            status: .pending
         )
     }
 

@@ -13,10 +13,12 @@ struct MorningPlayer: Codable, Equatable {
     var timezone: String
     var localDate: String
     var weekday: String
+    /// Overall level, 0...`maxLevel`, from the seven stat levels. The same number the Status page shows.
     var level: Int
-    var xp: Int
-    var xpToNext: Int
-    var stats: StatValues
+    var maxLevel: Int
+    /// Stat (STR, END, INT, AGI, FOC, REC, FIN) → level, 0...`maxStatLevel`. 0 while a stat has no data.
+    var statLevels: [String: Int]
+    var maxStatLevel: Int
     var fullRecoveryBank: Int
     var penaltyTier: Int
     var streaks: MorningStreaks

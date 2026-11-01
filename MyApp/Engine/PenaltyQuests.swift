@@ -39,9 +39,6 @@ enum PenaltyQuests {
             progress: QuestProgress(current: 0, target: template.progress.target, unit: template.progress.unit),
             reward: nil,
             status: .pending,
-            grantedXP: 0,
-            grantedStatPoints: 0,
-            grantedRecoveryToken: false,
             evidence: [],
             assignedAt: now
         )

@@ -52,62 +52,6 @@ struct GlowBar: View {
     }
 }
 
-/// HP: a small cross, the bar, and "current/max" under its right end. Red with CRITICAL at or below 20%.
-struct HPWindow: View {
-    let current: Int
-    let max: Int
-
-    var body: some View {
-        let critical = HitPoints.isCritical(current: current, max: max)
-        let light = HPLight.of(current: current, max: max)
-        HStack(alignment: .center, spacing: 12) {
-            VStack(spacing: 3) {
-                HPCross(light: .normal)
-                    .frame(width: 16, height: 16)
-                Text("HP")
-                    .font(.caption2.weight(.semibold))
-                    .tracking(1)
-            }
-            .foregroundStyle(light.ink.opacity(0.75))
-
-            VStack(alignment: .trailing, spacing: 5) {
-                HPBar(current: current, max: max)
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    if critical {
-                        Text("CRITICAL")
-                            .font(.caption2.weight(.semibold))
-                            .tracking(1.4)
-                            .foregroundStyle(light.glow.opacity(0.9))
-                    }
-                    Spacer(minLength: 8)
-                    Text(verbatim: "\(current)")
-                        .font(.caption.weight(.semibold))
-                    Text(verbatim: "/\(max)")
-                        .font(.caption2)
-                        .foregroundStyle(light.ink.opacity(0.55))
-                }
-                .monospacedDigit()
-                .foregroundStyle(light.ink.opacity(0.8))
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 10)
-        .padding(.bottom, 8)
-        .background {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(.black.opacity(0.28))
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(light.glow.opacity(light.frame), lineWidth: 0.8)
-        }
-        .animation(.easeInOut(duration: 0.4), value: critical)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("HP")
-        .accessibilityValue(critical ? "\(current) of \(max), critical" : "\(current) of \(max)")
-    }
-}
-
 /// A plus sign drawn as a flat cross.
 struct HPCross: View {
     let light: HPLight
@@ -132,15 +76,3 @@ private struct CrossShape: Shape {
     }
 }
 
-#Preview("HP window") {
-    ZStack {
-        QuestBackdrop()
-        VStack(spacing: 28) {
-            HPWindow(current: 2_911, max: 3_602)
-            HPWindow(current: 511, max: 3_602)
-            HPBar(current: 1_800, max: 3_602)
-        }
-        .padding(.horizontal, 18)
-    }
-    .preferredColorScheme(.dark)
-}

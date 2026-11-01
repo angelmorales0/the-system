@@ -48,7 +48,7 @@ struct HPWorkout: Equatable {
 }
 
 /// Pure HP math, so the store, the window, and the check share it.
-///   Max HP      1000 + 20 × level + 4 × (STR + END + REC)
+///   Max HP      1000 + 20 × overall level + 4 × (STR + END + REC stat levels)
 ///   Drain       minutes × a sport rate (Hevy: 0.2%/min plus 0.5% per working set), at most 60% per session
 ///   Regen       max / 48 h, times 0.5 + recovery/100 (no WHOOP reading: × 1)
 ///   Red WHOOP   recovery under 34 costs 30% + 1.5% per point under 34, once per WHOOP day
@@ -73,10 +73,11 @@ enum HitPoints {
         return Double(current) <= Double(max) * criticalFraction
     }
 
-    /// Grows with the level and the body stats.
-    static func maxHP(for player: PlayerState) -> Int {
-        baseHP + hpPerLevel * Swift.max(0, player.level)
-            + hpPerStatPoint * (player.stats.STR + player.stats.END + player.stats.REC)
+    /// Grows with the overall level (0...146) and the three body stat levels (0...350 each).
+    /// 1000 with no data, 8120 with every stat at its max.
+    static func maxHP(for levels: StatLevelSet) -> Int {
+        baseHP + hpPerLevel * Swift.max(0, levels.overallLevel)
+            + hpPerStatPoint * (levels[.STR] + levels[.END] + levels[.REC])
     }
 
     /// Share of max HP lost per minute of each sport.
@@ -173,13 +174,17 @@ enum HitPoints {
         let start = Date(timeIntervalSince1970: 1_000_000)
         let day = "2026-10-28"
 
-        if maxHP(for: .starter) != 1_000 + 20 * 42 + 4 * (142 + 146 + 118) {
-            errors.append("max HP should be 1000 + 20 × level + 4 × (STR + END + REC)")
+        if maxHP(for: .empty) != baseHP {
+            errors.append("max HP with no data should be \(baseHP), got \(maxHP(for: .empty))")
         }
-        var stronger = PlayerState.starter
-        stronger.level += 1
-        if maxHP(for: stronger) <= maxHP(for: .starter) {
-            errors.append("max HP should grow with the level")
+        let allMax = StatLevelSet(levels: Dictionary(uniqueKeysWithValues: Stat.allCases.map { ($0, StatLevel.maxLevel) }))
+        if maxHP(for: allMax) != baseHP + hpPerLevel * StatLevelSet.overallMaxLevel + hpPerStatPoint * 3 * StatLevel.maxLevel {
+            errors.append("max HP should be 1000 + 20 × overall level + 4 × (STR + END + REC), got \(maxHP(for: allMax))")
+        }
+        var stronger = StatLevelSet.empty
+        stronger.levels[.STR] = 100
+        if maxHP(for: stronger) <= maxHP(for: .empty) {
+            errors.append("max HP should grow with the stat levels")
         }
         if isCritical(current: 721, max: 3_600) || !isCritical(current: 720, max: 3_600) || isCritical(current: 0, max: 0) {
             errors.append("HP should be critical at or below 20% of max")
@@ -254,10 +259,11 @@ enum HitPoints {
 
 extension GameSnapshot {
     /// Brings HP up to `now`: regeneration, then today's new workouts and a red WHOOP recovery.
-    mutating func applyHitPoints(integrations: DayIntegrationSnapshot, now: Date) {
+    /// `maxHP` comes from the stat levels (`HitPoints.maxHP(for:)`), which the store holds.
+    mutating func applyHitPoints(integrations: DayIntegrationSnapshot, maxHP: Int, now: Date) {
         hitPoints = HitPoints.update(
             hitPoints,
-            maxHP: HitPoints.maxHP(for: player),
+            maxHP: maxHP,
             now: now,
             recoveryScore: readiness?.recoveryScore,
             recoveryDayKey: readiness?.capturedOn,

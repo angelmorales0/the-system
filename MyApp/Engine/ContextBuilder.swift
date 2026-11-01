@@ -5,7 +5,9 @@ enum ContextBuilder {
     nonisolated private static let secretMarkers = ["sk-", "xai-", "bearer ", "api_key", "api-key", "apikey", "secret-token"]
 
     /// `targets` are the stat targets the player kept. `bodyMass` is the newest Apple Health weigh-in.
-    static func make(snapshot: GameSnapshot, now: Date = .now, targets: StatTargets = StatTargets(), bodyMass: BodyMassReading? = nil) -> MorningContext {
+    /// `levels` are the stat levels on the Status page, so the planner sees the same numbers as the player.
+    static func make(snapshot: GameSnapshot, now: Date = .now, targets: StatTargets = StatTargets(), bodyMass: BodyMassReading? = nil,
+                     levels: StatLevelSet = .empty) -> MorningContext {
         let dayKey = QuestDay.key(for: now)
         let decision = ModePicker.decide(snapshot.modeInput(now: now))
         let player = snapshot.player
@@ -17,10 +19,10 @@ enum ContextBuilder {
                 timezone: QuestDay.timeZone.identifier,
                 localDate: dayKey,
                 weekday: weekday(now),
-                level: player.level,
-                xp: player.xp,
-                xpToNext: player.xpToNext,
-                stats: player.stats,
+                level: levels.overallLevel,
+                maxLevel: StatLevelSet.overallMaxLevel,
+                statLevels: Dictionary(uniqueKeysWithValues: Stat.allCases.map { ($0.rawValue, levels[$0]) }),
+                maxStatLevel: StatLevel.maxLevel,
                 fullRecoveryBank: player.fullRecoveryBank,
                 penaltyTier: player.penaltyTier,
                 streaks: .unknown

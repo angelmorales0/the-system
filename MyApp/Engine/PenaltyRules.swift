@@ -106,28 +106,12 @@ enum PenaltyRules {
         var cleared = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
         cleared.player.penaltyTier = 1
         cleared.rebuildForTest(catalog: catalog, now: dayOne)
-        let beforeXP = cleared.player.xp
-        guard let quest = PenaltyQuests.rows(in: cleared.bundle).first,
-              let penaltyIndex = cleared.bundle.quests.firstIndex(where: { $0.id == quest.id }) else {
+        guard let quest = PenaltyQuests.rows(in: cleared.bundle).first else {
             return errors + ["tier 1 should add a penalty row"]
         }
         _ = cleared.apply(.completed(evidence: evidence("pen")), questId: quest.id, now: dayOne)
         if cleared.player.penaltyTier != 0 {
             errors.append("finishing every penalty row should drop the tier, even with the day's quests open")
-        }
-        let taxed = GameSnapshot.xpGrant(for: quest)
-        if taxed != 27 || cleared.bundle.quests[penaltyIndex].grantedXP != taxed {
-            errors.append("penalty XP should be 0.9× once, got grant \(taxed) stored \(cleared.bundle.quests[penaltyIndex].grantedXP)")
-        }
-        if cleared.player.xp != beforeXP + taxed {
-            errors.append("the 0.9× tax should be applied once")
-        }
-        if GameSnapshot.xpGrant(for: quest) != taxed {
-            errors.append("asking for the grant again should not compound the tax")
-        }
-        let normal = cleared.bundle.quests.first { $0.kind != .penalty } ?? cleared.bundle.quests[0]
-        if normal.kind == .penalty || GameSnapshot.xpGrant(for: normal) != normal.xp {
-            errors.append("a normal row on a penalty day should keep full XP")
         }
 
         var optionalOnly = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
@@ -138,16 +122,6 @@ enum PenaltyRules {
         optionalOnly.refreshIfNeeded(catalog: catalog, now: dayTwo)
         if optionalOnly.player.penaltyTier != 0 {
             errors.append("an optional miss should not open a penalty")
-        }
-        var capped = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
-        let run = capped.bundle.quests[0]
-        capped.player.stats[run.stat] = StatValues.maximum - 1
-        _ = capped.apply(.completed(evidence: evidence("cap")), questId: run.id, now: dayOne)
-        if capped.player.stats[run.stat] != StatValues.maximum {
-            errors.append("a quest must not raise a stat above \(StatValues.maximum), got \(capped.player.stats[run.stat])")
-        }
-        if StatValues.starter.capped() != StatValues.starter {
-            errors.append("starter stats must be at or under the cap")
         }
 
         // The bundled penalty is one flat 10K at every tier and band.

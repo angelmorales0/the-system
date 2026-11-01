@@ -189,27 +189,6 @@ struct FinanceSnapshot: Codable, Equatable {
     var settled: Bool
 }
 
-enum FinanceProjection {
-    /// Bounded points layered on quest-granted FIN. A full year toward $500K adds at most 12, pace at most 8.
-    static func points(pace: String, ytdIncomeUsd: Double, ytdGoalUsd: Double) -> Int {
-        let pacePoints: Int
-        switch pace {
-        case "NORMAL":
-            pacePoints = 8
-        case "CAUTION":
-            pacePoints = 4
-        case "WARNING":
-            pacePoints = 1
-        default:
-            pacePoints = 0
-        }
-        let goal = ytdGoalUsd > 0 ? ytdGoalUsd : 500_000
-        let ratio = min(max(ytdIncomeUsd / goal, 0), 1)
-        let ytdPoints = Int((ratio * 12).rounded(.down))
-        return min(pacePoints + ytdPoints, 20)
-    }
-}
-
 struct DayIntegrationSnapshot: Equatable {
     var whoop: WhoopDayReading
     var strava: StravaDayReading

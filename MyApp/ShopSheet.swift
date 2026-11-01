@@ -157,9 +157,13 @@ struct ShopSheet: View {
         case .fullRecovery:
             ""
         case .potion(let potion, let dose):
-            dose == .half
-                ? "It completes today's \(potion.stat.rawValue) quests for half the XP."
-                : "It clears today's \(potion.stat.rawValue) quests with no XP."
+            if potion.needsQuest {
+                dose == .half
+                    ? "It completes today's \(potion.stat.rawValue) quests. Half the work must be logged first. Today pays no gold."
+                    : "It clears today's \(potion.stat.rawValue) quests. Today pays no gold."
+            } else {
+                "It skips no quest. The excuse applies to the \(potion.stat.rawValue) score. Today pays no gold."
+            }
         }
     }
 

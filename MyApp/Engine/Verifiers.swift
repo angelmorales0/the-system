@@ -245,10 +245,9 @@ enum VerificationFixtures {
         bundle.quests[0].status = .completed
         bundle.quests[0].evidence = [Evidence.make(source: "llm", externalId: "nope", payload: "x", timestamp: assigned)]
         bundle.quests[0].progress.current = 10
-        bundle.quests[0].grantedXP = 40
         let stripped = bundle.strippingModelCompletion(assignedAt: assigned.addingTimeInterval(5))
         let cleaned = stripped.quests[0]
-        if cleaned.status != .pending || !cleaned.evidence.isEmpty || cleaned.progress.current != 0 || cleaned.grantedXP != 0 {
+        if cleaned.status != .pending || !cleaned.evidence.isEmpty || cleaned.progress.current != 0 {
             errors.append("model completion was not stripped")
         }
         if cleaned.assignedAt != assigned.addingTimeInterval(5) {
@@ -265,11 +264,10 @@ enum VerificationFixtures {
         )
         let shared = Evidence.make(source: "strava", externalId: "act-1", payload: "run", timestamp: assigned)
         let first = state.apply(.completed(evidence: shared), questId: state.bundle.quests[0].id, now: assigned)
-        let xp = state.player.xp
         let replay = state.apply(.completed(evidence: shared), questId: state.bundle.quests[0].id, now: assigned)
         let second = state.apply(.completed(evidence: shared), questId: state.bundle.quests[1].id, now: assigned)
-        if first != .completed || replay != .ignored || state.player.xp != xp {
-            errors.append("same evidence should grant XP once")
+        if first != .completed || replay != .ignored {
+            errors.append("same evidence should complete a quest once")
         }
         if case .rejected = second {
         } else {
@@ -304,9 +302,6 @@ enum VerificationFixtures {
             progress: QuestProgress(current: 0, target: 10, unit: "min"),
             reward: nil,
             status: .pending,
-            grantedXP: 0,
-            grantedStatPoints: 0,
-            grantedRecoveryToken: false,
             evidence: [],
             assignedAt: assignedAt
         )

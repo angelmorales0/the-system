@@ -251,6 +251,17 @@ final class GameStore: ObservableObject {
             now: now
         )
         statHistory.record(statLevels, on: QuestDay.key(for: now))
+        syncMaxHP()
+    }
+
+    /// Max HP follows the stat levels. A new max moves the cap and keeps HP under it.
+    private func syncMaxHP() {
+        guard var hp = snapshot.hitPoints else { return }
+        let maxHP = HitPoints.maxHP(for: statLevels)
+        guard hp.max != maxHP else { return }
+        hp.max = maxHP
+        hp.current = min(hp.current, Double(maxHP))
+        snapshot.hitPoints = hp
     }
 
     func updateEmergencySettings(_ settings: EmergencySettings) {
@@ -414,9 +425,9 @@ final class GameStore: ObservableObject {
 
     var player: PlayerState { snapshot.player }
 
-    /// HP for the HP window. Before the first refresh: full, at the player's max.
+    /// HP for the Status page. Before the first refresh: full, at the max the stat levels give.
     var hitPoints: (current: Int, max: Int) {
-        let maxHP = snapshot.hitPoints?.max ?? HitPoints.maxHP(for: snapshot.player)
+        let maxHP = snapshot.hitPoints?.max ?? HitPoints.maxHP(for: statLevels)
         var current = snapshot.hitPoints.map { Int($0.current.rounded(.down)) } ?? maxHP
         #if DEBUG
         // Launch with `-hpDebugPercent 15` to see the window at that share of max HP. Nothing is saved.
@@ -587,14 +598,15 @@ final class GameStore: ObservableObject {
                 mercury: remote.mercury,
                 hevy: remote.hevy
             )
+            // The stat levels first: max HP is built from them.
+            self.statInputs = (remote.codeforces, remote.financeMonths, bodyMass, focusDays, self.statInputs?.inputs ?? StatInputs())
+            self.recomputeStatLevels(now: now)
             // After today's readiness, so a red recovery hits HP and sets the regeneration speed.
-            next.applyHitPoints(integrations: day, now: now)
+            next.applyHitPoints(integrations: day, maxHP: HitPoints.maxHP(for: self.statLevels), now: now)
             // After today's screen time too, so only the new minutes add fatigue.
             next.applyFatigue(integrations: day, whoopStress: whoopStress, now: now)
             self.snapshot = next
             self.integrations = day
-            self.statInputs = (remote.codeforces, remote.financeMonths, bodyMass, focusDays, self.statInputs?.inputs ?? StatInputs())
-            self.recomputeStatLevels(now: now)
             if rebuilt {
                 self.runningTimersRemoveMissing()
             }
@@ -678,7 +690,7 @@ final class GameStore: ObservableObject {
             return
         }
         persist()
-        let context = ContextBuilder.make(snapshot: snapshot, now: now, targets: statTargets, bodyMass: statInputs?.bodyMass)
+        let context = ContextBuilder.make(snapshot: snapshot, now: now, targets: statTargets, bodyMass: statInputs?.bodyMass, levels: statLevels)
         Task { [weak self] in
             await self?.runGeneration(context: context, dayKey: dayKey)
         }

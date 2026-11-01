@@ -304,9 +304,6 @@ enum GymSplit {
             progress: progress,
             reward: nil,
             status: .pending,
-            grantedXP: 0,
-            grantedStatPoints: 0,
-            grantedRecoveryToken: false,
             evidence: [],
             assignedAt: now
         )

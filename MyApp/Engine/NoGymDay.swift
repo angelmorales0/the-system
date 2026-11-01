@@ -60,9 +60,6 @@ enum NoGymDay {
             progress: QuestProgress(current: 0, target: 10, unit: "km"),
             reward: nil,
             status: .pending,
-            grantedXP: 0,
-            grantedStatPoints: 0,
-            grantedRecoveryToken: false,
             evidence: [],
             assignedAt: now
         )

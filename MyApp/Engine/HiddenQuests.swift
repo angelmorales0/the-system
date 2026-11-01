@@ -11,8 +11,6 @@ struct HiddenQuestUnlock: Codable, Equatable, Identifiable {
     var achieved: Double
     var required: Double
     var unit: String
-    /// True only on old unlocks. Tokens now come only from RecoveryHolidays.
-    var grantedToken: Bool
     /// True after the player closes the reveal window.
     var seen: Bool
     var unlockedAt: Date
@@ -78,7 +76,6 @@ extension GameSnapshot {
                 achieved: result.achieved,
                 required: result.required,
                 unit: "km",
-                grantedToken: false,
                 seen: false,
                 unlockedAt: now
             )
@@ -178,7 +175,7 @@ enum HiddenQuestRules {
         if tenKRow?.progress.bracketLabel != "[15.2/10km]" || tenKRow?.status != .completed {
             errors.append("the 10K Run row should show [15.2/10km] after a 15.2 km run, got \(String(describing: tenKRow?.progress))")
         }
-        if unlock == nil || unlock?.grantedToken != false || fifteen.player.fullRecoveryBank != bankBefore {
+        if unlock == nil || fifteen.player.fullRecoveryBank != bankBefore {
             errors.append("15.2 km should unlock Beyond the Limit without a token, got \(String(describing: unlock)) bank \(fifteen.player.fullRecoveryBank)")
         }
         if unlock?.bracketLabel != "[15.2/10km]" || unlock?.percentOver != 52 {

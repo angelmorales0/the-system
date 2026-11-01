@@ -20,8 +20,6 @@ struct GameSnapshot: Codable, Equatable {
     /// Rolling recovery-capacity placeholder. The radar REC stat stays XP-driven.
     /// Mercury aggregates for the quest day. Not a dollar balance.
     var finance: FinanceSnapshot?
-    /// FIN points already added from `FinanceProjection`. Quest grants sit on top of this.
-    var appliedFinProjection: Int = 0
     /// Titles from the previous quest day. Sent as summaries, never as evidence.
     var recentQuestTitles: [String] = []
     /// Past quest days as they ended, newest first, at most 30. The generator reads them.
@@ -216,7 +214,7 @@ struct GameSnapshot: Codable, Equatable {
         ).count
     }
 
-    /// Applies a verifier result. XP is granted only from `.completed`, and only once.
+    /// Applies a verifier result. A quest completes only once.
     @discardableResult
     mutating func apply(_ result: VerificationResult, questId: String, now: Date) -> VerificationApply {
         guard let index = bundle.quests.firstIndex(where: { $0.id == questId }) else { return .ignored }
@@ -262,18 +260,6 @@ struct GameSnapshot: Codable, Equatable {
             timestamp: now
         )
         return apply(.completed(evidence: evidence), questId: questId, now: now)
-    }
-
-    static func xpGrant(for quest: Quest) -> Int {
-        var amount = quest.xp
-        if quest.kind == .penalty {
-            // Once, from the quest's own XP. Callers must not run this on an already taxed grant.
-            amount = max(1, Int((Double(quest.xp) * 0.9).rounded()))
-        }
-        if quest.reward?.type == .xpBonus {
-            amount += max(0, quest.reward?.amount ?? 0)
-        }
-        return amount
     }
 
     /// The WHOOP reading captured on `dayKey`. Nil when the newest reading is from another day.
@@ -336,13 +322,12 @@ struct GameSnapshot: Codable, Equatable {
         return nil
     }
 
-    /// Stores WHOOP recovery as readiness. Does not write `player.stats.REC`.
+    /// Stores WHOOP recovery as readiness. The REC level comes from `RecoveryLevel`, not from this.
     /// An unavailable reading keeps the old snapshot, but `modeInput` and `trainingBand` only read one captured today.
     /// A quiet morning rebuilds the catalog when the locked mode or the training band changes.
     @discardableResult
     mutating func applyWhoopReadiness(_ reading: WhoopDayReading, catalog: FallbackCatalog, now: Date) -> Bool {
         guard reading.available, let score = reading.recoveryScore else { return false }
-        let previousREC = player.stats.REC
         let previousDecision = ModePicker.decide(modeInput(now: now))
         let band = ReadinessBand.from(recoveryScore: score)
         readiness = ReadinessSnapshot(
@@ -353,7 +338,6 @@ struct GameSnapshot: Codable, Equatable {
             band: band,
             capturedOn: reading.dayKey
         )
-        player.stats.REC = previousREC
         let nextDecision = ModePicker.decide(modeInput(now: now))
         let quiet = runningTimers.isEmpty && !bundle.quests.contains { $0.status == .completed }
         guard quiet, nextDecision != previousDecision, bundle.dayKey == QuestDay.key(for: now) else { return false }
@@ -361,22 +345,9 @@ struct GameSnapshot: Codable, Equatable {
         return true
     }
 
-    /// Moves the FIN radar by the projection delta. Does not replace FIN with a balance or a dollar total.
+    /// Stores the day's Mercury summary. The FIN level comes from `FinanceLevel`, not from this.
     mutating func applyFinance(_ reading: MercuryDayReading) {
         guard reading.configured, reading.available, reading.synced else { return }
-        let previousREC = player.stats.REC
-        let points = FinanceProjection.points(
-            pace: reading.paceState,
-            ytdIncomeUsd: reading.ytdIncomeUsd,
-            ytdGoalUsd: reading.ytdGoalUsd
-        )
-        let delta = points - appliedFinProjection
-        if delta != 0 {
-            // Track only the points that really moved FIN, so the stat cap cannot make a later drop remove quest points.
-            let before = player.stats.FIN
-            player.stats.FIN = min(StatValues.maximum, max(0, before + delta))
-            appliedFinProjection += player.stats.FIN - before
-        }
         finance = FinanceSnapshot(
             dayKey: reading.dayKey,
             discretionarySpendUsd: reading.discretionarySpendUsd,
@@ -388,7 +359,6 @@ struct GameSnapshot: Codable, Equatable {
             ytdGoalUsd: reading.ytdGoalUsd,
             settled: reading.settled
         )
-        player.stats.REC = previousREC
     }
 
     mutating func rebuildBundle(catalog: FallbackCatalog, now: Date) {
@@ -426,25 +396,18 @@ struct GameSnapshot: Codable, Equatable {
         )
     }
 
+    /// Marks the row done. Nothing is granted here: the levels come from the real histories,
+    /// and Full Recovery tokens come only from `RecoveryHolidays`.
     private mutating func complete(at index: Int) {
         var quest = bundle.quests[index]
         guard quest.status != .completed else { return }
-        let xpGain = Self.xpGrant(for: quest)
-        // Only the points under the cap are granted.
-        let statGain = min(quest.difficulty.statWeight, player.stats.room(for: quest.stat))
-        player.addXP(xpGain)
-        player.stats[quest.stat] += statGain
-        // Full Recovery tokens come only from RecoveryHolidays, never from a quest.
-        quest.grantedXP = xpGain
-        quest.grantedStatPoints = statGain
-        quest.grantedRecoveryToken = false
         quest.status = .completed
         quest.progress.current = quest.progress.target
         bundle.quests[index] = quest
         liftPenaltyIfCleared()
     }
 
-    /// Every penalty row is done. Tier drops to 0. The 0.9× XP tax already applied at grant time.
+    /// Every penalty row is done. Tier drops to 0.
     private mutating func liftPenaltyIfCleared() {
         guard PenaltyQuests.isCleared(in: bundle), player.penaltyTier > 0 else { return }
         player.penaltyTier = 0
@@ -467,7 +430,7 @@ extension GameSnapshot {
     private enum CodingKeys: String, CodingKey {
         case version, player, signals, bundle, evidenceLog, runningTimers
         case recentQuestTitles, generationAttemptDayKey, generatedBundle, readiness
-        case finance, appliedFinProjection
+        case finance
         case fullRecoveryDayKey, queuedFullRecoveryDayKey, hasDistractorSelection
         case hiddenUnlocks
         case emergencyFailedDayKey, noGymDayKey
@@ -480,7 +443,6 @@ extension GameSnapshot {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         version = try container.decode(Int.self, forKey: .version)
         player = try container.decode(PlayerState.self, forKey: .player)
-        player.stats = player.stats.capped()
         signals = try container.decode(MorningSignals.self, forKey: .signals)
         bundle = try container.decode(QuestBundle.self, forKey: .bundle)
         evidenceLog = try container.decodeIfPresent([EvidenceUse].self, forKey: .evidenceLog) ?? []
@@ -488,7 +450,6 @@ extension GameSnapshot {
         recentQuestTitles = try container.decodeIfPresent([String].self, forKey: .recentQuestTitles) ?? []
         readiness = try container.decodeIfPresent(ReadinessSnapshot.self, forKey: .readiness)
         finance = try container.decodeIfPresent(FinanceSnapshot.self, forKey: .finance)
-        appliedFinProjection = try container.decodeIfPresent(Int.self, forKey: .appliedFinProjection) ?? 0
         fullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .fullRecoveryDayKey)
         queuedFullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .queuedFullRecoveryDayKey)
         hasDistractorSelection = try container.decodeIfPresent(Bool.self, forKey: .hasDistractorSelection) ?? false
@@ -517,7 +478,6 @@ extension GameSnapshot {
         try container.encode(recentQuestTitles, forKey: .recentQuestTitles)
         try container.encodeIfPresent(readiness, forKey: .readiness)
         try container.encodeIfPresent(finance, forKey: .finance)
-        try container.encode(appliedFinProjection, forKey: .appliedFinProjection)
         try container.encodeIfPresent(fullRecoveryDayKey, forKey: .fullRecoveryDayKey)
         try container.encodeIfPresent(queuedFullRecoveryDayKey, forKey: .queuedFullRecoveryDayKey)
         try container.encode(hasDistractorSelection, forKey: .hasDistractorSelection)

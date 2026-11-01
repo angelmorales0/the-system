@@ -34,16 +34,6 @@ enum QuestKind: String, Codable, Equatable {
 
 enum Difficulty: String, Codable, Equatable {
     case easy, normal, hard, penalty
-
-    /// Stat points granted on completion. Penalty rows tax XP, not this weight.
-    var statWeight: Int {
-        switch self {
-        case .easy: 1
-        case .normal: 2
-        case .hard: 3
-        case .penalty: 2
-        }
-    }
 }
 
 enum QuestStatus: String, Codable, Equatable {
@@ -189,10 +179,6 @@ struct Quest: Identifiable, Codable, Equatable {
     var progress: QuestProgress
     var reward: QuestReward?
     var status: QuestStatus
-    /// Points actually applied when the quest completed.
-    var grantedXP: Int
-    var grantedStatPoints: Int
-    var grantedRecoveryToken: Bool
     /// Observations that moved this quest. Empty until a verifier applies one.
     var evidence: [Evidence] = []
     /// Manual confirm waits 30 seconds after this. Model output cannot choose it.
@@ -204,7 +190,7 @@ struct Quest: Identifiable, Codable, Equatable {
 extension Quest {
     private enum CodingKeys: String, CodingKey {
         case id, title, kind, stat, verification, deadline, xp, difficulty, mode
-        case progress, reward, status, grantedXP, grantedStatPoints, grantedRecoveryToken
+        case progress, reward, status
         case evidence, assignedAt, skippedWithPotion
     }
 
@@ -223,9 +209,6 @@ extension Quest {
         reward = try container.decodeIfPresent(QuestReward.self, forKey: .reward)
         // Model JSON omits status. A present value is still cleared by strippingModelCompletion.
         status = try container.decodeIfPresent(QuestStatus.self, forKey: .status) ?? .pending
-        grantedXP = try container.decodeIfPresent(Int.self, forKey: .grantedXP) ?? 0
-        grantedStatPoints = try container.decodeIfPresent(Int.self, forKey: .grantedStatPoints) ?? 0
-        grantedRecoveryToken = try container.decodeIfPresent(Bool.self, forKey: .grantedRecoveryToken) ?? false
         evidence = try container.decodeIfPresent([Evidence].self, forKey: .evidence) ?? []
         assignedAt = try container.decodeIfPresent(Date.self, forKey: .assignedAt) ?? .distantPast
         skippedWithPotion = try container.decodeIfPresent(Bool.self, forKey: .skippedWithPotion) ?? false
@@ -245,9 +228,6 @@ extension Quest {
         try container.encode(progress, forKey: .progress)
         try container.encodeIfPresent(reward, forKey: .reward)
         try container.encode(status, forKey: .status)
-        try container.encode(grantedXP, forKey: .grantedXP)
-        try container.encode(grantedStatPoints, forKey: .grantedStatPoints)
-        try container.encode(grantedRecoveryToken, forKey: .grantedRecoveryToken)
         try container.encode(evidence, forKey: .evidence)
         try container.encode(assignedAt, forKey: .assignedAt)
         try container.encode(skippedWithPotion, forKey: .skippedWithPotion)
@@ -297,9 +277,6 @@ struct QuestBundle: Codable, Equatable {
             var quest = quest
             quest.status = .pending
             quest.evidence = []
-            quest.grantedXP = 0
-            quest.grantedStatPoints = 0
-            quest.grantedRecoveryToken = false
             quest.skippedWithPotion = false
             quest.progress.current = 0
             quest.assignedAt = assignedAt
@@ -344,79 +321,15 @@ extension QuestBundle {
     }
 }
 
-struct StatValues: Codable, Equatable {
-    var STR: Int
-    var END: Int
-    var INT: Int
-    var AGI: Int
-    var FOC: Int
-    var REC: Int
-    var FIN: Int
-
-    /// Highest value any stat can reach.
-    static let maximum = 146
-
-    static let starter = StatValues(STR: 142, END: 146, INT: 128, AGI: 134, FOC: 121, REC: 118, FIN: 110)
-
-    /// Points that still fit under `maximum` for this stat.
-    func room(for stat: Stat) -> Int {
-        max(0, Self.maximum - self[stat])
-    }
-
-    /// Every stat pulled down to `maximum`. Saves from before the cap can hold higher values.
-    func capped() -> StatValues {
-        var copy = self
-        for stat in Stat.allCases where copy[stat] > Self.maximum {
-            copy[stat] = Self.maximum
-        }
-        return copy
-    }
-
-    subscript(stat: Stat) -> Int {
-        get {
-            switch stat {
-            case .STR: STR
-            case .END: END
-            case .INT: INT
-            case .AGI: AGI
-            case .FOC: FOC
-            case .REC: REC
-            case .FIN: FIN
-            }
-        }
-        set {
-            switch stat {
-            case .STR: STR = newValue
-            case .END: END = newValue
-            case .INT: INT = newValue
-            case .AGI: AGI = newValue
-            case .FOC: FOC = newValue
-            case .REC: REC = newValue
-            case .FIN: FIN = newValue
-            }
-        }
-    }
-
-    var radar: [(label: String, value: Double)] {
-        Stat.allCases.map { (label: $0.rawValue, value: Double(self[$0])) }
-    }
-}
-
+/// What the player carries between days. The level and the seven stats are not here: `StatLevelSet` computes
+/// them from the real histories, and old saves' `level`, `xp`, `xpToNext`, and `stats` keys are ignored.
 struct PlayerState: Codable, Equatable {
     var displayName: String
-    var level: Int
-    var xp: Int
-    var xpToNext: Int
-    var stats: StatValues
     var fullRecoveryBank: Int
     var penaltyTier: Int
 
     static let starter = PlayerState(
         displayName: "Angel",
-        level: 42,
-        xp: 3420,
-        xpToNext: 5000,
-        stats: .starter,
         fullRecoveryBank: 7,
         penaltyTier: 0
     )
@@ -424,16 +337,6 @@ struct PlayerState: Codable, Equatable {
     var statusDisplayName: String {
         let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         return (trimmed.isEmpty ? "Angel" : trimmed).uppercased()
-    }
-
-    mutating func addXP(_ amount: Int) {
-        guard amount > 0 else { return }
-        xp += amount
-        let step = max(xpToNext, 1)
-        while xp >= step {
-            xp -= step
-            level += 1
-        }
     }
 
     /// The bank has no cap.

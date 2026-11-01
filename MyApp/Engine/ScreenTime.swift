@@ -35,9 +35,6 @@ enum ScreenTime {
             progress: QuestProgress(current: 0, target: Double(totalCapMinutes), unit: "min"),
             reward: nil,
             status: .pending,
-            grantedXP: 0,
-            grantedStatPoints: 0,
-            grantedRecoveryToken: false,
             assignedAt: now
         )
     }
@@ -268,13 +265,11 @@ enum ScreenTimeRules {
         if snapshot.missesRequiredSet {
             errors.append("a day with everything done and Screen Time under the cap should not miss its required set")
         }
-        // At the day's end it completes, with its XP, and no penalty opens.
+        // At the day's end it completes and no penalty opens.
         var held = snapshot
-        let xp = held.player.xp + held.player.level * 1_000_000
         held.refreshIfNeeded(catalog: catalog, now: now.addingTimeInterval(86_400))
-        if held.player.penaltyTier != 0 || held.questHistory.first?.quests.first(where: { $0.title == ScreenTime.title })?.status != .completed
-            || held.player.xp + held.player.level * 1_000_000 <= xp {
-            errors.append("a held Screen Time day should complete with XP and open no penalty")
+        if held.player.penaltyTier != 0 || held.questHistory.first?.quests.first(where: { $0.title == ScreenTime.title })?.status != .completed {
+            errors.append("a held Screen Time day should complete and open no penalty")
         }
 
         // 530 is the last minute of the grace: still yellow and pending.
