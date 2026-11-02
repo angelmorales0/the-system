@@ -1,0 +1,10 @@
+// Build settings the app reads at launch. Committed.
+// Put your own values in Secrets.xcconfig next to this file. It is gitignored and optional.
+
+// Anthropic API key for the quest planner. Empty here; Secrets.xcconfig sets it.
+// The build writes it into the app's Info.plist (SeedAnthropicApiKey) and the app
+// saves it to this iPhone's Keychain on first launch, so you never type it in.
+ANTHROPIC_API_KEY =
+
+// Last, so its values win over the defaults above.
+#include? "Secrets.xcconfig"

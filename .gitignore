@@ -10,3 +10,4 @@ backend/mercury_categories.json
 __pycache__/
 *.pyc
 build/
+Secrets.xcconfig
