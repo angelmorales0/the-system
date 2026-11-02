@@ -223,14 +223,10 @@ enum FocusLevel {
         }
         // Missing social data alone fails only social media.
         failsOnly("Social media") { days in for index in 0..<4 { days[index].socialMinutesReached = nil } }
-        // Social never logged is no data: it drops out and screen time scores alone at weight 100.
+        // Social never logged is no data: it counts as 0 at its weight.
         var noSocial = perfect
         for index in noSocial.indices { noSocial[index].socialMinutesReached = nil }
-        let noSocialReport = evaluate(days: noSocial)
-        if !noSocialReport.isMaxLevel || noSocialReport.counted.map(\.category) != ["Daily screen time"] || noSocialReport.counted.first?.weight != 100
-            || noSocialReport.withoutData.map(\.category) != ["Social media"] {
-            errors.append("social never logged should drop out and leave screen time at weight 100, got \(noSocialReport.counted.map { "\($0.category) \($0.weight)" }) level \(noSocialReport.level)")
-        }
+        errors += StatLevelReport.zeroCheck(evaluate(days: noSocial), noData: ["Social media"], "social never logged")
 
         // Progress is linear per day: 180 min reached is (480 - 180) / (480 - 90) = 300/390.
         var mid = perfect

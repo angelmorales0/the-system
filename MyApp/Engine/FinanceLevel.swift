@@ -83,7 +83,7 @@ enum FinanceLevel {
         )
     }
 
-    /// Strict rule: $0 over `MONTHLY_BUDGET_USD`. Without a budget there is nothing to score, so the rule drops out.
+    /// Strict rule: $0 over `MONTHLY_BUDGET_USD`. Without a budget there is nothing to score, so the rule counts as 0.
     private static func budgetAdherence(_ month: FinanceMonth) -> StatRequirement {
         guard let budget = month.budgetUsd, budget > 0 else {
             return StatRequirement(category: "Budget adherence", passed: false, progress: 0, weight: Weight.budget, detail: "budget not set (MONTHLY_BUDGET_USD)", hasData: false)
@@ -224,8 +224,8 @@ enum FinanceLevel {
             errors.append("$420 over $6,000 should give progress 0.86, got \(overRow)")
         }
 
-        // No MONTHLY_BUDGET_USD: the budget rule has no data. It drops out, the TODO detail stays, and savings and income
-        // share its weight (60/10 → 85.7/14.3). A perfect month without a budget is still the max level.
+        // No MONTHLY_BUDGET_USD: the budget rule has no data. It counts as 0 at its 30% weight and the TODO detail stays,
+        // so a perfect month without a budget stops at 70% of the max.
         var noBudgetMonth = perfect
         noBudgetMonth.budgetUsd = nil
         let noBudget = evaluate(months: [noBudgetMonth])
@@ -233,14 +233,11 @@ enum FinanceLevel {
         if budgetRow.hasData || budgetRow.progress != 0 || budgetRow.detail != "budget not set (MONTHLY_BUDGET_USD)" {
             errors.append("a missing budget should have no data and read \"budget not set (MONTHLY_BUDGET_USD)\", got \(budgetRow)")
         }
-        if !noBudget.isMaxLevel || noBudget.failing.map(\.category) != [] || noBudget.counted.map(\.category) != ["Savings rate", "Monthly income"]
-            || abs((noBudget.counted.first?.weight ?? 0) - 600.0 / 7) > 0.001 {
-            errors.append("without a budget the other two rules should score alone at 85.7/14.3, got \(noBudget.counted.map { "\($0.category) \($0.weight)" }) level \(noBudget.level)")
-        }
+        errors += StatLevelReport.zeroCheck(noBudget, noData: ["Budget adherence"], "without a budget")
         var noBudgetWeak = noBudgetMonth
         noBudgetWeak.spendingUsd = 25_000
-        if evaluate(months: [noBudgetWeak]).level != 50 {
-            errors.append("no savings and no budget should be income alone: 100/7 points = level 50, got \(evaluate(months: [noBudgetWeak]).level)")
+        if evaluate(months: [noBudgetWeak]).level != 35 {
+            errors.append("no savings and no budget should be income alone: 10 points = level 35, got \(evaluate(months: [noBudgetWeak]).level)")
         }
 
         // $24,999 income fails.

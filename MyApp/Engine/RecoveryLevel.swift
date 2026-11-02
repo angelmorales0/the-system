@@ -2,7 +2,7 @@ import Foundation
 
 /// One local day of recovery inputs. Every field is optional because each
 /// source (WHOOP, MacroFactor via HealthKit, Strava) can be missing on a day.
-/// A nil field means "not logged". A metric with no logged day in the window has no data and drops out of
+/// A nil field means "not logged". A metric with no logged day in the window has no data and counts as 0 in
 /// the score (see `StatLevelReport.counted`). A metric logged on some days counts, scaled down by how many.
 struct RecoveryDay: Codable, Equatable {
     var dayKey: String
@@ -45,7 +45,7 @@ struct RecoveryRequirement: Equatable, Identifiable {
     /// Share of the 100-point score. All weights add to 100.
     var weight: Double
     var detail: String
-    /// False when the metric was never logged in the window. The category then drops out of the score.
+    /// False when the metric was never logged in the window. The category then counts as 0 in the score.
     var hasData: Bool = true
 
     var id: String { category }
@@ -54,7 +54,7 @@ struct RecoveryRequirement: Equatable, Identifiable {
     var levelsAvailable: Double { (weight - points) * Double(RecoveryLevel.maxLevel) / 100 }
 }
 
-/// The REC report. Scoring is `StatLevelReport`'s: categories without data drop out and the rest share their weight.
+/// The REC report. Scoring is `StatLevelReport`'s: categories without data count as 0 at their full weight.
 struct RecoveryLevelReport: Equatable {
     var requirements: [RecoveryRequirement]
 
@@ -214,7 +214,7 @@ enum RecoveryLevel {
     // MARK: - Nutrition
 
     /// Four equal categories: protein, fat, carbs matched to load, calories near maintenance.
-    /// Each is its own target, so one that is not tracked (calories, say) can be removed or drops out on its own.
+    /// Each is its own target, so one that is not tracked (calories, say) can be removed on its own; until then it counts as 0.
     private static func nutrition(_ window: [RecoveryDay]) -> [RecoveryRequirement] {
         let withMass = carryForwardBodyMass(window)
         return [
@@ -569,16 +569,11 @@ enum RecoveryLevel {
             errors.append("no data must be level 0 with no counted category, got level \(empty.level) score \(empty.score)")
         }
 
-        // A metric never logged drops out: no calories at all leaves the other 12 to share its weight, and the max level stays reachable.
+        // A metric never logged counts as 0 at its weight: no calories at all holds REC under the max.
         var noCalories = perfect
         for index in noCalories.indices { noCalories[index].caloriesKcal = nil }
-        let noCaloriesReport = evaluate(days: noCalories)
-        let calorieRow = noCaloriesReport.requirements.first { $0.category == "Calories" }
-        if !noCaloriesReport.isMaxLevel || noCaloriesReport.level != maxLevel || calorieRow?.hasData != false
-            || noCaloriesReport.statReport.counted.count != 12 || abs(noCaloriesReport.statReport.counted.reduce(0, { $0 + $1.weight }) - 100) > 0.001 {
-            errors.append("calories never logged should drop out and keep the max level, got level \(noCaloriesReport.level) failing \(noCaloriesReport.failing.map(\.category))")
-        }
-        // No nutrition app at all: protein, fat, carbs, and calories all drop out, and WHOOP alone can still max REC.
+        errors += StatLevelReport.zeroCheck(evaluate(days: noCalories).statReport, noData: ["Calories"], "calories never logged")
+        // No nutrition app at all: protein, fat, carbs, calories, and caffeine all count as 0, so WHOOP alone cannot max REC.
         var noNutrition = perfect
         for index in noNutrition.indices {
             noNutrition[index].proteinG = nil
@@ -589,21 +584,16 @@ enum RecoveryLevel {
             noNutrition[index].caffeineMg = nil
         }
         let noNutritionReport = evaluate(days: noNutrition)
-        if !noNutritionReport.isMaxLevel || noNutritionReport.level != maxLevel
-            || Set(noNutritionReport.statReport.withoutData.map(\.category)) != ["Protein", "Fat", "Carbs", "Calories", "Caffeine"]
-            || noNutritionReport.statReport.counted.count != 8 {
-            errors.append("no nutrition logged should drop all four nutrition targets and caffeine and keep the max level, got level \(noNutritionReport.level) without data \(noNutritionReport.statReport.withoutData.map(\.category))")
-        }
+        errors += StatLevelReport.zeroCheck(noNutritionReport.statReport, noData: ["Protein", "Fat", "Carbs", "Calories", "Caffeine"], "no nutrition logged")
 
-        // Only WHOOP sleep logged: the four sleep categories score alone, so a perfect sleeper without a nutrition app can still max REC.
+        // Only WHOOP sleep logged: everything else counts as 0, so sleep alone can never max REC.
         let sleepOnly = perfect.map { day in
             RecoveryDay(dayKey: day.dayKey, sleepNeedPct: day.sleepNeedPct, sleepConsistencyPct: day.sleepConsistencyPct,
                         sleepEfficiencyPct: day.sleepEfficiencyPct, sleepDebtMinutes: day.sleepDebtMinutes)
         }
         let sleepReport = evaluate(days: sleepOnly)
-        if !sleepReport.isMaxLevel || sleepReport.statReport.counted.map(\.category) != ["Sleep duration", "Sleep consistency", "Sleep efficiency", "Sleep debt"] {
-            errors.append("sleep alone should score alone and reach the max level, got level \(sleepReport.level) counted \(sleepReport.statReport.counted.map(\.category))")
-        }
+        let sleepRows: Set<String> = ["Sleep duration", "Sleep consistency", "Sleep efficiency", "Sleep debt"]
+        errors += StatLevelReport.zeroCheck(sleepReport.statReport, noData: Set(sleepReport.statReport.requirements.map(\.category)).subtracting(sleepRows), "sleep alone")
         // Protein logged without any trend weight cannot be scored per kg: it has no data and says why.
         var noWeightAtAll = perfect
         for index in noWeightAtAll.indices { noWeightAtAll[index].bodyMassKg = nil }

@@ -238,10 +238,10 @@ enum AgilityLevel {
         if empty.requirements.contains(where: { $0.detail != "not tested in 90 days" || $0.hasData }) {
             errors.append("missing tests should read \"not tested in 90 days\" with no data, got \(empty.requirements.map(\.detail))")
         }
-        // One test done and the rest never tested: that test scores alone at weight 100.
+        // One test done and the rest never tested: the five untested count as 0. Half of a 1/6 share of 350 = level 29.
         let jumpOnly = fixture([(.verticalJump, 19)]).evaluate()
-        if jumpOnly.counted.map(\.category) != ["Vertical jump"] || jumpOnly.counted.first?.weight != 100 || jumpOnly.level != 175 || jumpOnly.withoutData.count != 5 {
-            errors.append("a lone 19 in jump should score alone at weight 100 and level 175, got \(jumpOnly.counted.map { "\($0.category) \($0.weight)" }) level \(jumpOnly.level)")
+        if jumpOnly.counted.count != 6 || jumpOnly.level != 29 || jumpOnly.withoutData.count != 5 {
+            errors.append("a lone 19 in jump should be half of 1/6 of 350 = level 29, got \(jumpOnly.counted.map { "\($0.category) \($0.weight)" }) level \(jumpOnly.level)")
         }
 
         let floorReport = floorFixture().evaluate()
@@ -341,15 +341,13 @@ enum AgilityLevel {
             fixture.measurements.append(AgilityMeasurement(test: .frontSplitsRight, value: 8, date: daysAgo(1), source: "Manual"))
         }
 
-        // Results older than 90 days do not count. With no newer result the test has no data and drops out.
+        // Results older than 90 days do not count. With no newer result the test has no data and counts as 0.
         var expired = perfect
         for index in expired.measurements.indices where expired.measurements[index].test == .hipSwitches {
             expired.measurements[index].date = daysAgo(91)
         }
         let expiredReport = expired.evaluate()
-        if expiredReport.requirements.first(where: { $0.category == "90/90 hip switches" })?.hasData != false || !expiredReport.isMaxLevel || expiredReport.counted.count != 5 {
-            errors.append("an expired hip switch result should drop out and leave the other five at the max, got level \(expiredReport.level) failing \(expiredReport.failing.map(\.category))")
-        }
+        errors += StatLevelReport.zeroCheck(expiredReport, noData: ["90/90 hip switches"], "an expired hip switch result")
         var oldSplits = perfect
         for index in oldSplits.measurements.indices where oldSplits.measurements[index].test == .sideSplits {
             oldSplits.measurements[index].date = daysAgo(120)

@@ -411,16 +411,9 @@ enum StrengthLevel {
             }
         }
 
-        /// A target with no usable sets has no data: it drops out and the other 14 built-in targets still reach the max.
+        /// A target with no usable sets has no data: it counts as 0 at its full weight and blocks the max.
         func dropsOut(_ category: String, _ workouts: [HevyWorkout], line: Int = #line) {
-            let result = evaluate(workouts: workouts, now: now)
-            let row = result.requirements.first { $0.category == category }
-            if row?.hasData != false || row?.progress != 0 || result.failing.contains(where: { $0.category == category }) {
-                errors.append("line \(line): \(category) should have no data and not fail, got \(String(describing: row))")
-            }
-            if !result.isMaxLevel || result.counted.count != 14 || abs(result.counted.reduce(0, { $0 + $1.weight }) - 100) > 0.001 {
-                errors.append("line \(line): without \(category) the other 14 targets should share the weight and reach the max, got level \(result.level)")
-            }
+            errors += StatLevelReport.zeroCheck(evaluate(workouts: workouts, now: now), noData: [category], "line \(line)")
         }
 
         failsOnly("Deadlift", edited("Deadlift (Barbell)", sets: [workingSet(lb: 315, reps: 1)]))
@@ -515,16 +508,15 @@ enum StrengthLevel {
             }
         }
 
-        // A custom goal counts once it is logged. Until then it has no data, like a built-in target: the 15 logged targets keep the max.
+        // A custom goal not yet logged has no data, like a built-in target: it counts as 0 until it is logged.
         let withGoal = evaluate(workouts: perfect, custom: [hipThrust, lSit, muscleUp], now: now)
-        if !withGoal.isMaxLevel || withGoal.withoutData.map(\.category) != ["Hip Thrust", "L-Sit", "Muscle Up"] || withGoal.counted.count != 15 {
-            errors.append("unlogged custom goals should drop out until logged, got \(withGoal.level) without data \(withGoal.withoutData.map(\.category))")
-        }
+        errors += StatLevelReport.zeroCheck(withGoal, noData: ["Hip Thrust", "L-Sit", "Muscle Up"], "unlogged custom goals")
         // A logged custom goal that misses its target blocks the max level.
         var missedGoal = perfect
         missedGoal[0].exercises.append(HevyExercise(title: "Muscle-Up", sets: [workingSet(reps: 4)]))
         let missed = evaluate(workouts: missedGoal, custom: [hipThrust, lSit, muscleUp], now: now)
-        if missed.isMaxLevel || missed.failing.map(\.category) != ["Muscle Up"] || missed.counted.count != 16 {
+        if missed.isMaxLevel || Set(missed.failing.map(\.category)) != ["Hip Thrust", "L-Sit", "Muscle Up"] || missed.counted.count != 18
+            || missed.requirements.first(where: { $0.category == "Muscle Up" })?.hasData != true {
             errors.append("a logged custom goal under target should fail and count, got \(missed.level) failing \(missed.failing.map(\.category))")
         }
         var done = perfect

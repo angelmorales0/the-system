@@ -319,18 +319,11 @@ enum EnduranceLevel {
         failsOnly("Zone 2 endurance") { $0.zoneTwo[0].minutes = 60 }
         failsOnly("1-mile swim") { $0.swims[0].seconds = 1800 }
 
-        /// An input with nothing in its window has no data: it drops out and the other six targets still reach the max.
+        /// An input with nothing in its window has no data: it counts as 0 at its full weight and blocks the max.
         func dropsOut(_ category: String, _ edit: (inout Fixture) -> Void, line: Int = #line) {
             var fixture = perfect
             edit(&fixture)
-            let edited = fixture.evaluate()
-            let row = edited.requirements.first { $0.category == category }
-            if row?.hasData != false || row?.progress != 0 || edited.failing.contains(where: { $0.category == category }) {
-                errors.append("line \(line): \(category) should have no data and not fail, got \(String(describing: row))")
-            }
-            if !edited.isMaxLevel || edited.counted.count != 6 || abs(edited.counted.reduce(0, { $0 + $1.weight }) - 100) > 0.001 {
-                errors.append("line \(line): without \(category) the other six targets should share the weight and reach the max, got level \(edited.level)")
-            }
+            errors += StatLevelReport.zeroCheck(fixture.evaluate(), noData: [category], "line \(line)")
         }
         dropsOut("1-mile swim") { $0.swims = [] }
         dropsOut("1-mile swim") { $0.swims[0].date = daysAgo(181) }
@@ -382,7 +375,7 @@ enum EnduranceLevel {
             errors.append("a slower newer mile should not hide the faster one")
         }
 
-        // Efforts and zone 2 sessions older than 180 days do not count. With nothing left in the window the target drops out.
+        // Efforts and zone 2 sessions older than 180 days do not count. With nothing left in the window the target counts as 0.
         dropsOut("1-mile run") { $0.efforts[0].date = daysAgo(181) }
         dropsOut("Zone 2 endurance") { $0.zoneTwo[0].date = daysAgo(200) }
         var oldRow = perfect
@@ -399,7 +392,7 @@ enum EnduranceLevel {
                 VO2MaxReading(value: 50, date: daysAgo(3), source: "WHOOP"),
             ]
         }
-        // A reading older than 90 days does not count; with no newer reading the target drops out.
+        // A reading older than 90 days does not count; with no newer reading the target counts as 0.
         dropsOut("VO₂ max") { $0.vo2[0].date = daysAgo(91) }
 
         // Two 45-minute zone 2 sessions do not add up to 90.
@@ -425,10 +418,10 @@ enum EnduranceLevel {
         failsOnly("Body weight") { $0.bodyMass = pounds(130) }
         dropsOut("Body weight") { $0.bodyMass = [] }
         dropsOut("Body weight") { $0.bodyMass = pounds(145, daysAgo: 31) }
-        // Body weight alone, with nothing else logged, is the whole END score.
+        // Body weight alone, with nothing else logged: the six empty targets count as 0. 15/28 of its 1/7 share of 350 = level 26.
         let weightOnly = Fixture(efforts: [], swims: [], vo2: [], zoneTwo: [], bodyMass: pounds(160)).evaluate()
-        if weightOnly.counted.map(\.category) != ["Body weight"] || weightOnly.counted.first?.weight != 100 || weightOnly.level != 187 {
-            errors.append("a lone 160 lb weigh-in should score alone: 15/28 of 350 = level 187, got \(weightOnly.counted.map { "\($0.category) \($0.weight)" }) level \(weightOnly.level)")
+        if weightOnly.counted.count != 7 || weightOnly.withoutData.count != 6 || weightOnly.level != 26 {
+            errors.append("a lone 160 lb weigh-in should be 15/28 of 1/7 of 350 = level 26, got \(weightOnly.counted.map { "\($0.category) \($0.weight)" }) level \(weightOnly.level)")
         }
         var heavy = perfect
         heavy.bodyMass = pounds(160)

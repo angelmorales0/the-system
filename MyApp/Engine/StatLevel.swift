@@ -5,7 +5,7 @@ import Foundation
 /// The max level needs every strict requirement, not only a full score.
 ///
 /// Missing data: a requirement whose input is not logged at all has `hasData == false`. It does not count.
-/// It drops out of the score and the other requirements share its weight, the same as a removed target.
+/// It counts as 0 at its full weight, so it holds the level down until it is logged. Only a removed target leaves the score.
 /// A requirement with some data counts, scaled down by how much is logged. A stat with no data at all is level 0.
 enum StatLevel {
     static let maxLevel = 350
@@ -42,7 +42,7 @@ struct StatRequirement: Equatable, Identifiable {
     /// Share of the 100-point score. A stat's weights add to 100.
     var weight: Double
     var detail: String
-    /// False when the input is not logged at all. The requirement then drops out of the score
+    /// False when the input is not logged at all. The requirement then counts as 0 at its full weight
     /// (see `StatLevelReport.counted`). `passed` and `progress` are false and 0 for such a row.
     var hasData: Bool = true
 
@@ -57,12 +57,13 @@ struct StatLevelReport: Equatable {
     /// Every requirement, with and without data, in display order.
     var requirements: [StatRequirement]
 
-    /// The requirements that score: those with data, their weights scaled back to 100 in the same ratio.
-    var counted: [StatRequirement] { Self.scaled(requirements.filter(\.hasData)) }
+    /// The requirements that score: every one, with or without data. A requirement without data scores 0 at its
+    /// full weight, so an unlogged lift or metric holds the level down until it is logged.
+    var counted: [StatRequirement] { Self.scaled(requirements) }
 
-    /// The max level needs every counted requirement at once. No counted requirement: never the max.
+    /// The max level needs every requirement at once, logged and passed. No requirement: never the max.
     var isMaxLevel: Bool { !counted.isEmpty && counted.allSatisfy(\.passed) }
-    /// Counted requirements that miss their strict rule. A requirement without data is not failing; it is not counted.
+    /// Requirements that miss their strict rule, including those with no data.
     var failing: [StatRequirement] { counted.filter { !$0.passed } }
     var withoutData: [StatRequirement] { requirements.filter { !$0.hasData } }
 
@@ -83,10 +84,31 @@ struct StatLevelReport: Equatable {
     }
 
     /// Drops the removed targets and scales the weights of the rest back to 100, in the same ratio.
-    /// Rows without data stay in the list (so they can be shown) but still do not count.
+    /// Rows without data stay in the list and count as 0.
     /// Removing every target gives an empty report: score 0, level 0.
     func removing(_ removed: Set<String>) -> StatLevelReport {
         StatLevelReport(stat: stat, requirements: Self.scaled(requirements.filter { !removed.contains($0.category) }))
+    }
+
+    /// Self-check for the no-data rule, on a report whose other rows are perfect: each named row has no data,
+    /// scores 0 at its full weight, fails, and blocks the max; the weights still add to 100; and the level is
+    /// what the other rows earn alone. Empty when all of that holds.
+    static func zeroCheck(_ report: StatLevelReport, noData: Set<String>, _ label: String) -> [String] {
+        var errors: [String] = []
+        let rows = report.counted.filter { noData.contains($0.category) }
+        if Set(rows.map(\.category)) != noData || rows.contains(where: { $0.hasData || $0.progress != 0 || $0.passed }) {
+            errors.append("\(label): \(noData.sorted()) should be counted with no data and 0 progress, got \(rows)")
+        }
+        if Set(report.failing.map(\.category)) != noData || report.isMaxLevel {
+            errors.append("\(label): only \(noData.sorted()) should fail and block the max, got failing \(report.failing.map(\.category))")
+        }
+        if report.counted.count != report.requirements.count || abs(report.counted.reduce(0) { $0 + $1.weight } - 100) > 0.001 {
+            errors.append("\(label): every row should count and the weights add to 100, got \(report.counted.map { "\($0.category) \($0.weight)" })")
+        }
+        let earned = 100 - rows.reduce(0) { $0 + $1.weight }
+        let expected = min(StatLevel.maxLevel - 1, Int((Double(StatLevel.maxLevel) * earned / 100 + 1e-9).rounded(.down)))
+        if report.level != expected { errors.append("\(label): the other rows alone should give level \(expected), got \(report.level)") }
+        return errors
     }
 
     /// The same rows with their weights scaled to add to 100. Empty stays empty.
