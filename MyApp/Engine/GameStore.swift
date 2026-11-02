@@ -533,13 +533,9 @@ final class GameStore: ObservableObject {
                     integrations: integrations
                 )
                 let result = VerifierRegistry.verifier(for: quest.verification.method).evaluate(quest: quest, context: context)
+                // A tap on a row the feeds verify shows no text: the row's own numbers say where it stands.
                 switch result {
-                case .incomplete(let reason):
-                    verificationNote = reason
-                    clock = now
-                    cue(.questFail)
-                case .unchanged:
-                    verificationNote = "No matching sample yet."
+                case .incomplete, .unchanged:
                     clock = now
                     cue(.questFail)
                 case .failed, .progress, .completed:
@@ -876,8 +872,8 @@ final class GameStore: ObservableObject {
         switch outcome {
         case .completed:
             verificationNote = nil
-        case .rejected(let reason):
-            verificationNote = "\(title): \(reason)"
+        case .rejected:
+            // No text under the list for a refused tap; the cue says it did not take.
             cue(.questFail)
         case .ignored, .updated:
             break
