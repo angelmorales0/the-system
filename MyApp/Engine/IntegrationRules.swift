@@ -178,6 +178,30 @@ enum IntegrationRules {
             errors.append("an incline bench should not match a Bench Press quest")
         }
 
+        // Stand-ins: cable rows clear the barbell row, lat pulldowns clear the pull-ups. Their stack weight is not checked.
+        let rowQuest = quest(method: .hevySets, params: ["exercise": .string("Bent Over Row"), "sets": .number(3), "minReps": .number(5), "minWeightKg": .number(80)])
+        let pullQuest = quest(method: .hevySets, params: ["exercise": .string("Pull Up"), "sets": .number(4), "minReps": .number(3), "minWeightKg": .number(10)])
+        var cable = day
+        cable.hevy = HevyDayReading(available: true, configured: true, reason: "", dayKey: "2026-10-01", workouts: [
+            HevyWorkout(id: "w3", title: "Back", start: start, end: start.addingTimeInterval(3600), exercises: [
+                HevyExercise(title: "Seated Cable Row - V Grip (Cable)", templateId: "SCR", sets: [set("normal", 10, 50), set("normal", 10, 50), set("normal", 10, 50)]),
+                HevyExercise(title: "Lat Pulldown (Cable)", templateId: "LPD", sets: [set("warmup", 10, 30), set("normal", 8, 60), set("normal", 8, 60), set("normal", 8, 60), set("normal", 2, 70)]),
+            ]),
+        ])
+        if case .completed = HevySetsVerifier().evaluate(quest: rowQuest, context: context(cable, now: start)) {} else {
+            errors.append("3 cable row sets should clear a Bent Over Row 3-set quest whatever the stack weight")
+        }
+        if case .progress(let current, _) = HevySetsVerifier().evaluate(quest: pullQuest, context: context(cable, now: start)) {
+            if current != 3 { errors.append("lat pulldowns should count 3 working sets of 3+ reps for pull-ups, got \(current)") }
+        } else {
+            errors.append("3 of 4 lat pulldown sets should be pull-up progress")
+        }
+        let benchOnCable = HevySetsVerifier().evaluate(quest: benchQuest, context: context(cable, now: start))
+        if benchOnCable != .unchanged { errors.append("cable work should not count for bench press, got \(benchOnCable)") }
+        if HevySetsVerifier.isStandIn("lat pulldown", for: "bent over row") || HevySetsVerifier.isStandIn("seated cable row", for: "pull up") {
+            errors.append("a stand-in counts only for its own lift")
+        }
+
         // Hevy time mode: Splits [0/3min] sums timed sets. A rep set or a warm-up hold does not count.
         var splitsQuest = quest(method: .hevySets, params: ["exercise": .string("Splits"), "minDurationSec": .number(180)])
         splitsQuest.progress = QuestProgress(current: 0, target: 3, unit: "min")

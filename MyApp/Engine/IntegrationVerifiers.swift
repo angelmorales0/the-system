@@ -106,13 +106,19 @@ struct HevySetsVerifier: Verifier {
                 if let templateId { return entry.templateId == templateId }
                 return Self.baseName(entry.title) == exercise
             }
-            let sets = matching.flatMap(\.sets).filter { set in
+            // A gym without the bar or the rig: the stand-in counts for the quest. Its weight is a cable stack,
+            // not comparable to a barbell or added weight, so only its reps are checked.
+            let standIns = workout.exercises.filter { !matching.contains($0) && Self.isStandIn(Self.baseName($0.title), for: exercise) }
+            func working(_ set: HevySet) -> Bool {
                 guard set.isWorking else { return false }
                 if minDuration != nil { return (set.durationSec ?? 0) > 0 }
-                guard Double(set.reps ?? 0) + 0.001 >= minReps else { return false }
-                guard let minWeight else { return true }
-                return (set.weightKg ?? 0) + 0.001 >= minWeight
+                return Double(set.reps ?? 0) + 0.001 >= minReps
             }
+            let sets = matching.flatMap(\.sets).filter { set in
+                guard working(set) else { return false }
+                guard let minWeight, minDuration == nil else { return true }
+                return (set.weightKg ?? 0) + 0.001 >= minWeight
+            } + (minDuration == nil ? standIns.flatMap(\.sets).filter(working) : [])
             guard !sets.isEmpty else { continue }
             total += minDuration != nil ? sets.reduce(0) { $0 + ($1.durationSec ?? 0) } : Double(sets.count)
             workoutIds.append(workout.id)
@@ -138,6 +144,18 @@ struct HevySetsVerifier: Verifier {
             return .progress(current: min(shown, quest.progress.target), evidence: evidence)
         }
         return .completed(evidence: evidence)
+    }
+
+    /// Lifts that stand in for a split lift when the gym lacks its equipment. Key: the quest's exercise (any alias).
+    /// Value: Hevy name starts that count for it, so "Seated Cable Row - V Grip" and "Lat Pulldown - Close Grip" match.
+    /// The stand-ins clear the quest only. They never feed the STR level: a cable stack is not a barbell or a pull-up.
+    static let standIns: [(exercises: Set<String>, names: [String])] = [
+        (Set(StrengthLevel.row.aliases), ["seated cable row", "cable row", "seated row"]),
+        (Set(StrengthLevel.pullUps.aliases), ["lat pulldown", "lat pull down", "lat pull-down"]),
+    ]
+
+    static func isStandIn(_ name: String, for exercise: String) -> Bool {
+        standIns.contains { $0.exercises.contains(exercise) && $0.names.contains { name.hasPrefix($0) } }
     }
 
     /// "Bench Press (Barbell)" → "bench press". Hevy puts the equipment in brackets at the end.
