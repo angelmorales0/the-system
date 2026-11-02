@@ -4,5 +4,19 @@
 <dict>
 	<key>SeedAnthropicApiKey</key>
 	<string>$(ANTHROPIC_API_KEY)</string>
+	<key>SeedHevyApiKey</key>
+	<string>$(HEVY_API_KEY)</string>
+	<key>SeedWhoopClientId</key>
+	<string>$(WHOOP_CLIENT_ID)</string>
+	<key>SeedWhoopClientSecret</key>
+	<string>$(WHOOP_CLIENT_SECRET)</string>
+	<key>SeedStravaClientId</key>
+	<string>$(STRAVA_CLIENT_ID)</string>
+	<key>SeedStravaClientSecret</key>
+	<string>$(STRAVA_CLIENT_SECRET)</string>
+	<key>SeedMercuryToken</key>
+	<string>$(MERCURY_API_TOKEN)</string>
+	<key>SeedCodeforcesHandle</key>
+	<string>$(CODEFORCES_HANDLE)</string>
 </dict>
 </plist>

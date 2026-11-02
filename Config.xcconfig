@@ -1,10 +1,16 @@
 // Build settings the app reads at launch. Committed.
-// Put your own values in Secrets.xcconfig next to this file. It is gitignored and optional.
-
-// Anthropic API key for the quest planner. Empty here; Secrets.xcconfig sets it.
-// The build writes it into the app's Info.plist (SeedAnthropicApiKey) and the app
-// saves it to this iPhone's Keychain on first launch, so you never type it in.
+// Run scripts/make-secrets.sh to write Secrets.xcconfig (gitignored) from backend/.env.
+// The build writes each value into the app's Info.plist (Seed… keys) and the app saves
+// the ones it has into this iPhone's Keychain on first launch, so you never type them in.
+// Empty here; Secrets.xcconfig sets them.
 ANTHROPIC_API_KEY =
+HEVY_API_KEY =
+WHOOP_CLIENT_ID =
+WHOOP_CLIENT_SECRET =
+STRAVA_CLIENT_ID =
+STRAVA_CLIENT_SECRET =
+MERCURY_API_TOKEN =
+CODEFORCES_HANDLE =
 
 // Last, so its values win over the defaults above.
 #include? "Secrets.xcconfig"
