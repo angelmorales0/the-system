@@ -74,18 +74,18 @@ enum GymSplit {
     }
 
     static let bench = Day(id: "bench", name: "Bench Day", focus: "Upper body: chest, back, side delts, biceps", lowerBody: false, exercises: [
-        lift("Bench Press", .main, 4, 3...5, target: "Bench press", aliases: StrengthLevel.bench.aliases),
-        lift("Bent Over Row", .main, 4, 5...8, target: "Barbell row", aliases: StrengthLevel.row.aliases),
-        lift("Pull Up", .accessory, 5, 3...10, target: "Pull-ups", aliases: StrengthLevel.pullUps.aliases, note: pullUpVolume),
+        lift("Bench Press", .main, 3, 3...5, target: "Bench press", aliases: StrengthLevel.bench.aliases),
+        lift("Bent Over Row", .main, 3, 5...8, target: "Barbell row", aliases: StrengthLevel.row.aliases),
+        lift("Pull Up", .accessory, 4, 3...10, target: "Pull-ups", aliases: StrengthLevel.pullUps.aliases, note: pullUpVolume),
         lift("Chest Dip", .accessory, 3, 5...8, target: "Weighted dips", aliases: StrengthLevel.dips.aliases),
         lift("Lateral Raise", .accessory, 4, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
-        lift("Bicep Curl", .accessory, 3, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
+        lift("Bicep Curl", .accessory, 4, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
     ])
 
     static let squat = Day(id: "squat", name: "Squat Day", focus: "Lower body: squat, single-leg work, hamstrings, and calves", lowerBody: true, exercises: [
-        lift("Squat", .main, 4, 1...5, target: "Squat", aliases: StrengthLevel.squat.aliases),
+        lift("Squat", .main, 3, 1...5, target: "Squat", aliases: StrengthLevel.squat.aliases),
         // Sets count both legs: 2 per leg.
-        lift("Bulgarian Split Squat", .accessory, 4, 8...12, target: "Bulgarian split squat", aliases: StrengthLevel.bulgarianSplitSquat.aliases),
+        lift("Bulgarian Split Squat", .accessory, 3, 8...12, target: "Bulgarian split squat", aliases: StrengthLevel.bulgarianSplitSquat.aliases),
         support("Romanian Deadlift", 3, 8...10, muscle: "Hamstrings", aliases: ["romanian deadlift", "rdl"],
                 note: "Hamstrings and glutes for the running. Moderate weight, 2-3 reps in reserve; this is not a heavy deadlift."),
         support("Standing Calf Raise", 3, 10...15, muscle: "Calves", aliases: ["standing calf raise", "calf raise", "seated calf raise"],
@@ -97,8 +97,8 @@ enum GymSplit {
     ])
 
     static let press = Day(id: "press", name: "Press Day", focus: "Upper body: shoulders, back, chest, biceps", lowerBody: false, exercises: [
-        lift("Overhead Press", .main, 4, 1...5, target: "Overhead press", aliases: StrengthLevel.overheadPress.aliases),
-        lift("Pull Up", .main, 5, 3...5, target: "Pull-ups", aliases: StrengthLevel.pullUps.aliases, note: pullUpStrength),
+        lift("Overhead Press", .main, 3, 1...5, target: "Overhead press", aliases: StrengthLevel.overheadPress.aliases),
+        lift("Pull Up", .main, 4, 3...5, target: "Pull-ups", aliases: StrengthLevel.pullUps.aliases, note: pullUpStrength),
         lift("Lateral Raise", .accessory, 4, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
         lift("Bicep Curl", .accessory, 4, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
         hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
@@ -121,20 +121,19 @@ enum GymSplit {
     ])
 
     static let arms = Day(id: "arms", name: "Arms Day", focus: "Pull-ups first while fresh, then side delts, biceps, grip, and core. No pressing", lowerBody: false, exercises: [
-        lift("Pull Up", .accessory, 4, 3...20, target: "Pull-ups", aliases: StrengthLevel.pullUps.aliases, note: pullUpMax),
+        lift("Pull Up", .accessory, 3, 3...20, target: "Pull-ups", aliases: StrengthLevel.pullUps.aliases, note: pullUpMax),
         lift("Lateral Raise", .accessory, 4, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
-        // 3 sets: the pull-ups already train the biceps hard, and the elbows carry all of it.
-        lift("Bicep Curl", .accessory, 3, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
+        lift("Bicep Curl", .accessory, 4, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
         lift("Toes To Bar", .accessory, 3, 5...10, target: "Toes-to-bar", aliases: StrengthLevel.toesToBar.aliases),
         hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
         support("Face Pull", 3, 12...15, muscle: "Rear delts", aliases: ["face pull"],
                 note: "Rear delts and rotator cuff, to balance the pressing and lateral raises. Light, controlled reps."),
     ])
 
-    // Three pull-up sessions, three jobs. Together: about 14 sets a rotation, most of them short of failure.
+    // Three pull-up sessions, three jobs. Together: 11 sets a rotation, most of them short of failure.
     static let pullUpVolume = "Volume: strict sets, each stopped about 3 reps short of failure. Add 1 rep to every set each week. Never to failure today."
     static let pullUpStrength = "Weighted strength: add weight with a belt or a dumbbell so the top set of 5 is about RPE 8. Under 8 strict bodyweight reps, do bodyweight sets of 3-5 instead."
-    static let pullUpMax = "Max effort: first set as many strict reps as you can, stopping 1 rep short of failure. Then 3 sets at about 60% of that number. The first set shows your progress to 20."
+    static let pullUpMax = "Max effort: first set as many strict reps as you can, stopping 1 rep short of failure. Then 2 sets at about 60% of that number. The first set shows your progress to 20."
 
     /// The player's top focus right now. Each is trained 3 times a rotation, and is never dropped for time.
     /// Pull-ups lead: 20 strict reps is the main goal.
@@ -352,7 +351,7 @@ enum GymSplit {
 
         // A fresh game starts at Bench Day, and the catalog day uses its exercises.
         var snapshot = GameSnapshot.fresh(catalog: catalog, now: now)
-        if snapshot.bundle.headerLine != "Bench Day" || !snapshot.bundle.quests.contains(where: { $0.title == "Bench Press 4×3-5" }) {
+        if snapshot.bundle.headerLine != "Bench Day" || !snapshot.bundle.quests.contains(where: { $0.title == "Bench Press 3×3-5" }) {
             errors.append("a fresh game should start on Bench Day, got \(snapshot.bundle.headerLine) \(snapshot.bundle.quests.map(\.title))")
         }
         if !snapshot.bundle.quests.contains(where: { NoGymDay.isTenK($0) }) || snapshot.bundle.quests.last?.id != DailyStretch.questId {
@@ -536,7 +535,7 @@ enum GymSplit {
 
         // The offline day, the context, and the mock generator all carry the goal on Deadlift Day.
         var snapshot = GameSnapshot.fresh(catalog: catalog, now: now)
-        let pressDone = QuestRecord(title: "Overhead Press 4×1-5", kind: .daily, stat: .STR, method: .hevySets, params: [:],
+        let pressDone = QuestRecord(title: "Overhead Press 3×1-5", kind: .daily, stat: .STR, method: .hevySets, params: [:],
                                     target: 4, done: 4, unit: "sets", status: .completed)
         snapshot.questHistory = [QuestDayRecord(dayKey: "2026-10-04", mode: .performanceTraining, trainingBand: .green, noGym: false,
                                                 splitDay: "press", generatedBy: "mock", missedRequired: false, quests: [pressDone])]
