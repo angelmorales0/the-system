@@ -361,10 +361,6 @@ private struct HiddenQuestReveal: View {
                         .multilineTextAlignment(.center)
                         .padding(.top, 24)
                     sectionTitle("GOAL").padding(.top, 22)
-                    Text("Exceed a daily quest's target by 50%.")
-                        .font(.footnote)
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 10)
                     HStack(spacing: 11) {
                         Text(unlock.questTitle)
                             .frame(maxWidth: .infinity, alignment: .leading)

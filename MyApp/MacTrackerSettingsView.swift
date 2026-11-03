@@ -36,7 +36,6 @@ struct MacTrackerSettingsView: View {
                 if !result.isEmpty {
                     note(result)
                 }
-                note("Run FocusTracker on each Mac with the same address and token. Every Mac counts as work: its minutes fill the Work line of the Screen Time quest. FOC counts the iPhone only.")
             }
         }
         .font(.subheadline)

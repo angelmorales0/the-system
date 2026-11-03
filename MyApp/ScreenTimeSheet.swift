@@ -11,7 +11,8 @@ struct ScreenTimeSheet: View {
     #if os(iOS)
     @State private var selection = PhoneScreenGroup.load()
     #endif
-    @State private var message = "Choose All Apps & Categories so every app on this phone counts toward the daily cap. Phone 1.5 h and work 7 h turn red when over; only the 8 h 20 m total fails the quest and opens a penalty."
+    /// Empty unless Family Controls was refused.
+    @State private var message = ""
 
     var body: some View {
         NavigationStack {
@@ -19,9 +20,11 @@ struct ScreenTimeSheet: View {
                 SystemPanel {
                     VStack(alignment: .leading, spacing: 14) {
                         QuestInfoHeader(title: "SCREEN TIME")
-                        Text(message)
-                            .font(.footnote)
-                            .foregroundStyle(SystemTheme.muted)
+                        if !message.isEmpty {
+                            Text(message)
+                                .font(.footnote)
+                                .foregroundStyle(SystemTheme.muted)
+                        }
                         NavigationLink {
                             MacTrackerSettingsView()
                         } label: {

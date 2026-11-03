@@ -179,7 +179,6 @@ struct ConnectionDetailView: View {
                 if !result.isEmpty {
                     note(result)
                 }
-                note(ConnectionHelp.text(connection))
                 actionButton("REMOVE") {
                     connection.forget()
                     typed = [:]
@@ -288,7 +287,7 @@ struct WhoopStressSignIn: View {
                 .foregroundStyle(.white)
                 .padding(.top, 8)
             if signedIn {
-                Text("Signed in. Fatigue uses WHOOP's stress score.")
+                Text("Signed in.")
                     .font(.caption2)
                     .foregroundStyle(SystemTheme.cyan)
                 button("SIGN OUT OF WHOOP STRESS") {
@@ -315,10 +314,6 @@ struct WhoopStressSignIn: View {
                     run { await WhoopStressClient.signIn(email: email, password: password) }
                 }
             }
-            Text("Uses the WHOOP iPhone app's private API. It is not official, it can stop working when WHOOP updates its app, and it may break WHOOP's terms. The password is not saved.")
-                .font(.caption2)
-                .foregroundStyle(SystemTheme.muted)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .disabled(working)
     }
@@ -381,10 +376,6 @@ struct OAuthSignIn: View {
             }
             .buttonStyle(.plain)
             .disabled(working)
-            Text("Redirect: \(provider.redirectURI)")
-                .font(.caption2.monospaced())
-                .foregroundStyle(SystemTheme.muted)
-                .textSelection(.enabled)
         }
     }
 
@@ -422,26 +413,6 @@ struct OAuthSignIn: View {
     }
 }
 
-/// Short help under each service. Docs/ON_DEVICE_SETUP.md has the full steps.
-enum ConnectionHelp {
-    static func text(_ connection: Connection) -> String {
-        switch connection {
-        case .hevy:
-            "Hevy Pro: open hevy.com/settings → Developer and copy the API key."
-        case .strava:
-            "Create an app at strava.com/settings/api. Set Authorization Callback Domain to localhost. Type its Client ID and Client Secret, save, then sign in."
-        case .whoop:
-            "Create an app at developer-dashboard.whoop.com. Add the redirect URI thesystem://localhost/whoop. Type its Client ID and Client Secret, save, then sign in."
-        case .codeforces:
-            "Your public Codeforces handle. No key is needed."
-        case .mercury:
-            "Mercury → Settings → Tokens → create a Read Only token."
-        case .claude:
-            "console.anthropic.com → API Keys. The key plans each morning's quests on this phone."
-        }
-    }
-}
-
 /// Mercury budget, tax reserve, settle hour, income filter, and category map. The backend read these from its environment.
 /// The budget is set once and then locked for 3 months, so it cannot be moved to fit a bad month.
 struct MercurySettingsView: View {
@@ -467,10 +438,6 @@ struct MercurySettingsView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.URL)
-            Text("Tags: necessary, discretionary, transfer, income, ignore. The phone polls Mercury every 15 minutes while open and keeps transaction summaries on this device only.")
-                .font(.footnote)
-                .foregroundStyle(SystemTheme.muted)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .onChange(of: settings) { _, _ in save() }
         .onChange(of: categories) { _, _ in save() }
@@ -500,9 +467,6 @@ struct MercurySettingsView: View {
                 Button("Set") { confirmBudget = true }
                     .disabled((Double(budget.trimmingCharacters(in: .whitespaces)) ?? 0) <= 0)
             }
-            Text("The budget is set once and then locked for \(MercurySettings.budgetLockMonths) months.")
-                .font(.footnote)
-                .foregroundStyle(SystemTheme.muted)
         }
     }
 
@@ -547,10 +511,6 @@ struct ClaudeSettingsView: View {
                         UserDefaults.standard.set(trimmed, forKey: QuestPlanner.modelKey)
                     }
                 }
-            Text("Planning runs when the app opens in the morning and can take up to two minutes. The catalog quests stay on screen until a valid plan arrives. If the app leaves the screen before it finishes, it tries again on the next open (up to 3 times a day).")
-                .font(.footnote)
-                .foregroundStyle(SystemTheme.muted)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

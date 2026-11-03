@@ -12,7 +12,6 @@ struct EmergencySettingsSheet: View {
             QuestSheet(title: "Emergency quests") {
                 VStack(alignment: .leading, spacing: 12) {
                     timePicker("Earliest start", minutes: $settings.earliestStart)
-                    note("No emergency quest starts before this time.")
                 }
 
                 QuestSectionTitle(text: "Movement")
@@ -22,7 +21,6 @@ struct EmergencySettingsSheet: View {
                     Stepper("Minimum: \(settings.minimumSteps.formatted()) steps", value: $settings.minimumSteps, in: 500...20_000, step: 500)
                     Stepper("Walk: \(settings.walkSteps.formatted()) steps", value: $settings.walkSteps, in: 500...10_000, step: 250)
                     Stepper("Time limit: \(settings.walkLimitMinutes) min", value: $settings.walkLimitMinutes, in: 15...180, step: 15)
-                    note("After \(Self.timeString(EmergencyRules.stepCheckMinute(settings))), fewer than \(settings.minimumSteps.formatted()) steps starts a walk. Every app but your allowed apps locks until you walk \(settings.walkSteps.formatted()) steps. A miss opens a penalty tomorrow. iOS checks Health about once an hour in the background.")
                 }
 
                 QuestSectionTitle(text: "Restore Flexibility")
@@ -30,7 +28,6 @@ struct EmergencySettingsSheet: View {
                     Toggle("Stretch check", isOn: $settings.stretchEnabled)
                     timePicker("Check time", minutes: $settings.stretchCheckTime)
                     Stepper("Time limit: \(settings.stretchLimitMinutes) min", value: $settings.stretchLimitMinutes, in: 15...180, step: 15)
-                    note("At \(Self.timeString(EmergencyRules.stretchCheckMinute(settings))), an open Stretching quest starts this emergency. Every app but your allowed apps locks until \(Int(DailyStretch.minutes)) minutes of stretches are logged: timed stretch sets in Hevy, or a Flexibility, Yoga, or Cooldown workout in Apple Health. A miss after \(settings.stretchLimitMinutes) minutes opens a penalty tomorrow.")
                 }
 
                 QuestSectionTitle(text: "Test")
@@ -40,7 +37,6 @@ struct EmergencySettingsSheet: View {
                         testButton("Test Restore Flexibility") { store.startEmergencyTest(.skippedStretch) }
                     }
                     .disabled(store.emergency != nil)
-                    note("A test uses these targets. You can end it early, and it never opens a penalty.")
                 }
             }
             .font(.subheadline)
@@ -61,13 +57,6 @@ struct EmergencySettingsSheet: View {
                 store.updateEmergencySettings(next)
             }
         }
-    }
-
-    private func note(_ text: String) -> some View {
-        Text(text)
-            .font(.footnote)
-            .foregroundStyle(SystemTheme.muted)
-            .fixedSize(horizontal: false, vertical: true)
     }
 
     /// Boxed like the quest window's header boxes.

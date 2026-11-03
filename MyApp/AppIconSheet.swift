@@ -55,9 +55,6 @@ struct AppIconSheet: View {
     var body: some View {
         NavigationStack {
             QuestSheet(title: "App icon") {
-                Text("Choose the icon shown on the Home Screen. iOS confirms each change with its own alert.")
-                    .font(.footnote)
-                    .foregroundStyle(SystemTheme.muted)
                 ForEach(AppIconChoice.allCases) { choice in
                     Button { select(choice) } label: {
                         AppIconRow(choice: choice, isSelected: choice == selected)

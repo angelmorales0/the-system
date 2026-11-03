@@ -49,7 +49,6 @@ struct StatTargetsSheet: View {
                     Text("LEVEL \(store.statLevels[stat]) / \(StatLevel.maxLevel)")
                         .font(.title3.weight(.semibold))
                         .tracking(1.1)
-                    note("\(countedWeights.count) of \(report.requirements.count) targets count. Meet every target that counts to reach \(StatLevel.maxLevel). A target with no data yet counts as 0. A removed target's weight goes to the others.")
                     if stat == .FOC {
                         NavigationLink {
                             FocusTrackingView()
@@ -58,9 +57,6 @@ struct StatTargetsSheet: View {
                         }
                         .buttonStyle(.plain)
                         .padding(.top, 6)
-                    }
-                    if stat == .AGI {
-                        note("Every test is read from Hevy. Log each one as its own exercise, named as shown under the target, with the result as reps (cm, inches, or switches) or as a distance in metres. The newest result in 90 days counts.")
                     }
                 }
 
@@ -234,7 +230,6 @@ struct StatTargetsSheet: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Add a strength goal")
-                note("Add your own strength goal. It scores like the targets above, and its exercise joins a split day from the next plan on. On a full day it takes the place of a support exercise.")
             }
         }
         // A refusal is about the old fields. A change clears it.

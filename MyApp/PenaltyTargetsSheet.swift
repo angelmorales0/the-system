@@ -14,15 +14,6 @@ struct PenaltyTargetsSheet: View {
         case allowed = "Allowed"
         case hidden = "Hidden"
         var id: String { rawValue }
-
-        var note: String {
-            switch self {
-            case .allowed:
-                return "Apps that stay open during a penalty or an emergency quest. Pick The System, Strava, Hevy, and Spotify. Every other app and every website locks."
-            case .hidden:
-                return "Apps that leave the Home Screen during a penalty. Pick all apps; the allowed apps always stay. Settings and Phone cannot be hidden."
-            }
-        }
     }
 
     @State private var list = List.allowed
@@ -42,9 +33,11 @@ struct PenaltyTargetsSheet: View {
                             ForEach(List.allCases) { Text($0.rawValue).tag($0) }
                         }
                         .pickerStyle(.segmented)
-                        Text(accessError ?? list.note)
-                            .font(.footnote)
-                            .foregroundStyle(SystemTheme.muted)
+                        if let accessError {
+                            Text(accessError)
+                                .font(.footnote)
+                                .foregroundStyle(SystemTheme.muted)
+                        }
                     }
                 }
                 .padding(.horizontal, 14)

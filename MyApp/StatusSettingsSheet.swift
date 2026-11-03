@@ -39,28 +39,18 @@ struct StatusSettingsSheet: View {
                     get: { store.snapshot.noGymToday },
                     set: { store.setNoGym($0) }
                 )) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("NO GYM AVAILABLE")
-                            .font(.caption.weight(.semibold))
-                            .tracking(1.1)
-                            .foregroundStyle(SystemTheme.muted)
-                        Text("Swap today's lifts for an added 10K")
-                            .font(.caption2)
-                            .foregroundStyle(SystemTheme.muted.opacity(0.8))
-                    }
+                    Text("NO GYM AVAILABLE")
+                        .font(.caption.weight(.semibold))
+                        .tracking(1.1)
+                        .foregroundStyle(SystemTheme.muted)
                 }
                 .toggleStyle(QuestCheckToggleStyle())
                 .disabled(store.snapshot.bundle.mode != .performanceTraining)
                 Toggle(isOn: $soundOn) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("SOUND")
-                            .font(.caption.weight(.semibold))
-                            .tracking(1.1)
-                            .foregroundStyle(SystemTheme.muted)
-                        Text("System cues for quests, windows, and penalties")
-                            .font(.caption2)
-                            .foregroundStyle(SystemTheme.muted.opacity(0.8))
-                    }
+                    Text("SOUND")
+                        .font(.caption.weight(.semibold))
+                        .tracking(1.1)
+                        .foregroundStyle(SystemTheme.muted)
                 }
                 .toggleStyle(QuestCheckToggleStyle())
                 // A sample on switch-on, so the new setting is heard at once.

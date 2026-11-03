@@ -19,10 +19,7 @@ struct FocusTrackingView: View {
             QuestSectionTitle(text: "iPhone")
             VStack(alignment: .leading, spacing: 12) {
                 pickerButton("All apps", summary: summary(all)) { pickingAll = true }
-                note("Select every category. iOS counts screen time only for the apps and categories chosen here.")
                 pickerButton("Social apps", summary: summary(social)) { pickingSocial = true }
-                note("Select the social apps and sites. Without them, the social media target has no data.")
-                note("Counting starts at the next 5:00. iOS reports thresholds, not exact minutes, so each day reads as the highest threshold reached.")
             }
             .familyActivityPicker(isPresented: $pickingAll, selection: $all)
             .familyActivityPicker(isPresented: $pickingSocial, selection: $social)
@@ -31,11 +28,6 @@ struct FocusTrackingView: View {
             #else
             note("Screen Time tracking runs on iPhone.")
             #endif
-
-            QuestSectionTitle(text: "Mac")
-            VStack(alignment: .leading, spacing: 12) {
-                note("FOC counts the iPhone only. Mac time counts as work: FocusTracker sends it to the Work line of the Screen Time quest (Status → Screen Time → Mac tracker).")
-            }
         }
         .font(.subheadline)
         .tint(SystemTheme.accent)
