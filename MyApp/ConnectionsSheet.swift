@@ -15,6 +15,7 @@ struct ConnectionsSheet: View {
                     ForEach(Connection.allCases) { connection in
                         row(connection)
                     }
+                    MacTrackerRow()
                 }
             }
             .font(.subheadline)
@@ -81,6 +82,69 @@ struct ConnectionsSheet: View {
     }
 
 
+}
+
+/// The Mac tracker: checked while a Mac is sending screen time. Tap to set the Worker address and token.
+struct MacTrackerRow: View {
+    @State private var status: MacTrackerStatus?
+
+    var body: some View {
+        NavigationLink {
+            MacTrackerSettingsView()
+        } label: {
+            HStack(spacing: 11) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("MAC TRACKER")
+                        .font(.caption.weight(.semibold))
+                        .tracking(1.1)
+                        .foregroundStyle(.white)
+                    Text(label)
+                        .font(.caption2)
+                        .foregroundStyle(color)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                QuestCheckbox(checked: receiving)
+                    .frame(width: 16, height: 17)
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(label)
+        .task { await reload() }
+    }
+
+    private var receiving: Bool {
+        if case .receiving = status { return true }
+        return false
+    }
+
+    private var label: String {
+        switch status {
+        case nil: "Checking…"
+        case .notSet: "Not set"
+        case .unreachable: "Error: cannot reach the Worker"
+        case .noData: "No Mac data today"
+        case .idle(let since): "Idle since \(since.formatted(date: .omitted, time: .shortened))"
+        case .receiving(let minutes): "Receiving · \(ScreenTime.clock(minutes)) today"
+        }
+    }
+
+    private var color: Color {
+        switch status {
+        case .receiving: SystemTheme.cyan
+        case .unreachable: .red
+        default: SystemTheme.muted
+        }
+    }
+
+    private func reload() async {
+        let now = Date.now
+        let dayKey = QuestDay.key(for: now)
+        let settings = MacScreenSettings.load()
+        let reading = settings.baseURL == nil ? nil : await MacScreenClient.load(dayKey: dayKey, settings: settings)
+        status = MacTrackerStatus.make(settings: settings, reading: reading, dayKey: dayKey, now: now)
+    }
 }
 
 /// One service: type its keys once, save them to the Keychain, and test them. Saved values are never shown again.

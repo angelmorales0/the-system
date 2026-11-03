@@ -20,6 +20,34 @@ nonisolated struct WorkScreenReading: Decodable, Equatable {
     func minutes(for dayKey: String) -> Int? {
         available && self.dayKey == dayKey ? workMinutes.map { max(0, $0) } : nil
     }
+
+    /// The newest minute any Mac was active on `dayKey`, or nil when the bitmap has none.
+    func lastActive(for dayKey: String) -> Date? {
+        guard let bits = activeMinutes(for: dayKey).map(Array.init), let start = QuestDay.start(of: dayKey),
+              let byte = bits.lastIndex(where: { $0 != 0 }) else { return nil }
+        let slot = byte * 8 + 7 - bits[byte].leadingZeroBitCount
+        return start.addingTimeInterval(Double(slot) * 60)
+    }
+}
+
+/// The Mac tracker row on the Connections screen. Receiving: a Mac was active in the last `liveWindow`.
+nonisolated enum MacTrackerStatus: Equatable {
+    case notSet
+    case unreachable
+    case noData
+    case idle(since: Date)
+    case receiving(minutes: Int)
+
+    /// FocusTracker sends every 15 minutes, so a minute up to 30 minutes old is still live.
+    static let liveWindow: TimeInterval = 30 * 60
+
+    static func make(settings: MacScreenSettings, reading: WorkScreenReading?, dayKey: String, now: Date) -> MacTrackerStatus {
+        guard settings.baseURL != nil else { return .notSet }
+        guard let reading else { return .unreachable }
+        guard let minutes = reading.minutes(for: dayKey) else { return .noData }
+        guard let last = reading.lastActive(for: dayKey) else { return minutes > 0 ? .receiving(minutes: minutes) : .noData }
+        return now.timeIntervalSince(last) <= liveWindow ? .receiving(minutes: minutes) : .idle(since: last)
+    }
 }
 
 /// The Worker address and token, typed in Screen Time → Mac tracker. The same pair goes into FocusTracker on each Mac.
@@ -104,6 +132,29 @@ enum MacScreenClient {
         if reading.minutes(for: "2026-10-26") != 412 || reading.minutes(for: "2026-10-25") != nil
             || WorkScreenReading(available: false, dayKey: "2026-10-26", workMinutes: nil).minutes(for: "2026-10-26") != nil {
             errors.append("a Mac reading should count only for its own day")
+        }
+
+        // Bit i is minute i after the day's start: slot 600 is 10 hours in.
+        if let start = QuestDay.start(of: "2026-10-26") {
+            var bits = [UInt8](repeating: 0, count: 120)
+            bits[300 >> 3] |= 1 << UInt8(300 & 7)
+            bits[600 >> 3] |= 1 << UInt8(600 & 7)
+            let marked = WorkScreenReading(available: true, dayKey: "2026-10-26", workMinutes: 2, active: Data(bits).base64EncodedString())
+            let last = start.addingTimeInterval(600 * 60)
+            if marked.lastActive(for: "2026-10-26") != last {
+                errors.append("the last active minute should be slot 600, got \(String(describing: marked.lastActive(for: "2026-10-26")))")
+            }
+            let day = "2026-10-26"
+            let cases: [(MacScreenSettings, WorkScreenReading?, Date, MacTrackerStatus)] = [
+                (MacScreenSettings(endpoint: "", token: ""), marked, last, .notSet),
+                (good, nil, last, .unreachable),
+                (good, WorkScreenReading(available: true, dayKey: "2026-10-25", workMinutes: 9), last, .noData),
+                (good, marked, last.addingTimeInterval(20 * 60), .receiving(minutes: 2)),
+                (good, marked, last.addingTimeInterval(45 * 60), .idle(since: last)),
+            ]
+            for (settings, reading, now, expected) in cases where MacTrackerStatus.make(settings: settings, reading: reading, dayKey: day, now: now) != expected {
+                errors.append("Mac tracker status should be \(expected), got \(MacTrackerStatus.make(settings: settings, reading: reading, dayKey: day, now: now))")
+            }
         }
         return errors
     }
