@@ -201,6 +201,30 @@ enum IntegrationRules {
         if HevySetsVerifier.isStandIn("lat pulldown", for: "bent over row") || HevySetsVerifier.isStandIn("seated cable row", for: "pull up") {
             errors.append("a stand-in counts only for its own lift")
         }
+        // Each stand-in, by the name Hevy gives it, for the quest it covers. And one that must not cross over.
+        let standInPairs: [(String, String)] = [
+            ("Seated Cable Row - Bar Grip", "bent over row"), ("Seated Cable Row - V Grip (Cable)", "bent over row"), ("Seated Row (Machine)", "bent over row"),
+            ("Single Arm Cable Row", "bent over row"),
+            ("Lat Pulldown (Cable)", "pull up"), ("Lat Pulldown - Close Grip (Cable)", "pull up"), ("Reverse Grip Lat Pulldown (Cable)", "pull up"),
+            ("Single Arm Lat Pulldown", "pull up"),
+            ("Hack Squat", "squat"), ("Hack Squat (Machine)", "squat"), ("Leg Press (Machine)", "squat"), ("Leg Press Horizontal (Machine)", "squat"),
+            ("Front Squat", "squat"),
+            ("Rear Delt Reverse Fly (Cable)", "face pull"), ("Rear Delt Reverse Fly (Machine)", "face pull"), ("Reverse Fly Single Arm (Cable)", "face pull"),
+            ("Chest Supported Reverse Fly (Dumbbell)", "face pull"),
+            ("Hammer Curl (Dumbbell)", "bicep curl"), ("Cross Body Hammer Curl", "bicep curl"), ("EZ Bar Biceps Curl", "bicep curl"),
+            ("Preacher Curl (Barbell)", "bicep curl"), ("Seated Incline Curl (Dumbbell)", "bicep curl"), ("Rope Cable Curl", "bicep curl"),
+            ("Single Arm Curl (Cable)", "bicep curl"),
+            ("Triceps Pushdown", "skullcrusher"), ("Triceps Rope Pushdown", "skullcrusher"), ("Triceps Pressdown", "skullcrusher"),
+            ("Overhead Triceps Extension (Cable)", "skullcrusher"), ("Triceps Extension (Dumbbell)", "skullcrusher"),
+        ]
+        for (name, quest) in standInPairs where !HevySetsVerifier.isStandIn(HevySetsVerifier.baseName(name), for: quest) {
+            errors.append("\(name) should stand in for \(quest)")
+        }
+        if HevySetsVerifier.isStandIn("leg press", for: "deadlift") || HevySetsVerifier.isStandIn("hammer curl", for: "skullcrusher")
+            || HevySetsVerifier.isStandIn(HevySetsVerifier.baseName("Straight Arm Lat Pulldown (Cable)"), for: "pull up")
+            || HevySetsVerifier.isStandIn(HevySetsVerifier.baseName("Chest Fly (Machine)"), for: "face pull") {
+            errors.append("a squat or curl stand-in should not cover another lift")
+        }
 
         // Hevy time mode: Splits [0/3min] sums timed sets. A rep set or a warm-up hold does not count.
         var splitsQuest = quest(method: .hevySets, params: ["exercise": .string("Splits"), "minDurationSec": .number(180)])

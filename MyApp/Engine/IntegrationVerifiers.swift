@@ -150,8 +150,19 @@ struct HevySetsVerifier: Verifier {
     /// Value: Hevy name starts that count for it, so "Seated Cable Row - V Grip" and "Lat Pulldown - Close Grip" match.
     /// The stand-ins clear the quest only. They never feed the STR level: a cable stack is not a barbell or a pull-up.
     static let standIns: [(exercises: Set<String>, names: [String])] = [
-        (Set(StrengthLevel.row.aliases), ["seated cable row", "cable row", "seated row"]),
-        (Set(StrengthLevel.pullUps.aliases), ["lat pulldown", "lat pull down", "lat pull-down"]),
+        // Names as Hevy's exercise templates spell them (GET /v1/exercise_templates), lowercased, without the equipment.
+        (Set(StrengthLevel.row.aliases), ["seated cable row", "seated row", "single arm cable row"]),
+        (Set(StrengthLevel.pullUps.aliases), ["lat pulldown", "reverse grip lat pulldown", "single arm lat pulldown"]),
+        // Heavy and light squat days alike.
+        (Set(StrengthLevel.squat.aliases), ["hack squat", "leg press", "front squat"]),
+        (["face pull"], ["rear delt reverse fly", "reverse fly single arm", "chest supported reverse fly"]),
+        (Set(StrengthLevel.curl.aliases), ["hammer curl", "cross body hammer curl", "seated incline hammer curl", "ez bar biceps curl",
+                                           "preacher curl", "seated incline curl", "rope cable curl", "single arm curl", "overhead curl",
+                                           "behind the back curl"]),
+        // Hevy's "Triceps Extension" is the overhead extension.
+        (["skullcrusher", "skull crusher", "lying triceps extension"], ["triceps pushdown", "triceps rope pushdown", "single arm triceps pushdown",
+                                                                        "reverse grip triceps pushdown", "triceps pressdown",
+                                                                        "overhead triceps extension", "triceps extension"]),
     ]
 
     static func isStandIn(_ name: String, for exercise: String) -> Bool {
