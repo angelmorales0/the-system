@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Opens from the gear on the STATUS window: Full Recovery, the No Gym toggle, the shop, and the other settings screens.
+/// Opens from the gear on the STATUS window: Full Recovery, the No Gym and sound checkboxes, and the other settings screens. The shop opens from the STATUS window.
 struct StatusSettingsSheet: View {
     @EnvironmentObject private var store: GameStore
     @State private var confirmRecovery = false
@@ -9,7 +9,6 @@ struct StatusSettingsSheet: View {
     @State private var showAppIcon = false
     @State private var showEmergency = false
     @State private var showConnections = false
-    @State private var showShop = false
     @AppStorage(SoundPlayer.enabledKey) private var soundOn = true
 
     var body: some View {
@@ -45,12 +44,12 @@ struct StatusSettingsSheet: View {
                             .font(.caption.weight(.semibold))
                             .tracking(1.1)
                             .foregroundStyle(SystemTheme.muted)
-                        Text("Swap today's lifts for a second 10K")
+                        Text("Swap today's lifts for an added 10K")
                             .font(.caption2)
                             .foregroundStyle(SystemTheme.muted.opacity(0.8))
                     }
                 }
-                .tint(SystemTheme.cyan)
+                .toggleStyle(QuestCheckToggleStyle())
                 .disabled(store.snapshot.bundle.mode != .performanceTraining)
                 Toggle(isOn: $soundOn) {
                     VStack(alignment: .leading, spacing: 3) {
@@ -63,13 +62,12 @@ struct StatusSettingsSheet: View {
                             .foregroundStyle(SystemTheme.muted.opacity(0.8))
                     }
                 }
-                .tint(SystemTheme.cyan)
+                .toggleStyle(QuestCheckToggleStyle())
                 // A sample on switch-on, so the new setting is heard at once.
                 .onChange(of: soundOn) { _, on in
                     if on { SystemSound.systemOpen.play() }
                 }
                 SystemDivider()
-                link("SHOP") { showShop = true }
                 link("PENALTY ZONE") { showShields = true }
                 link("SCREEN TIME") { showScreenTime = true }
                 link("EMERGENCY QUESTS") { showEmergency = true }
@@ -98,9 +96,6 @@ struct StatusSettingsSheet: View {
         .sheet(isPresented: $showConnections, onDismiss: { SystemSound.systemClose.play() }) {
             ConnectionsSheet()
         }
-        .sheet(isPresented: $showShop, onDismiss: { SystemSound.systemClose.play() }) {
-            ShopSheet()
-        }
     }
 
     /// Every link opens a System window, so each one plays the open cue.
@@ -125,4 +120,29 @@ struct StatusSettingsSheet: View {
 #Preview {
     StatusSettingsSheet()
         .environmentObject(GameStore(persistence: .memory))
+}
+
+/// A settings switch drawn as the quest checkbox: checked when on. The whole row toggles it.
+/// A disabled switch dims, like a row the player cannot act on today.
+struct QuestCheckToggleStyle: ToggleStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            HStack(spacing: 11) {
+                configuration.label
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                QuestCheckbox(checked: configuration.isOn)
+                    .frame(width: 16, height: 17)
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+            .opacity(isEnabled ? 1 : 0.45)
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(configuration.isOn ? "On" : "Off")
+        .accessibilityAddTraits(.isToggle)
+    }
 }
