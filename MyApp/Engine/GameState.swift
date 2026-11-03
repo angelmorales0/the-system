@@ -474,9 +474,9 @@ struct GameSnapshot: Codable, Equatable {
     }
 
     /// Adds the fixed rows every day gets: Stretching, then any open penalty.
-    /// On a "No gym today" day, the lifts first give way to a second 10K.
+    /// On a "No gym today" day, the lifts first give way to a second 10K. A day holds at most two workouts.
     func finished(_ bundle: QuestBundle, catalog: FallbackCatalog, now: Date) -> QuestBundle {
-        var day = noGymDayKey == bundle.dayKey ? NoGymDay.cardioOnly(bundle, now: now) : bundle
+        var day = TrainingDay.cappingWorkouts(noGymDayKey == bundle.dayKey ? NoGymDay.cardioOnly(bundle, now: now) : bundle)
         if day.mode == .fullRecovery, !signals.spendingFullRecovery, fullRecoveryDayKey != day.dayKey, restDue(on: day.dayKey) {
             day.headerLine = Self.restDayHeader
             day.narrative = restDayNarrative(on: day.dayKey)

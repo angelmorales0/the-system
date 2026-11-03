@@ -89,6 +89,8 @@ extension GameSnapshot {
         let insertAt = quests.firstIndex { $0.id == ScreenTime.questId || $0.id == DailyStretch.questId || $0.kind != .daily } ?? quests.count
         quests.insert(contentsOf: lifts, at: insertAt)
         bundle.quests = quests
+        // A finished 10K from the no-gym day and the window's runs can come back with the lifts: still two workouts.
+        bundle = TrainingDay.cappingWorkouts(bundle)
         bundle.headerLine = fresh.bundle.headerLine
         return "Gym day again. Strength quests are back."
     }

@@ -71,6 +71,31 @@ enum TrainingDay {
         }
     }
 
+    /// The most workouts a day holds. Each run is one workout; all the lifts together are one gym workout.
+    static let maxWorkouts = 2
+
+    /// Keeps the day at `maxWorkouts`. Runs are alike, so an extra run goes first: the 5K before a 10K, the last row first.
+    /// Finished rows, penalty rows, Stretching, and Screen Time always stay.
+    static func cappingWorkouts(_ bundle: QuestBundle) -> QuestBundle {
+        var copy = bundle
+        func isWorkout(_ quest: Quest) -> Bool { quest.kind == .daily && quest.id != DailyStretch.questId && quest.id != ScreenTime.questId }
+        func isLift(_ quest: Quest) -> Bool { isWorkout(quest) && isStrength(quest) }
+        func count() -> Int {
+            copy.quests.filter { isWorkout($0) && isRaceRun($0) }.count + (copy.quests.contains(where: isLift) ? 1 : 0)
+        }
+        while count() > maxWorkouts {
+            let open = copy.quests.indices.filter { isWorkout(copy.quests[$0]) && isRaceRun(copy.quests[$0]) && copy.quests[$0].status != .completed }
+            let fiveK = open.last { copy.quests[$0].verification.params["minDistanceMeters"]?.doubleValue == fiveKMeters }
+            guard let index = fiveK ?? open.last else { break }
+            copy.quests.remove(at: index)
+        }
+        // Every run is done and the day is still over: the unstarted gym workout goes.
+        if count() > maxWorkouts {
+            copy.quests.removeAll { isLift($0) && $0.status != .completed }
+        }
+        return copy
+    }
+
     static func check() -> [String] {
         var errors: [String] = []
         let now = Date(timeIntervalSince1970: 1_790_000_000)
@@ -119,6 +144,44 @@ enum TrainingDay {
         rest.mode = .fullRecovery
         if exerciseOnly(rest) != rest {
             errors.append("other modes must not be filtered")
+        }
+
+        // Two 10Ks and a gym day: one 10K goes. Stretching and Screen Time stay.
+        let fiveK: [String: JSONValue] = ["types": .array([.string("Run")]), "minDistanceMeters": .number(fiveKMeters)]
+        var heavy = bundle
+        heavy.quests = [
+            quest("run_10k", "10K Run", .stravaActivity, tenK),
+            quest("bench_press", "Bench Press", .hevySets, ["exercise": .string("Bench Press")]),
+            quest("row", "Barbell Row", .hevySets, ["exercise": .string("Barbell Row")]),
+            quest("run_10k_2", "10K Run", .stravaActivity, tenK),
+            quest(ScreenTime.questId, "Screen Time", .screenTimeLimit),
+            DailyStretch.quest(mode: .performanceTraining, now: now),
+        ]
+        if cappingWorkouts(heavy).quests.map(\.id) != ["run_10k", "bench_press", "row", ScreenTime.questId, DailyStretch.questId] {
+            errors.append("two 10Ks and lifts should become one 10K and lifts, got \(cappingWorkouts(heavy).quests.map(\.id))")
+        }
+        // A 10K and a 5K with lifts: the 5K goes.
+        var mixed = heavy
+        mixed.quests[0] = quest("run_5k", "5K Run", .stravaActivity, fiveK)
+        if cappingWorkouts(mixed).quests.map(\.id) != ["bench_press", "row", "run_10k_2", ScreenTime.questId, DailyStretch.questId] {
+            errors.append("a 10K, a 5K, and lifts should drop the 5K, got \(cappingWorkouts(mixed).quests.map(\.id))")
+        }
+        // A finished run stays; the open one goes.
+        var started = heavy
+        started.quests[3].status = .completed
+        if cappingWorkouts(started).quests.map(\.id) != ["bench_press", "row", "run_10k_2", ScreenTime.questId, DailyStretch.questId] {
+            errors.append("a finished run should stay, got \(cappingWorkouts(started).quests.map(\.id))")
+        }
+        // Both runs finished: the unstarted lifts go.
+        started.quests[0].status = .completed
+        if cappingWorkouts(started).quests.map(\.id) != ["run_10k", "run_10k_2", ScreenTime.questId, DailyStretch.questId] {
+            errors.append("two finished runs should drop the unstarted lifts, got \(cappingWorkouts(started).quests.map(\.id))")
+        }
+        // Two runs and no gym, or one run and a gym day, already fit.
+        var twoRuns = heavy
+        twoRuns.quests.removeAll { isStrength($0) && $0.id != DailyStretch.questId }
+        if cappingWorkouts(twoRuns) != twoRuns {
+            errors.append("two runs with no lifts should not change")
         }
         return errors
     }
