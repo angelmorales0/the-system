@@ -1,7 +1,8 @@
 import AuthenticationServices
 import SwiftUI
 
-/// Status → Connections. One row per service the phone reads directly, with its state. Tap a row to set it up.
+/// Status → Connections. One row per service the phone reads directly, with its state and the quest checkbox,
+/// checked once the service is connected. Tap a row to set it up.
 struct ConnectionsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: GameStore
@@ -36,25 +37,31 @@ struct ConnectionsSheet: View {
         return NavigationLink {
             ConnectionDetailView(connection: connection, onChange: reload)
         } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(connection.title.uppercased())
-                    .font(.caption.weight(.semibold))
-                    .tracking(1.1)
-                    .foregroundStyle(.white)
-                Text(state.label)
-                    .font(.caption2)
-                    .foregroundStyle(color(state))
-                if case .error(let message) = state, !message.isEmpty {
-                    Text(message)
+            HStack(spacing: 11) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(connection.title.uppercased())
+                        .font(.caption.weight(.semibold))
+                        .tracking(1.1)
+                        .foregroundStyle(.white)
+                    Text(state.label)
                         .font(.caption2)
-                        .foregroundStyle(SystemTheme.muted)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(color(state))
+                    if case .error(let message) = state, !message.isEmpty {
+                        Text(message)
+                            .font(.caption2)
+                            .foregroundStyle(SystemTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                QuestCheckbox(checked: state == .connected)
+                    .frame(width: 16, height: 17)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityValue(state.label)
     }
 
     private func color(_ state: ConnectionHealth) -> Color {
