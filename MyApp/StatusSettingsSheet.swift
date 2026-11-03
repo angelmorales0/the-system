@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// Opens from the gear on the STATUS window: Full Recovery, the No Gym and sound checkboxes, and the other settings screens. The shop opens from the STATUS window.
+/// Opens from the gear on the STATUS window: Full Recovery, the No Gym and sound checkboxes, the other settings screens,
+/// and every connection with its checkbox. The shop opens from the STATUS window.
 struct StatusSettingsSheet: View {
     @EnvironmentObject private var store: GameStore
     @State private var confirmRecovery = false
     @State private var showShields = false
     @State private var showScreenTime = false
     @State private var showAppIcon = false
-    @State private var showConnections = false
     @AppStorage(SoundPlayer.enabledKey) private var soundOn = true
 
     var body: some View {
@@ -59,8 +59,9 @@ struct StatusSettingsSheet: View {
                 SystemDivider()
                 link("PENALTY ZONE") { showShields = true }
                 link("SCREEN TIME") { showScreenTime = true }
-                link("CONNECTIONS") { showConnections = true }
                 link("APP ICON") { showAppIcon = true }
+                SystemDivider()
+                ConnectionRows()
             }
         }
         .confirmationDialog("Spend one Full Recovery token?", isPresented: $confirmRecovery, titleVisibility: .visible) {
@@ -77,9 +78,6 @@ struct StatusSettingsSheet: View {
         }
         .sheet(isPresented: $showAppIcon, onDismiss: { SystemSound.systemClose.play() }) {
             AppIconSheet()
-        }
-        .sheet(isPresented: $showConnections, onDismiss: { SystemSound.systemClose.play() }) {
-            ConnectionsSheet()
         }
     }
 

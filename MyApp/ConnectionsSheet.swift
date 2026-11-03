@@ -1,76 +1,78 @@
 import AuthenticationServices
 import SwiftUI
 
-/// Status → Connections. One row per service the phone reads directly, with its state and the quest checkbox,
-/// checked once the service is connected. Tap a row to set it up.
-struct ConnectionsSheet: View {
-    @Environment(\.dismiss) private var dismiss
+/// Settings → Connections: one row per service with the quest checkbox, checked once the service is connected.
+/// The Mac tracker row is checked while a Mac is sending screen time. Tap a row to open its setup page.
+struct ConnectionRows: View {
     @EnvironmentObject private var store: GameStore
     @State private var health: [Connection: ConnectionHealth] = [:]
+    @State private var mac: MacTrackerStatus?
+    @State private var page: Page?
 
-    var body: some View {
-        NavigationStack {
-            QuestSheet(title: "Connections") {
-                VStack(alignment: .leading, spacing: 14) {
-                    ForEach(Connection.allCases) { connection in
-                        row(connection)
-                    }
-                    MacTrackerRow()
-                }
+    private enum Page: Identifiable {
+        case service(Connection)
+        case macTracker
+
+        var id: String {
+            switch self {
+            case .service(let connection): connection.rawValue
+            case .macTracker: "macTracker"
             }
-            .font(.subheadline)
-            .tint(SystemTheme.accent)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
-                        store.connectionsChanged()
-                        dismiss()
-                    }
-                }
-            }
-            .onAppear(perform: reload)
         }
     }
 
-    private func row(_ connection: Connection) -> some View {
-        let state = health[connection] ?? .notSet
-        return NavigationLink {
-            ConnectionDetailView(connection: connection, onChange: reload)
-        } label: {
-            HStack(spacing: 11) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(connection.title.uppercased())
-                        .font(.caption.weight(.semibold))
-                        .tracking(1.1)
-                        .foregroundStyle(.white)
-                    Text(state.label)
-                        .font(.caption2)
-                        .foregroundStyle(color(state))
-                    if case .error(let message) = state, !message.isEmpty {
-                        Text(message)
-                            .font(.caption2)
-                            .foregroundStyle(SystemTheme.muted)
-                            .fixedSize(horizontal: false, vertical: true)
+    var body: some View {
+        VStack(spacing: 6) {
+            ForEach(Connection.allCases) { connection in
+                row(connection.title, checked: health[connection] == .connected) { page = .service(connection) }
+            }
+            row("Mac tracker", checked: macReceiving) { page = .macTracker }
+        }
+        .onAppear(perform: reload)
+        .task { await reloadMac() }
+        .sheet(item: $page, onDismiss: {
+            SystemSound.systemClose.play()
+            store.connectionsChanged()
+            reload()
+            Task { await reloadMac() }
+        }) { page in
+            NavigationStack {
+                Group {
+                    switch page {
+                    case .service(let connection): ConnectionDetailView(connection: connection, onChange: reload)
+                    case .macTracker: MacTrackerSettingsView()
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                QuestCheckbox(checked: state == .connected)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") { self.page = nil }
+                    }
+                }
+            }
+        }
+    }
+
+    private func row(_ title: String, checked: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: { SystemSound.systemOpen.play(); action() }) {
+            HStack(spacing: 11) {
+                Text(title.uppercased())
+                    .font(.caption.weight(.semibold))
+                    .tracking(1.1)
+                    .foregroundStyle(SystemTheme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                QuestCheckbox(checked: checked)
                     .frame(width: 16, height: 17)
             }
-            .frame(minHeight: 44)
+            .frame(minHeight: 36)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityValue(state.label)
+        .accessibilityValue(checked ? "Connected" : "Not connected")
     }
 
-    private func color(_ state: ConnectionHealth) -> Color {
-        switch state {
-        case .connected: SystemTheme.cyan
-        case .notSet: SystemTheme.muted
-        case .error: .red
-        }
+    private var macReceiving: Bool {
+        if case .receiving = mac { return true }
+        return false
     }
 
     private func reload() {
@@ -81,69 +83,12 @@ struct ConnectionsSheet: View {
         health = next
     }
 
-
-}
-
-/// The Mac tracker: checked while a Mac is sending screen time. Tap to set the Worker address and token.
-struct MacTrackerRow: View {
-    @State private var status: MacTrackerStatus?
-
-    var body: some View {
-        NavigationLink {
-            MacTrackerSettingsView()
-        } label: {
-            HStack(spacing: 11) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("MAC TRACKER")
-                        .font(.caption.weight(.semibold))
-                        .tracking(1.1)
-                        .foregroundStyle(.white)
-                    Text(label)
-                        .font(.caption2)
-                        .foregroundStyle(color)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                QuestCheckbox(checked: receiving)
-                    .frame(width: 16, height: 17)
-            }
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityValue(label)
-        .task { await reload() }
-    }
-
-    private var receiving: Bool {
-        if case .receiving = status { return true }
-        return false
-    }
-
-    private var label: String {
-        switch status {
-        case nil: "Checking…"
-        case .notSet: "Not set"
-        case .unreachable: "Error: cannot reach the Worker"
-        case .noData: "No Mac data today"
-        case .idle(let since): "Idle since \(since.formatted(date: .omitted, time: .shortened))"
-        case .receiving(let minutes): "Receiving · \(ScreenTime.clock(minutes)) today"
-        }
-    }
-
-    private var color: Color {
-        switch status {
-        case .receiving: SystemTheme.cyan
-        case .unreachable: .red
-        default: SystemTheme.muted
-        }
-    }
-
-    private func reload() async {
+    private func reloadMac() async {
         let now = Date.now
         let dayKey = QuestDay.key(for: now)
         let settings = MacScreenSettings.load()
         let reading = settings.baseURL == nil ? nil : await MacScreenClient.load(dayKey: dayKey, settings: settings)
-        status = MacTrackerStatus.make(settings: settings, reading: reading, dayKey: dayKey, dayStart: QuestDay.start(of: dayKey), now: now)
+        mac = MacTrackerStatus.make(settings: settings, reading: reading, dayKey: dayKey, dayStart: QuestDay.start(of: dayKey), now: now)
     }
 }
 
