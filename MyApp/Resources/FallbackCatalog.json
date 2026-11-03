@@ -118,27 +118,9 @@
       "headerLine": "Full Recovery Day",
       "narrative": "A banked rest day. Hard training is waived.",
       "warnings": [
-        "Training is waived today.\nA soft recovery quest remains."
+        "Training is waived today."
       ],
       "quests": [
-        {
-          "id": "sleep_hygiene",
-          "title": "Sleep Hygiene",
-          "kind": "daily",
-          "stat": "REC",
-          "verification": {
-            "method": "manual_confirm",
-            "params": {
-              "prompt": "Confirm a full recovery day"
-            }
-          },
-          "difficulty": "easy",
-          "progress": {
-            "current": 0,
-            "target": 1,
-            "unit": "session"
-          }
-        }
       ]
     }
   ],

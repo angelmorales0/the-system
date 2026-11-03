@@ -39,7 +39,7 @@ enum ScreenTime {
 
     /// Adds the row once, after the last required quest, so Stretching still follows it.
     static func ensure(in bundle: QuestBundle, now: Date) -> QuestBundle {
-        guard !bundle.quests.isEmpty, !bundle.quests.contains(where: { $0.id == questId }) else { return bundle }
+        guard !bundle.quests.isEmpty || bundle.mode == .fullRecovery, !bundle.quests.contains(where: { $0.id == questId }) else { return bundle }
         var copy = bundle
         let insertAt = copy.quests.lastIndex(where: { $0.kind != .optional }).map { $0 + 1 } ?? copy.quests.count
         copy.quests.insert(quest(mode: bundle.mode, now: now), at: insertAt)

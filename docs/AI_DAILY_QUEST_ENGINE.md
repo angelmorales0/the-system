@@ -626,7 +626,7 @@ Also: System copy never diagnoses injury; a red trainingBand → easy walk only,
 ### 7.4 Full Recovery day
 
 1. Header: `Full Recovery Day has arrived.`  
-2. GOAL empty or single `Sleep Hygiene` REC easy optional. Target injection still shown if active.  
+2. GOAL has no quests of its own; the app adds Stretching and Screen Time. Target injection still shown if active.  
 3. No penalty risk for missing training. Bank decremented on day assign.  
 4. Complete Target row if any; sleep.
 

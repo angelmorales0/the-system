@@ -519,7 +519,8 @@ def validate_bundle(bundle: dict[str, Any], context: dict[str, Any]) -> list[str
         problems.append("narrative is missing or too long")
     problems.extend(threat_problems(bundle.get("threat")))
     quests = bundle.get("quests") or []
-    if not isinstance(quests, list) or not quests:
+    # A Full Recovery day can be empty: the app adds Stretching and Screen Time.
+    if not isinstance(quests, list) or (not quests and bundle.get("mode") != "full_recovery"):
         problems.append("bundle has no quests")
         quests = []
     required_cap = constraints.get("maxRequiredQuests") or 8
@@ -699,7 +700,8 @@ def template_bundle(context: dict[str, Any]) -> dict[str, Any]:
 
 def mode_quests(mode: str, band: str, day: str) -> list[dict[str, Any]]:
     if mode == "full_recovery":
-        return [quest(day, "sleep", "Sleep Hygiene", "daily", "REC", "timer_session", {"minSec": 600, "label": "Sleep Hygiene"}, 20, "easy", 10, "min", mode)]
+        # A rest day has no quests of its own; the app adds Stretching and Screen Time.
+        return []
     # Training is strength and 10K runs only; the app adds Stretching.
     run = quest(day, "run_10k", "10K Run", "daily", "END", "strava_activity", {"types": ["Run"], "minDistanceMeters": TEN_K_METERS}, 40, "normal", 10, "km", mode)
     if band in ("yellow", "red"):

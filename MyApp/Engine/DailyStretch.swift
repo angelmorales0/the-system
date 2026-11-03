@@ -26,7 +26,8 @@ enum DailyStretch {
 
     /// Adds the row once, after the last required quest. An existing row keeps its progress.
     static func ensure(in bundle: QuestBundle, now: Date) -> QuestBundle {
-        guard !bundle.quests.isEmpty,
+        // A Full Recovery day has no rows of its own; it still gets Stretching.
+        guard !bundle.quests.isEmpty || bundle.mode == .fullRecovery,
               !bundle.quests.contains(where: { $0.id == questId }) else { return bundle }
         var copy = bundle
         let insertAt = copy.quests.lastIndex(where: { $0.kind != .optional }).map { $0 + 1 } ?? copy.quests.count

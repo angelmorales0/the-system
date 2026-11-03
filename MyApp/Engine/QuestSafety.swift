@@ -34,7 +34,8 @@ enum QuestSafety {
         let optionalCap = context.constraints.maxOptionalQuests
         let required = bundle.quests.filter { $0.kind != .optional }.count
         let optional = bundle.quests.filter { $0.kind == .optional }.count
-        if bundle.quests.isEmpty {
+        // A Full Recovery day can be empty: the app adds Stretching and Screen Time.
+        if bundle.quests.isEmpty, bundle.mode != .fullRecovery {
             issues.append("bundle has no quests")
         }
         if bundle.quests.count > maxQuests {

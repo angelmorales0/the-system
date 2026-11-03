@@ -514,7 +514,8 @@ enum QuestPlanner {
         if length(narrative) > 280 { problems.append("narrative is missing or too long") }
         problems += threatProblems(bundle["threat"])
         var quests = bundle["quests"]?.arrayValue ?? []
-        if quests.isEmpty {
+        // A Full Recovery day can be empty: the app adds Stretching and Screen Time.
+        if quests.isEmpty, bundle["mode"]?.stringValue != "full_recovery" {
             problems.append("bundle has no quests")
             quests = []
         }
@@ -667,7 +668,8 @@ enum QuestPlanner {
 
     static func modeQuests(mode: String, band: String, day: String) -> [JSONValue] {
         if mode == "full_recovery" {
-            return [quest(day, "sleep", "Sleep Hygiene", "daily", "REC", "timer_session", ["minSec": .number(600), "label": .string("Sleep Hygiene")], "easy", 10, "min", mode)]
+            // A rest day has no quests of its own; the app adds Stretching and Screen Time.
+            return []
         }
         // Training is strength and 10K runs only; the app adds Stretching.
         let run = quest(day, "run_10k", "10K Run", "daily", "END", "strava_activity", ["types": .array([.string("Run")]), "minDistanceMeters": .number(tenKMeters)], "normal", 10, "km", mode)
