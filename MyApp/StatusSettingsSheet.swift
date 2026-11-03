@@ -81,7 +81,7 @@ struct StatusSettingsSheet: View {
             Button("Spend token") { store.spendFullRecovery() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("A quiet morning switches today. A day already underway is queued for tomorrow. That day does not open a penalty if training is missed.")
+            Text("Today becomes a rest day. Finished quests stay done. Missed training does not open a penalty today.")
         }
         .sheet(isPresented: $showShields, onDismiss: { SystemSound.systemClose.play() }) {
             PenaltyTargetsSheet()

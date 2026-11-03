@@ -84,6 +84,7 @@ final class GameStore: ObservableObject {
         case .standard:
             snapshot = GameSnapshot.loadFromUserDefaults() ?? GameSnapshot.fresh(catalog: catalog)
             snapshot.refreshIfNeeded(catalog: catalog)
+            snapshot.claimQueuedRecoveryForToday(catalog: catalog, now: .now)
             // A day saved before the Stretching row, the exercise-only Training rule, or penalty rows gets them now.
             snapshot.bundle = snapshot.finished(TrainingDay.exerciseOnly(snapshot.bundle) ?? snapshot.bundle, catalog: catalog, now: .now)
         }

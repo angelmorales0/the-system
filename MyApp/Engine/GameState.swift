@@ -159,7 +159,7 @@ struct GameSnapshot: Codable, Equatable {
         }
     }
 
-    /// Spends one banked token. A quiet morning switches today; a day already in progress is queued.
+    /// Spends one banked token. Today always becomes the Full Recovery day; finished work stays done.
     mutating func spendFullRecovery(catalog: FallbackCatalog, now: Date) -> String {
         let today = QuestDay.key(for: now)
         guard player.fullRecoveryBank > 0 else { return "No Full Recovery token in the bank." }
@@ -169,20 +169,33 @@ struct GameSnapshot: Codable, Equatable {
         if bundle.dayKey == today, isRestDay {
             return "Today is already a rest day. The token stays in the bank."
         }
-        if queuedFullRecoveryDayKey != nil {
-            return "A Full Recovery day is already queued."
-        }
         player.withdrawRecoveryToken()
-        let quiet = runningTimers.isEmpty && !bundle.quests.contains { $0.status == .completed }
-        if quiet {
-            signals.spendingFullRecovery = true
-            fullRecoveryDayKey = today
-            generatedBundle = nil
-            rebuildBundle(catalog: catalog, now: now)
-            return "Full Recovery day assigned. A missed training set will not open a penalty."
+        let done = bundle.dayKey == today ? bundle.quests.filter { $0.status == .completed } : []
+        signals.spendingFullRecovery = true
+        fullRecoveryDayKey = today
+        generatedBundle = nil
+        rebuildBundle(catalog: catalog, now: now)
+        // A row already finished keeps its place and its status; one the rest day does not have goes before Stretching.
+        for quest in done {
+            if let index = bundle.quests.firstIndex(where: { $0.id == quest.id }) {
+                bundle.quests[index] = quest
+            } else {
+                let insertAt = bundle.quests.firstIndex { $0.id == ScreenTime.questId || $0.id == DailyStretch.questId || $0.kind != .daily } ?? bundle.quests.count
+                bundle.quests.insert(quest, at: insertAt)
+            }
         }
-        queuedFullRecoveryDayKey = QuestDay.key(byAddingDays: 1, to: today)
-        return "Queued for tomorrow. Today's finished work stays."
+        let ids = Set(bundle.quests.map(\.id))
+        runningTimers.removeAll { !ids.contains($0.questId) }
+        return "Full Recovery day assigned. A missed training set will not open a penalty."
+    }
+
+    /// A token an older build queued for tomorrow from today's settings goes to today instead.
+    mutating func claimQueuedRecoveryForToday(catalog: FallbackCatalog, now: Date) {
+        let today = QuestDay.key(for: now)
+        guard bundle.dayKey == today, queuedFullRecoveryDayKey == QuestDay.key(byAddingDays: 1, to: today) else { return }
+        queuedFullRecoveryDayKey = nil
+        player.depositRecoveryToken()
+        _ = spendFullRecovery(catalog: catalog, now: now)
     }
 
     func verificationContext(

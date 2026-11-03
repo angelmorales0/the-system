@@ -104,16 +104,27 @@ enum PenaltyRules {
             errors.append("a refused second spend should keep the token")
         }
 
-        var queued = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
-        queued.player.fullRecoveryBank = 1
-        _ = queued.apply(.completed(evidence: evidence("done")), questId: queued.bundle.quests[0].id, now: dayOne)
-        let later = queued.spendFullRecovery(catalog: catalog, now: dayOne)
-        if queued.bundle.mode == .fullRecovery || !later.contains("tomorrow") {
-            errors.append("a day in progress should queue Full Recovery")
+        var underway = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
+        underway.player.fullRecoveryBank = 1
+        let doneId = underway.bundle.quests[0].id
+        _ = underway.apply(.completed(evidence: evidence("done")), questId: doneId, now: dayOne)
+        let switched = underway.spendFullRecovery(catalog: catalog, now: dayOne)
+        if underway.bundle.mode != .fullRecovery || !switched.contains("assigned") {
+            errors.append("a day in progress should switch to Full Recovery today, got \(switched)")
         }
-        queued.refreshIfNeeded(catalog: catalog, now: dayTwo)
-        if queued.bundle.mode != .fullRecovery {
-            errors.append("the queued token should assign Full Recovery the next morning")
+        if underway.bundle.quests.first(where: { $0.id == doneId })?.status != .completed {
+            errors.append("a finished quest should stay done on the Full Recovery day")
+        }
+        if underway.missesRequiredSet {
+            errors.append("the switched day should not open a penalty")
+        }
+
+        // A token an older build queued for tomorrow moves to today on the next launch.
+        var legacy = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
+        legacy.queuedFullRecoveryDayKey = QuestDay.key(byAddingDays: 1, to: legacy.bundle.dayKey)
+        legacy.claimQueuedRecoveryForToday(catalog: catalog, now: dayOne)
+        if legacy.bundle.mode != .fullRecovery || legacy.queuedFullRecoveryDayKey != nil || legacy.player.fullRecoveryBank != GameSnapshot.fresh(catalog: catalog, now: dayOne).player.fullRecoveryBank {
+            errors.append("a token queued for tomorrow should move to today and spend only one token")
         }
 
         var cleared = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
