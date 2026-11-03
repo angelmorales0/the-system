@@ -5,7 +5,7 @@ import FamilyControls
 #endif
 
 /// Additive sheet. The four swipe screens stay as they are.
-/// Two lists: the apps a penalty or an emergency quest leaves open, and the apps a penalty hides.
+/// Two lists: the apps a penalty leaves open, and the apps a penalty hides.
 struct PenaltyTargetsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: GameStore

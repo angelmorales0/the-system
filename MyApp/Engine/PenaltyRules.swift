@@ -37,18 +37,6 @@ enum PenaltyRules {
             errors.append("three missed days should still be one open penalty with the same row, got \(stillOpen.map(\.progress.target))")
         }
 
-        var emergency = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
-        for quest in emergency.bundle.quests {
-            _ = emergency.apply(.completed(evidence: evidence("done \(quest.id)")), questId: quest.id, now: dayOne)
-        }
-        if emergency.missesRequiredSet {
-            errors.append("a fully completed day should not miss its required set")
-        }
-        emergency.emergencyFailedDayKey = emergency.bundle.dayKey
-        emergency.refreshIfNeeded(catalog: catalog, now: dayTwo)
-        if !emergency.player.penaltyOpen {
-            errors.append("a failed emergency quest should open a penalty")
-        }
 
         var rested = GameSnapshot.fresh(catalog: catalog, now: dayOne, signals: .placeholder)
         rested.signals.spendingFullRecovery = true

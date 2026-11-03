@@ -37,16 +37,13 @@ enum SystemSound: String, CaseIterable {
     case penaltyOpen = "penalty-open"
     /// The penalty run is verified and the window lifts.
     case penaltyCleared = "penalty-cleared"
-    /// An emergency quest starts, HP turns critical, or fatigue turns red.
+    /// HP turns critical, or fatigue turns red.
     case warning
-    case emergencyComplete = "emergency-complete"
-    case emergencyFailed = "emergency-failed"
 
     /// A major cue silences whatever else is playing. A minor cue layers on top.
     var isMajor: Bool {
         switch self {
-        case .dayClear, .levelUp, .fullRecovery, .hiddenQuest, .penaltyOpen, .penaltyCleared,
-             .emergencyComplete, .emergencyFailed, .newDay, .reward:
+        case .dayClear, .levelUp, .fullRecovery, .hiddenQuest, .penaltyOpen, .penaltyCleared, .newDay, .reward:
             return true
         default:
             return false

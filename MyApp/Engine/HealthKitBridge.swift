@@ -2,7 +2,6 @@ import Foundation
 
 extension Notification.Name {
     static let healthDataDidChange = Notification.Name("com.angelmorales.thesystem.healthDataDidChange")
-    static let stepsDidChange = Notification.Name("com.angelmorales.thesystem.stepsDidChange")
 }
 
 /// Stat inputs from Apple Health: 90 days of nutrition and weight by local day (MacroFactor first), VO₂ max readings,
@@ -64,16 +63,6 @@ enum HealthKitBridge {
         HealthKitStore.shared.startObservers()
         #endif
     }
-
-    /// Steps from `start` to `end`, de-duplicated across iPhone and Watch. Nil when Health is unavailable or locked.
-    static func steps(from start: Date, to end: Date) async -> Int? {
-        #if canImport(HealthKit)
-        return await HealthKitStore.shared.steps(from: start, to: end)
-        #else
-        _ = (start, end)
-        return nil
-        #endif
-    }
 }
 
 #if canImport(HealthKit)
@@ -111,40 +100,6 @@ final class HealthKitStore {
             }
             store.execute(query)
             store.enableBackgroundDelivery(for: type, frequency: .hourly) { _, _ in }
-        }
-        // Steps get their own signal, so a step sample does not reload every integration.
-        // Hourly is the most often iOS delivers steps in the background.
-        if let steps = Self.stepType {
-            let query = HKObserverQuery(sampleType: steps, predicate: nil) { _, completion, error in
-                if error == nil {
-                    NotificationCenter.default.post(name: .stepsDidChange, object: nil)
-                }
-                completion()
-            }
-            store.execute(query)
-            store.enableBackgroundDelivery(for: steps, frequency: .hourly) { _, _ in }
-        }
-    }
-
-    func steps(from start: Date, to end: Date) async -> Int? {
-        guard HKHealthStore.isHealthDataAvailable(), let type = Self.stepType, end > start else { return nil }
-        do {
-            try await store.requestAuthorization(toShare: [], read: Set(Self.readTypes))
-        } catch {
-            return nil
-        }
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
-        return await withCheckedContinuation { continuation in
-            let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, stats, error in
-                if let sum = stats?.sumQuantity() {
-                    continuation.resume(returning: Int(sum.doubleValue(for: .count()).rounded(.down)))
-                } else if let error = error as? HKError, error.code == .errorNoData {
-                    continuation.resume(returning: 0)
-                } else {
-                    continuation.resume(returning: error == nil ? 0 : nil)
-                }
-            }
-            store.execute(query)
         }
     }
 
@@ -253,8 +208,6 @@ final class HealthKitStore {
         }
     }
 
-    private static var stepType: HKQuantityType? { HKQuantityType.quantityType(forIdentifier: .stepCount) }
-
     /// The nutrition the REC stat reads, with its unit and the `RecoveryDay` field it fills.
     private static let dietaryTypes: [(HKQuantityTypeIdentifier, HKUnit, WritableKeyPath<RecoveryDay, Double?>)] = [
         (.dietaryProtein, .gram(), \.proteinG),
@@ -267,9 +220,9 @@ final class HealthKitStore {
     /// mL/kg/min.
     private static let vo2Unit = HKUnit.literUnit(with: .milli).unitDivided(by: HKUnit.gramUnit(with: .kilo).unitMultiplied(by: .minute()))
 
-    /// Everything the app asks to read. Steps are read but observed separately.
+    /// Everything the app asks to read.
     private static var readTypes: [HKObjectType] {
-        var types: [HKObjectType] = sampleTypes + (stepType.map { [$0] } ?? [])
+        var types: [HKObjectType] = sampleTypes
         let quantities: [HKQuantityTypeIdentifier] = dietaryTypes.map(\.0) + [.activeEnergyBurned, .basalEnergyBurned, .vo2Max, .heartRate]
         types += quantities.compactMap { HKQuantityType.quantityType(forIdentifier: $0) }
         if let birth = HKObjectType.characteristicType(forIdentifier: .dateOfBirth) {

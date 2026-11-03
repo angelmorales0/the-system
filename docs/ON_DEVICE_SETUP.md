@@ -72,7 +72,7 @@ The REC stat reads 90 days of WHOOP cycles, recoveries, sleeps, and workouts: sl
 
 Nothing to type. The app asks for Health access on first launch. It reads:
 
-- Workouts, weight, and steps (quests, the END body weight target, and emergency quests).
+- Workouts and weight (quests and the END body weight target).
 - Nutrition for the REC stat: protein, fat, carbs, calories, and caffeine. Log food in MacroFactor and turn on its Apple Health write. On a day with MacroFactor samples, only those count.
 - Active and basal energy for the Calories target's maintenance (an Apple Watch). A day without both has no maintenance and does not score.
 - VO₂ max for the END stat (an Apple Watch writes one after outdoor runs and walks).

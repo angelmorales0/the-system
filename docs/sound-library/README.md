@@ -10,7 +10,7 @@ not bundle this folder. The cues the app plays live in `MyApp/Resources/Sounds/`
 | `launch` | sl-arise-game-check-in-login-ardz | The app opens |
 | `new-day` | sl-system-notification-trus | A new day's quests arrive while the app is open |
 | `system-open` | sl-system-notification-open-trus | A sheet opens |
-| `system-close` | sl-system-notification-close-trus | A sheet or reveal window closes; an emergency test ends |
+| `system-close` | sl-system-notification-close-trus | A sheet or reveal window closes |
 | `quest-complete` | sl-system-accept-trus | One quest row is verified done |
 | `quest-fail` | sl-fail-trus | A tap is refused, a quest fails, or the shop refuses |
 | `timer-start` | sl-count-trus | A timed quest starts |
@@ -23,9 +23,7 @@ not bundle this folder. The cues the app plays live in `MyApp/Resources/Sounds/`
 | `hidden-quest` | sl-arise-game-unlocked-stage-story-ardz | A hidden quest reveal appears |
 | `penalty-open` | sl-red-gate-open-trus | The penalty window arrives |
 | `penalty-cleared` | sl-gate-close-trus | The penalty run is verified |
-| `warning` | sl-high-level-enemy-warning-trus | An emergency starts; HP turns critical; fatigue turns red |
-| `emergency-complete` | sl-arise-game-clear-stage-ardz | An emergency quest is completed |
-| `emergency-failed` | sl-failed-shadow-extraction-extramllama | An emergency quest fails |
+| `warning` | sl-high-level-enemy-warning-trus | HP turns critical; fatigue turns red |
 
 To add or swap a cue: decode the MP3 with `afconvert -f WAVE -d LEI16`, scale it to the
 same loudness, encode it with `afconvert -f m4af -d aac -b 128000`, and drop it in

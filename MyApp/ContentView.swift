@@ -27,14 +27,6 @@ struct ContentView: View {
         #endif
         // Every page draws its own backdrop on top, so this one never needs to move.
         .background { SystemBackground(animated: false) }
-        // An active emergency quest covers every page until it ends.
-        .overlay {
-            if let emergency = store.emergency, emergency.status == .active {
-                EmergencyQuestView(quest: emergency)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeInOut(duration: 0.25), value: store.emergency?.id)
         // An open penalty covers every page until its run is verified.
         .overlay {
             if let penalty = store.openPenaltyQuest {

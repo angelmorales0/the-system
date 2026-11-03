@@ -143,7 +143,7 @@ struct MacTrackerRow: View {
         let dayKey = QuestDay.key(for: now)
         let settings = MacScreenSettings.load()
         let reading = settings.baseURL == nil ? nil : await MacScreenClient.load(dayKey: dayKey, settings: settings)
-        status = MacTrackerStatus.make(settings: settings, reading: reading, dayKey: dayKey, now: now)
+        status = MacTrackerStatus.make(settings: settings, reading: reading, dayKey: dayKey, dayStart: QuestDay.start(of: dayKey), now: now)
     }
 }
 

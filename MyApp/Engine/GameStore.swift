@@ -25,9 +25,6 @@ final class GameStore: ObservableObject {
     @Published private(set) var statHistory = StatLevelHistory()
     /// Targets the player removed from each stat's score.
     @Published private(set) var statTargets = StatTargets()
-    /// The emergency quest on screen. While it is active, it covers every page.
-    @Published private(set) var emergency: EmergencyQuest?
-    @Published private(set) var emergencySettings: EmergencySettings = .standard
 
     /// Carries the player's own STR goals (`statTargets.custom`), so the offline split day trains them.
     private var catalog: FallbackCatalog
@@ -40,8 +37,6 @@ final class GameStore: ObservableObject {
     private var ticker: Timer?
     private var integrations: DayIntegrationSnapshot = .empty(dayKey: "")
     private var refreshingIntegrations = false
-    private var emergencyTicker: Timer?
-    private var evaluatingEmergency = false
     private var lastStretchRefresh = Date.distantPast
     /// The last live stat inputs, so a target change can recalculate without a new fetch. Nil until the first refresh.
     /// `inputs` holds the histories (Hevy, WHOOP, Strava, Health), loaded after the day's snapshot by `refreshStatInputs`.
@@ -54,7 +49,7 @@ final class GameStore: ObservableObject {
             + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check() + MacScreenClient.check()
             + HiddenQuestRules.check() + RecoveryHolidayRules.check() + ShopRules.check()
-            + EmergencyRules.check() + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
+            + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
             + NoGymDayRules.check() + PenaltyDecay.check() + RestRules.check() + RestScore.check() + SecretStore.check() + SecretSeed.check() + ConnectionStatusStore.check()
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MercuryClient.check()
             + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check() + WhoopStressClient.check()
@@ -92,8 +87,6 @@ final class GameStore: ObservableObject {
             statHistory = StatLevelHistory.load()
             statTargets = targets
             statLevels = statHistory.latest ?? .empty
-            emergencySettings = EmergencyStore.loadSettings()
-            emergency = EmergencyStore.loadQuest()
         }
         advanceTimers(now: .now)
         evaluateConnectedVerifiers(now: .now)
@@ -103,13 +96,11 @@ final class GameStore: ObservableObject {
         refreshIntegrations(now: .now)
         enforcePenalty()
         if persistence == .standard {
-            EmergencyEnforcement.removeBedtime()
+            EmergencyCleanup.run()
             ScreenTimeEnforcement.syncMonitoring()
             #if os(iOS)
             FocusTracking.syncMonitoring()
             #endif
-            observeStepUpdates()
-            evaluateEmergencies(now: .now)
         }
         soundsArmed = true
     }
@@ -206,13 +197,10 @@ final class GameStore: ObservableObject {
         persist()
     }
 
-    /// The Penalty Zone lists changed: reapply an open penalty and an active emergency so they take effect at once.
+    /// The Penalty Zone lists changed: reapply an open penalty so it takes effect at once.
     func saveTargetSelections() {
         enforcePenalty()
-        if let emergency { EmergencyEnforcement.applyLockdown(for: emergency) }
     }
-
-    // MARK: - Emergency quests
 
     /// Adds a removed target back to a stat, or removes an active one, then recalculates the stat level.
     func toggleStatTarget(_ category: String, in stat: Stat) {
@@ -279,165 +267,6 @@ final class GameStore: ObservableObject {
         hp.max = maxHP
         hp.current = min(hp.current, Double(maxHP))
         snapshot.hitPoints = hp
-    }
-
-    func updateEmergencySettings(_ settings: EmergencySettings) {
-        let turnedOn = (settings.stepsEnabled && !emergencySettings.stepsEnabled)
-            || (settings.stretchEnabled && !emergencySettings.stretchEnabled)
-        emergencySettings = settings
-        guard persistence == .standard else { return }
-        EmergencyStore.save(settings)
-        if turnedOn {
-            EmergencyEnforcement.requestNotificationPermission()
-        }
-        evaluateEmergencies(now: .now)
-    }
-
-    /// Runs one emergency now, with the saved targets. A test can be ended early and never opens a penalty.
-    func startEmergencyTest(_ kind: EmergencyKind, now: Date = .now) {
-        guard emergency == nil else { return }
-        let quest: EmergencyQuest
-        switch kind {
-        case .lowSteps: quest = EmergencyRules.lowStepsQuest(now: now, settings: emergencySettings, isTest: true)
-        case .skippedStretch: quest = EmergencyRules.stretchQuest(now: now, settings: emergencySettings, isTest: true)
-        }
-        begin(quest)
-    }
-
-    func endEmergencyTest() {
-        guard let quest = emergency, quest.isTest else { return }
-        finish(quest, message: "Emergency test ended.")
-        cue(.systemClose)
-    }
-
-    private func begin(_ quest: EmergencyQuest) {
-        emergency = quest
-        cue(.warning)
-        if persistence == .standard {
-            EmergencyStore.save(quest)
-            EmergencyEnforcement.applyLockdown(for: quest)
-            EmergencyEnforcement.notify(quest)
-        }
-        ensureEmergencyTicker()
-    }
-
-    private func finish(_ quest: EmergencyQuest, message: String) {
-        emergency = nil
-        verificationNote = message
-        if persistence == .standard {
-            EmergencyStore.save(nil)
-            EmergencyEnforcement.clearLockdown()
-        }
-        ensureEmergencyTicker()
-    }
-
-    private func settle(_ resolved: EmergencyQuest) {
-        switch resolved.status {
-        case .active:
-            emergency = resolved
-            if persistence == .standard { EmergencyStore.save(resolved) }
-        case .completed:
-            let message: String
-            switch resolved.kind {
-            case .lowSteps: message = "Emergency quest complete: \(resolved.progressSteps.formatted()) steps walked."
-            case .skippedStretch: message = "Emergency quest complete: \(Int(DailyStretch.minutes)) minutes stretched."
-            }
-            finish(resolved, message: message)
-            cue(.emergencyComplete)
-        case .failed:
-            if EmergencyRules.opensPenalty(resolved) {
-                snapshot.emergencyFailedDayKey = resolved.dayKey
-                persist()
-            }
-            finish(resolved, message: resolved.isTest
-                   ? "Emergency test failed. A test does not open a penalty."
-                   : "Emergency quest failed. A penalty opens tomorrow.")
-            cue(.emergencyFailed)
-        }
-    }
-
-    /// Before a new day is judged, a walk whose deadline passed is settled on the steps it already has.
-    private func settleExpiredEmergency(now: Date) {
-        guard let quest = emergency, now >= quest.deadline else { return }
-        settle(EmergencyRules.resolve(quest, now: now, stepsSinceStart: nil))
-    }
-
-    /// Reads Health steps and the Stretching quest, then starts, advances, or ends an emergency.
-    private func evaluateEmergencies(now: Date) {
-        guard persistence == .standard, !evaluatingEmergency else { return }
-        evaluatingEmergency = true
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.evaluatingEmergency = false }
-            let settings = self.emergencySettings
-
-            if let quest = self.emergency {
-                var steps: Int?
-                if quest.kind == .lowSteps {
-                    steps = await HealthKitBridge.steps(from: quest.startedAt, to: min(now, quest.deadline))
-                }
-                // The quest may have ended while the steps loaded.
-                guard self.emergency?.id == quest.id else { return }
-                if quest.kind == .skippedStretch, now.timeIntervalSince(self.lastStretchRefresh) >= 60 {
-                    // Hevy and Health stretch minutes arrive with the integration reload.
-                    self.lastStretchRefresh = now
-                    self.refreshIntegrations(now: now)
-                }
-                let stretchDone = quest.kind == .skippedStretch && DailyStretch.isDone(in: self.snapshot.bundle) == true
-                let resolved = EmergencyRules.resolve(quest, now: now, stepsSinceStart: steps, stretchDone: stretchDone)
-                self.settle(resolved)
-                if resolved.status == .active,
-                   EmergencyGroup.defaults.string(forKey: EmergencyGroup.lockdownKindKey) == nil {
-                    // Something cleared the shared store. Put the emergency shields back.
-                    EmergencyEnforcement.applyLockdown(for: resolved)
-                }
-                self.ensureEmergencyTicker()
-                return
-            }
-
-            if EmergencyRules.shouldTriggerStretch(now: now, stretchDone: DailyStretch.isDone(in: self.snapshot.bundle),
-                                                   settings: settings, lastTriggeredDayKey: EmergencyStore.stretchDayKey, active: nil) {
-                EmergencyStore.stretchDayKey = QuestDay.key(for: now)
-                self.begin(EmergencyRules.stretchQuest(now: now, settings: settings))
-                return
-            }
-
-            guard settings.stepsEnabled else { return }
-            let startOfDay = QuestDay.interval(for: now).start
-            let stepsToday = await HealthKitBridge.steps(from: startOfDay, to: now)
-            guard self.emergency == nil else { return }
-            if EmergencyRules.shouldTriggerLowSteps(now: now, stepsToday: stepsToday, settings: settings,
-                                                    lastTriggeredDayKey: EmergencyStore.lowStepsDayKey, active: nil) {
-                EmergencyStore.lowStepsDayKey = QuestDay.key(for: now)
-                self.begin(EmergencyRules.lowStepsQuest(now: now, settings: settings))
-            }
-        }
-    }
-
-    private func observeStepUpdates() {
-        Task { @MainActor [weak self] in
-            for await _ in NotificationCenter.default.notifications(named: .stepsDidChange) {
-                self?.evaluateEmergencies(now: .now)
-            }
-        }
-    }
-
-    /// While an emergency runs, re-check every 15 seconds: steps for a walk, stretch minutes for a stretch.
-    private func ensureEmergencyTicker() {
-        guard emergency != nil else {
-            emergencyTicker?.invalidate()
-            emergencyTicker = nil
-            return
-        }
-        guard emergencyTicker == nil else { return }
-        let timer = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.evaluateEmergencies(now: .now)
-            }
-        }
-        timer.tolerance = 2
-        RunLoop.main.add(timer, forMode: .common)
-        emergencyTicker = timer
     }
 
     var player: PlayerState { snapshot.player }
@@ -547,7 +376,6 @@ final class GameStore: ObservableObject {
     }
 
     func refreshForToday(now: Date = .now) {
-        settleExpiredEmergency(now: now)
         let previousDay = snapshot.bundle.dayKey
         let previousGold = snapshot.gold
         var next = snapshot
@@ -565,7 +393,6 @@ final class GameStore: ObservableObject {
         ensureTicker()
         refreshIntegrations(now: now)
         enforcePenalty()
-        evaluateEmergencies(now: now)
     }
 
     private func observeHealthUpdates() {

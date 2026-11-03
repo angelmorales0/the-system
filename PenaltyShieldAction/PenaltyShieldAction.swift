@@ -23,15 +23,12 @@ class PenaltyShieldAction: ShieldActionDelegate {
 }
 
 enum PenaltyOpenNotice {
-    /// Mirrors `PenaltyGroup` and `EmergencyGroup` in the app. Keep the strings in step.
+    /// Mirrors `PenaltyGroup` in the app. Keep the strings in step.
     static let suiteName = "group.com.angelmorales.thesystem"
-    static let lockdownKindKey = "emergencyLockdownKind"
     static let shieldLineKey = "penaltyShieldLine"
 
-    /// Only for a penalty shield. An emergency shield keeps its plain Close button.
     static func post() {
         let defaults = UserDefaults(suiteName: suiteName) ?? .standard
-        guard defaults.string(forKey: lockdownKindKey) == nil else { return }
         let content = UNMutableNotificationContent()
         content.title = "PENALTY QUEST"
         content.body = "\(defaults.string(forKey: shieldLineKey) ?? "Penalty 10K"). Tap to open The System."

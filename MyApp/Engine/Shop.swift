@@ -124,10 +124,10 @@ extension GameSnapshot {
         potionLog.contains { $0.dayKey == bundle.dayKey }
     }
 
-    /// Every required quest of the day is done by real work. A potion, a Full Recovery, or a failed emergency breaks it.
+    /// Every required quest of the day is done by real work. A potion or a Full Recovery breaks it.
     var isPerfectDay: Bool {
         guard bundle.mode != .fullRecovery, !signals.spendingFullRecovery, fullRecoveryDayKey != bundle.dayKey,
-              emergencyFailedDayKey != bundle.dayKey, !potionUsedToday else { return false }
+              !potionUsedToday else { return false }
         let required = bundle.quests.filter { $0.kind != .optional }
         return !required.isEmpty && required.allSatisfy { $0.status == .completed && !$0.skippedWithPotion }
     }

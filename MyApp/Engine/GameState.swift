@@ -37,8 +37,6 @@ struct GameSnapshot: Codable, Equatable {
     /// True after a FamilyActivityPicker save. Tokens themselves stay in the App Group.
     /// Hidden quests the player unlocked, oldest first. One Beyond the Limit per quest day.
     var hiddenUnlocks: [HiddenQuestUnlock] = []
-    /// A real emergency quest failed on this day. Ending the day then opens a penalty.
-    var emergencyFailedDayKey: String?
     /// Quest day the player marked "No gym today". Lifts become one added 10K on that day only.
     var noGymDayKey: String?
     /// Quest day the planner made the week's rest day. `restDue` then locks it to Full Recovery.
@@ -140,7 +138,6 @@ struct GameSnapshot: Codable, Equatable {
         // A Screen Time row still under its cap holds until the day ends; only a failed one is a miss.
         let open = required.filter { $0.status != .completed && !($0.id == ScreenTime.questId && $0.status == .pending) }
         let missed = !open.isEmpty
-            || emergencyFailedDayKey == bundle.dayKey
         let waived = bundle.mode == .fullRecovery || signals.spendingFullRecovery || fullRecoveryDayKey == bundle.dayKey
         return missed && !waived
     }
@@ -526,7 +523,7 @@ extension GameSnapshot {
         case finance
         case fullRecoveryDayKey, queuedFullRecoveryDayKey
         case hiddenUnlocks
-        case emergencyFailedDayKey, noGymDayKey, plannerRestDayKey, plannerRestReason
+        case noGymDayKey, plannerRestDayKey, plannerRestReason
         case questHistory, screenTime
         case gold, potionLog, lastGoldReward
         case hitPoints, fatigue
@@ -546,7 +543,6 @@ extension GameSnapshot {
         fullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .fullRecoveryDayKey)
         queuedFullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .queuedFullRecoveryDayKey)
         hiddenUnlocks = try container.decodeIfPresent([HiddenQuestUnlock].self, forKey: .hiddenUnlocks) ?? []
-        emergencyFailedDayKey = try container.decodeIfPresent(String.self, forKey: .emergencyFailedDayKey)
         noGymDayKey = try container.decodeIfPresent(String.self, forKey: .noGymDayKey)
         plannerRestDayKey = try container.decodeIfPresent(String.self, forKey: .plannerRestDayKey)
         plannerRestReason = try container.decodeIfPresent(String.self, forKey: .plannerRestReason)
@@ -575,7 +571,6 @@ extension GameSnapshot {
         try container.encodeIfPresent(fullRecoveryDayKey, forKey: .fullRecoveryDayKey)
         try container.encodeIfPresent(queuedFullRecoveryDayKey, forKey: .queuedFullRecoveryDayKey)
         try container.encode(hiddenUnlocks, forKey: .hiddenUnlocks)
-        try container.encodeIfPresent(emergencyFailedDayKey, forKey: .emergencyFailedDayKey)
         try container.encodeIfPresent(noGymDayKey, forKey: .noGymDayKey)
         try container.encodeIfPresent(plannerRestDayKey, forKey: .plannerRestDayKey)
         try container.encodeIfPresent(plannerRestReason, forKey: .plannerRestReason)

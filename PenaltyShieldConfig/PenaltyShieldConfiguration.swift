@@ -22,15 +22,12 @@ class PenaltyShieldConfiguration: ShieldConfigurationDataSource {
 }
 
 enum PenaltyShieldCopy {
-    /// Mirrors `EmergencyGroup` in the app. Keep the strings in step.
+    /// Mirrors `PenaltyGroup.suiteName` in the app.
     static let suiteName = "group.com.angelmorales.thesystem"
-    static let lockdownKindKey = "emergencyLockdownKind"
-    static let lockdownEndsAtKey = "emergencyLockdownEndsAt"
     /// Mirrors `PenaltyGroup.shieldLineKey`.
     static let shieldLineKey = "penaltyShieldLine"
 
     static func make() -> ShieldConfiguration {
-        if let emergency = emergencyCopy() { return emergency }
         // Only the penalty quest. The button sends a notification that opens The System.
         let line = (UserDefaults(suiteName: suiteName) ?? .standard).string(forKey: shieldLineKey) ?? "Penalty 10K"
         return ShieldConfiguration(
@@ -40,32 +37,6 @@ enum PenaltyShieldCopy {
             title: ShieldConfiguration.Label(text: "PENALTY QUEST", color: UIColor(red: 1, green: 0.32, blue: 0.36, alpha: 1)),
             subtitle: ShieldConfiguration.Label(text: line, color: .white),
             primaryButtonLabel: ShieldConfiguration.Label(text: "Open The System", color: .black),
-            primaryButtonBackgroundColor: UIColor(red: 0.24, green: 0.72, blue: 1.0, alpha: 1)
-        )
-    }
-
-    /// An active emergency lockdown replaces the penalty copy. The end time is fixed text: shields cannot count down.
-    private static func emergencyCopy() -> ShieldConfiguration? {
-        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
-        guard let kind = defaults.string(forKey: lockdownKindKey) else { return nil }
-        let ends = Date(timeIntervalSince1970: defaults.double(forKey: lockdownEndsAtKey))
-        let time = ends.formatted(date: .omitted, time: .shortened)
-        let title: String
-        let subtitle: String
-        if kind == "skipped_stretch" {
-            title = "EMERGENCY QUEST: RESTORE FLEXIBILITY"
-            subtitle = "You skipped stretching. These apps unlock when 10 minutes of stretches are logged.\nTime limit: \(time)."
-        } else {
-            title = "EMERGENCY QUEST: MOVEMENT"
-            subtitle = "Walk now. These apps unlock when the walk is done.\nTime limit: \(time)."
-        }
-        return ShieldConfiguration(
-            backgroundBlurStyle: .systemThickMaterialDark,
-            backgroundColor: UIColor(red: 0.012, green: 0.035, blue: 0.09, alpha: 1),
-            icon: nil,
-            title: ShieldConfiguration.Label(text: title, color: UIColor(red: 1, green: 0.32, blue: 0.36, alpha: 1)),
-            subtitle: ShieldConfiguration.Label(text: subtitle, color: .white),
-            primaryButtonLabel: ShieldConfiguration.Label(text: "Close", color: .black),
             primaryButtonBackgroundColor: UIColor(red: 0.24, green: 0.72, blue: 1.0, alpha: 1)
         )
     }

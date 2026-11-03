@@ -7,7 +7,6 @@ struct StatusSettingsSheet: View {
     @State private var showShields = false
     @State private var showScreenTime = false
     @State private var showAppIcon = false
-    @State private var showEmergency = false
     @State private var showConnections = false
     @AppStorage(SoundPlayer.enabledKey) private var soundOn = true
 
@@ -60,7 +59,6 @@ struct StatusSettingsSheet: View {
                 SystemDivider()
                 link("PENALTY ZONE") { showShields = true }
                 link("SCREEN TIME") { showScreenTime = true }
-                link("EMERGENCY QUESTS") { showEmergency = true }
                 link("CONNECTIONS") { showConnections = true }
                 link("APP ICON") { showAppIcon = true }
             }
@@ -79,9 +77,6 @@ struct StatusSettingsSheet: View {
         }
         .sheet(isPresented: $showAppIcon, onDismiss: { SystemSound.systemClose.play() }) {
             AppIconSheet()
-        }
-        .sheet(isPresented: $showEmergency, onDismiss: { SystemSound.systemClose.play() }) {
-            EmergencySettingsSheet()
         }
         .sheet(isPresented: $showConnections, onDismiss: { SystemSound.systemClose.play() }) {
             ConnectionsSheet()
