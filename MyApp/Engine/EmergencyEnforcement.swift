@@ -83,19 +83,19 @@ enum EmergencyEnforcement {
         #endif
     }
 
-    /// A walk or a stretch locks only the distractor selection,
-    /// so the phone stays usable for music, maps, or a stretching video. iOS keeps calls and emergency SOS open.
+    /// A walk or a stretch locks every app and website except the Penalty Zone's allowed apps, like a penalty.
+    /// Unlike a penalty it hides nothing from the Home Screen. iOS keeps calls and emergency SOS open.
     static func applyLockdown(for quest: EmergencyQuest) {
         let defaults = EmergencyGroup.defaults
         defaults.set(quest.kind.rawValue, forKey: EmergencyGroup.lockdownKindKey)
         defaults.set(quest.deadline.timeIntervalSince1970, forKey: EmergencyGroup.lockdownEndsAtKey)
         #if os(iOS)
+        let allowed = PenaltySelectionStore.load(key: PenaltyGroup.allowedSelectionKey).applicationTokens
         let store = ManagedSettingsStore(named: .init(EmergencyGroup.storeName))
-        let selection = PenaltySelectionStore.load()
-        store.shield.applications = selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
-        store.shield.webDomains = selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens
-        store.shield.applicationCategories = selection.categoryTokens.isEmpty ? nil : .specific(selection.categoryTokens)
-        store.shield.webDomainCategories = selection.categoryTokens.isEmpty ? nil : .specific(selection.categoryTokens)
+        store.shield.applications = nil
+        store.shield.webDomains = nil
+        store.shield.applicationCategories = .all(except: allowed)
+        store.shield.webDomainCategories = .all()
         #endif
     }
 

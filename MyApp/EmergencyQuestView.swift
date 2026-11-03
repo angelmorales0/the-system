@@ -110,9 +110,9 @@ struct EmergencyQuestView: View {
     private var threat: String {
         switch quest.kind {
         case .lowSteps:
-            return "The Player has barely moved today. A body left still begins to waste away. Stand up and walk now, before the time runs out. Your distractor apps stay locked until the walk is done."
+            return "The Player has barely moved today. A body left still begins to waste away. Stand up and walk now, before the time runs out. Every app but your allowed apps stays locked until the walk is done."
         case .skippedStretch:
-            return "The Player has skipped stretching again. Muscles left unused grow stiff and short, and a stiff body is the first to break. Stretch now, before your body locks up. Log 10 minutes of stretches in Hevy. Your distractor apps stay locked until you finish."
+            return "The Player has skipped stretching again. Muscles left unused grow stiff and short, and a stiff body is the first to break. Stretch now, before your body locks up. Log 10 minutes of stretches in Hevy. Every app but your allowed apps stays locked until you finish."
         }
     }
 

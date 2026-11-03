@@ -2,7 +2,7 @@ import ManagedSettings
 import ManagedSettingsUI
 import UIKit
 
-/// Branding for a shielded distractor. This does not clear the shield.
+/// Branding for a shielded app. This does not clear the shield.
 class PenaltyShieldConfiguration: ShieldConfigurationDataSource {
     override func configuration(shielding application: Application) -> ShieldConfiguration {
         PenaltyShieldCopy.make()

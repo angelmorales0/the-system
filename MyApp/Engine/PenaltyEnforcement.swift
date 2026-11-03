@@ -33,15 +33,11 @@ enum PenaltyGroup {
     }
 }
 
-/// `key` is the distractor selection by default, or `allowedSelectionKey` / `hiddenSelectionKey`.
+/// `key` is `allowedSelectionKey` or `hiddenSelectionKey`. The old distractor list under `selectionKey` is no longer read.
 enum PenaltySelectionStore {
-    static var hasSelection: Bool {
-        PenaltyGroup.defaults.data(forKey: PenaltyGroup.selectionKey) != nil
-    }
-
     #if os(iOS)
     /// `entireCategory` makes a new, empty selection list every app of a picked category, so whole categories can be hidden.
-    static func load(key: String = PenaltyGroup.selectionKey, entireCategory: Bool = false) -> FamilyActivitySelection {
+    static func load(key: String, entireCategory: Bool = false) -> FamilyActivitySelection {
         guard let data = PenaltyGroup.defaults.data(forKey: key),
               let selection = try? PropertyListDecoder().decode(FamilyActivitySelection.self, from: data) else {
             return FamilyActivitySelection(includeEntireCategory: entireCategory)
@@ -49,7 +45,7 @@ enum PenaltySelectionStore {
         return selection
     }
 
-    static func save(_ selection: FamilyActivitySelection, key: String = PenaltyGroup.selectionKey) {
+    static func save(_ selection: FamilyActivitySelection, key: String) {
         guard let data = try? PropertyListEncoder().encode(selection) else { return }
         let empty = selection.applicationTokens.isEmpty && selection.categoryTokens.isEmpty && selection.webDomainTokens.isEmpty
         if empty {

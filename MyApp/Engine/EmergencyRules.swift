@@ -40,9 +40,9 @@ nonisolated struct EmergencySettings: Codable, Equatable {
 }
 
 nonisolated enum EmergencyKind: String, Codable, Equatable {
-    /// Too few steps by the check time. Distractors lock until the walk is done or the limit runs out.
+    /// Too few steps by the check time. Every app but the allowed apps locks until the walk is done or the limit runs out.
     case lowSteps = "low_steps"
-    /// The daily Stretching quest is still open at the check time. Distractors lock until its minutes are logged.
+    /// The daily Stretching quest is still open at the check time. Every app but the allowed apps locks until its minutes are logged.
     case skippedStretch = "skipped_stretch"
 }
 

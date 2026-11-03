@@ -206,10 +206,10 @@ final class GameStore: ObservableObject {
         persist()
     }
 
-    func saveDistractorSelection() {
-        snapshot.hasDistractorSelection = PenaltySelectionStore.hasSelection
-        persist()
+    /// The Penalty Zone lists changed: reapply an open penalty and an active emergency so they take effect at once.
+    func saveTargetSelections() {
         enforcePenalty()
+        if let emergency { EmergencyEnforcement.applyLockdown(for: emergency) }
     }
 
     // MARK: - Emergency quests
@@ -388,7 +388,7 @@ final class GameStore: ObservableObject {
                 self.settle(resolved)
                 if resolved.status == .active,
                    EmergencyGroup.defaults.string(forKey: EmergencyGroup.lockdownKindKey) == nil {
-                    // Something cleared the shared store. Put the distractor shields back.
+                    // Something cleared the shared store. Put the emergency shields back.
                     EmergencyEnforcement.applyLockdown(for: resolved)
                 }
                 self.ensureEmergencyTicker()

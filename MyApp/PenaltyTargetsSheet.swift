@@ -5,23 +5,20 @@ import FamilyControls
 #endif
 
 /// Additive sheet. The four swipe screens stay as they are.
-/// Three lists: the distractors for emergency quests, the apps a penalty leaves open, and the apps a penalty hides.
+/// Two lists: the apps a penalty or an emergency quest leaves open, and the apps a penalty hides.
 struct PenaltyTargetsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: GameStore
 
     private enum List: String, CaseIterable, Identifiable {
-        case distractors = "Distractors"
         case allowed = "Allowed"
         case hidden = "Hidden"
         var id: String { rawValue }
 
         var note: String {
             switch self {
-            case .distractors:
-                return "Apps, categories, and sites to shield during a walk or stretch emergency quest."
             case .allowed:
-                return "Apps that stay open during a penalty. Pick The System, Strava, and Spotify. Every other app and every website locks."
+                return "Apps that stay open during a penalty or an emergency quest. Pick The System, Strava, Hevy, and Spotify. Every other app and every website locks."
             case .hidden:
                 return "Apps that leave the Home Screen during a penalty. Pick all apps; the allowed apps always stay. Settings and Phone cannot be hidden."
             }
@@ -30,7 +27,6 @@ struct PenaltyTargetsSheet: View {
 
     @State private var list = List.allowed
     #if os(iOS)
-    @State private var distractors = PenaltySelectionStore.load()
     @State private var allowed = PenaltySelectionStore.load(key: PenaltyGroup.allowedSelectionKey)
     @State private var hidden = PenaltySelectionStore.load(key: PenaltyGroup.hiddenSelectionKey, entireCategory: true)
     #endif
@@ -56,7 +52,6 @@ struct PenaltyTargetsSheet: View {
                 // Apple's picker draws its own list. It cannot take the quest window style.
                 #if os(iOS)
                 switch list {
-                case .distractors: FamilyActivityPicker(selection: $distractors)
                 case .allowed: FamilyActivityPicker(selection: $allowed)
                 case .hidden: FamilyActivityPicker(selection: $hidden)
                 }
@@ -85,12 +80,11 @@ struct PenaltyTargetsSheet: View {
 
     private func save() {
         #if os(iOS)
-        PenaltySelectionStore.save(distractors)
         PenaltySelectionStore.save(allowed, key: PenaltyGroup.allowedSelectionKey)
         PenaltySelectionStore.save(hidden, key: PenaltyGroup.hiddenSelectionKey)
         #endif
         // Also reapplies an open penalty, so new lists take effect at once.
-        store.saveDistractorSelection()
+        store.saveTargetSelections()
         dismiss()
     }
 

@@ -35,7 +35,6 @@ struct GameSnapshot: Codable, Equatable {
     /// Token spent after today's quests already started. Applied on the next rollover.
     var queuedFullRecoveryDayKey: String?
     /// True after a FamilyActivityPicker save. Tokens themselves stay in the App Group.
-    var hasDistractorSelection: Bool = false
     /// Hidden quests the player unlocked, oldest first. One Beyond the Limit per quest day.
     var hiddenUnlocks: [HiddenQuestUnlock] = []
     /// A real emergency quest failed on this day. Ending the day then opens a penalty.
@@ -94,7 +93,7 @@ struct GameSnapshot: Codable, Equatable {
 
     /// Saves the day that is ending, with each quest's status, and keeps the newest 30 days.
     mutating func recordQuestDay() {
-        guard !bundle.quests.isEmpty else { return }
+        guard !bundle.quests.isEmpty || bundle.mode == .fullRecovery else { return }
         let record = QuestDayRecord(
             dayKey: bundle.dayKey,
             mode: bundle.mode,
@@ -525,7 +524,7 @@ extension GameSnapshot {
         case version, player, signals, bundle, evidenceLog, runningTimers
         case recentQuestTitles, generationAttemptDayKey, generatedBundle, readiness
         case finance
-        case fullRecoveryDayKey, queuedFullRecoveryDayKey, hasDistractorSelection
+        case fullRecoveryDayKey, queuedFullRecoveryDayKey
         case hiddenUnlocks
         case emergencyFailedDayKey, noGymDayKey, plannerRestDayKey, plannerRestReason
         case questHistory, screenTime
@@ -546,7 +545,6 @@ extension GameSnapshot {
         finance = try container.decodeIfPresent(FinanceSnapshot.self, forKey: .finance)
         fullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .fullRecoveryDayKey)
         queuedFullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .queuedFullRecoveryDayKey)
-        hasDistractorSelection = try container.decodeIfPresent(Bool.self, forKey: .hasDistractorSelection) ?? false
         hiddenUnlocks = try container.decodeIfPresent([HiddenQuestUnlock].self, forKey: .hiddenUnlocks) ?? []
         emergencyFailedDayKey = try container.decodeIfPresent(String.self, forKey: .emergencyFailedDayKey)
         noGymDayKey = try container.decodeIfPresent(String.self, forKey: .noGymDayKey)
@@ -576,7 +574,6 @@ extension GameSnapshot {
         try container.encodeIfPresent(finance, forKey: .finance)
         try container.encodeIfPresent(fullRecoveryDayKey, forKey: .fullRecoveryDayKey)
         try container.encodeIfPresent(queuedFullRecoveryDayKey, forKey: .queuedFullRecoveryDayKey)
-        try container.encode(hasDistractorSelection, forKey: .hasDistractorSelection)
         try container.encode(hiddenUnlocks, forKey: .hiddenUnlocks)
         try container.encodeIfPresent(emergencyFailedDayKey, forKey: .emergencyFailedDayKey)
         try container.encodeIfPresent(noGymDayKey, forKey: .noGymDayKey)
