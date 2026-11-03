@@ -57,30 +57,15 @@ enum Potion: String, Codable, CaseIterable, Equatable {
         }
     }
 
-    var rank: String {
-        switch self {
-        case .gildedIndulgence: "S-rank"
-        case .nightfall: "A-rank"
-        case .idleHours: "B-rank"
-        case .ironblood, .secondWind: "C-rank"
-        case .quicksilver: "E-rank"
-        }
-    }
-
+    /// One line: what the potion does.
     var details: String {
         switch self {
-        case .gildedIndulgence:
-            "\(rank). Gold dust in a sealed flask. Spend up to \(FinanceLevel.usd(Self.indulgenceUsd)) over budget today. The ledger does not count it."
-        case .nightfall:
-            "\(rank). Eyes stay open until dawn. No quest is skipped. The sleepless night and tomorrow's tired morning do not count against REC."
-        case .idleHours:
-            "\(rank). A grey veil over the clock. Lifts today's screen time cap. The lost hours do not count against FOC."
-        case .ironblood:
-            "\(rank). Hot iron poured into tired muscle. Skips today's lifting session. The body still remembers the debt."
-        case .secondWind:
-            "\(rank). Breath returns to burning lungs. Skips today's run. The road waits for tomorrow."
-        case .quicksilver:
-            "\(rank). Liquid motion in a glass vial. Skips today's stretch."
+        case .gildedIndulgence: "Spend \(FinanceLevel.usd(Self.indulgenceUsd)) over budget today, not counted."
+        case .nightfall: "A sleepless night does not count against REC."
+        case .idleHours: "No screen time cap today. FOC ignores it."
+        case .ironblood: "Skips today's lifts."
+        case .secondWind: "Skips today's run."
+        case .quicksilver: "Skips today's stretch."
         }
     }
 

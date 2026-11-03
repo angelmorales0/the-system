@@ -114,7 +114,11 @@ struct ShopSheet: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(SystemTheme.muted)
             }
-            note(potion.details)
+            Text(potion.details)
+                .font(.footnote)
+                .foregroundStyle(SystemTheme.muted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
             buyButton("DRINK · \(snapshot.potionPrice(potion).formatted())", enabled: blocker == nil) {
                 pending = .potion(potion)
             }
