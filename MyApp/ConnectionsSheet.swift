@@ -1,12 +1,11 @@
 import AuthenticationServices
 import SwiftUI
 
-/// Status → Connections. One row per service the phone reads directly, with its state and a Test button.
+/// Status → Connections. One row per service the phone reads directly, with its state. Tap a row to set it up.
 struct ConnectionsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: GameStore
     @State private var health: [Connection: ConnectionHealth] = [:]
-    @State private var testing: Set<Connection> = []
 
     var body: some View {
         NavigationStack {
@@ -15,7 +14,6 @@ struct ConnectionsSheet: View {
                     ForEach(Connection.allCases) { connection in
                         row(connection)
                     }
-                    note("Each key stays in this iPhone's Keychain. The app calls each service directly; no server is needed. See docs/ON_DEVICE_SETUP.md for where to get each key.")
                 }
             }
             .font(.subheadline)
@@ -35,42 +33,28 @@ struct ConnectionsSheet: View {
 
     private func row(_ connection: Connection) -> some View {
         let state = health[connection] ?? .notSet
-        return HStack(spacing: 10) {
-            NavigationLink {
-                ConnectionDetailView(connection: connection, onChange: reload)
-            } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(connection.title.uppercased())
-                        .font(.caption.weight(.semibold))
-                        .tracking(1.1)
-                        .foregroundStyle(.white)
-                    Text(state.label)
+        return NavigationLink {
+            ConnectionDetailView(connection: connection, onChange: reload)
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(connection.title.uppercased())
+                    .font(.caption.weight(.semibold))
+                    .tracking(1.1)
+                    .foregroundStyle(.white)
+                Text(state.label)
+                    .font(.caption2)
+                    .foregroundStyle(color(state))
+                if case .error(let message) = state, !message.isEmpty {
+                    Text(message)
                         .font(.caption2)
-                        .foregroundStyle(color(state))
-                    if case .error(let message) = state, !message.isEmpty {
-                        Text(message)
-                            .font(.caption2)
-                            .foregroundStyle(SystemTheme.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                        .foregroundStyle(SystemTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            Button {
-                test(connection)
-            } label: {
-                Text(testing.contains(connection) ? "…" : "TEST")
-                    .font(.caption2.weight(.semibold))
-                    .tracking(0.8)
-                    .frame(width: 64, height: 30)
-                    .overlay { Rectangle().stroke(QuestLight.ink.opacity(0.6), lineWidth: 0.8) }
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(testing.contains(connection) || state == .notSet)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     private func color(_ state: ConnectionHealth) -> Color {
@@ -89,21 +73,7 @@ struct ConnectionsSheet: View {
         health = next
     }
 
-    private func test(_ connection: Connection) {
-        testing.insert(connection)
-        Task {
-            _ = await ConnectionTester.test(connection)
-            testing.remove(connection)
-            reload()
-        }
-    }
 
-    private func note(_ text: String) -> some View {
-        Text(text)
-            .font(.footnote)
-            .foregroundStyle(SystemTheme.muted)
-            .fixedSize(horizontal: false, vertical: true)
-    }
 }
 
 /// One service: type its keys once, save them to the Keychain, and test them. Saved values are never shown again.
