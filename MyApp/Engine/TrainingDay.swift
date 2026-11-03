@@ -74,24 +74,19 @@ enum TrainingDay {
     /// The most workouts a day holds. Each run is one workout; all the lifts together are one gym workout.
     static let maxWorkouts = 2
 
-    /// Keeps the day at `maxWorkouts`. Runs are alike, so an extra run goes first: the 5K before a 10K, the last row first.
-    /// Finished rows, penalty rows, Stretching, and Screen Time always stay.
+    /// Keeps the day at `maxWorkouts` from the start. Runs are alike, so an extra run goes: the 5K before a 10K, the last row first.
+    /// Once any workout is finished the day is not changed, so nothing goes after the player starts.
+    /// Penalty rows, Stretching, and Screen Time always stay.
     static func cappingWorkouts(_ bundle: QuestBundle) -> QuestBundle {
-        var copy = bundle
         func isWorkout(_ quest: Quest) -> Bool { quest.kind == .daily && quest.id != DailyStretch.questId && quest.id != ScreenTime.questId }
-        func isLift(_ quest: Quest) -> Bool { isWorkout(quest) && isStrength(quest) }
-        func count() -> Int {
-            copy.quests.filter { isWorkout($0) && isRaceRun($0) }.count + (copy.quests.contains(where: isLift) ? 1 : 0)
-        }
-        while count() > maxWorkouts {
-            let open = copy.quests.indices.filter { isWorkout(copy.quests[$0]) && isRaceRun(copy.quests[$0]) && copy.quests[$0].status != .completed }
-            let fiveK = open.last { copy.quests[$0].verification.params["minDistanceMeters"]?.doubleValue == fiveKMeters }
-            guard let index = fiveK ?? open.last else { break }
+        guard !bundle.quests.contains(where: { isWorkout($0) && $0.status == .completed }) else { return bundle }
+        var copy = bundle
+        let gym = copy.quests.contains { isWorkout($0) && isStrength($0) } ? 1 : 0
+        while copy.quests.filter({ isWorkout($0) && isRaceRun($0) }).count + gym > maxWorkouts {
+            let runs = copy.quests.indices.filter { isWorkout(copy.quests[$0]) && isRaceRun(copy.quests[$0]) }
+            let fiveK = runs.last { copy.quests[$0].verification.params["minDistanceMeters"]?.doubleValue == fiveKMeters }
+            guard let index = fiveK ?? runs.last else { break }
             copy.quests.remove(at: index)
-        }
-        // Every run is done and the day is still over: the unstarted gym workout goes.
-        if count() > maxWorkouts {
-            copy.quests.removeAll { isLift($0) && $0.status != .completed }
         }
         return copy
     }
@@ -166,16 +161,16 @@ enum TrainingDay {
         if cappingWorkouts(mixed).quests.map(\.id) != ["bench_press", "row", "run_10k_2", ScreenTime.questId, DailyStretch.questId] {
             errors.append("a 10K, a 5K, and lifts should drop the 5K, got \(cappingWorkouts(mixed).quests.map(\.id))")
         }
-        // A finished run stays; the open one goes.
+        // A day underway is not changed: finishing two workouts never takes the third away.
         var started = heavy
-        started.quests[3].status = .completed
-        if cappingWorkouts(started).quests.map(\.id) != ["bench_press", "row", "run_10k_2", ScreenTime.questId, DailyStretch.questId] {
-            errors.append("a finished run should stay, got \(cappingWorkouts(started).quests.map(\.id))")
-        }
-        // Both runs finished: the unstarted lifts go.
         started.quests[0].status = .completed
-        if cappingWorkouts(started).quests.map(\.id) != ["run_10k", "run_10k_2", ScreenTime.questId, DailyStretch.questId] {
-            errors.append("two finished runs should drop the unstarted lifts, got \(cappingWorkouts(started).quests.map(\.id))")
+        if cappingWorkouts(started) != started {
+            errors.append("a day with a finished workout should not change")
+        }
+        started.quests[0].status = .pending
+        started.quests[3].status = .completed
+        if cappingWorkouts(started) != started {
+            errors.append("a finished second run should keep the day as it is")
         }
         // Two runs and no gym, or one run and a gym day, already fit.
         var twoRuns = heavy
