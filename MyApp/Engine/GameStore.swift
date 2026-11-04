@@ -112,7 +112,7 @@ final class GameStore: ObservableObject {
     /// After the phone screen time picker saves, restart the daily count with the new apps.
     func savePhoneScreenSelection() {
         if persistence == .standard {
-            ScreenTimeEnforcement.syncMonitoring()
+            ScreenTimeEnforcement.syncMonitoring(restart: true)
         }
         refreshIntegrations(now: .now)
     }

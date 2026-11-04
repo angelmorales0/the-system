@@ -93,6 +93,8 @@ enum PhoneScreenGroup {
     static let eventPrefix = "phone_"
     /// Threshold minutes → when the monitor saw it, as seconds since 1970.
     static let timesKey = "screenTimePhoneTimes"
+    /// Why iOS refused to start the daily count. Nil after a good start.
+    static let startErrorKey = "screenTimeStartError"
 
     /// Thresholds the monitor reports: every 5 minutes up to 2 hours, then every 10 minutes past the failure point.
     /// Phone minutes can be the whole day on a day with no Mac work.
@@ -170,10 +172,12 @@ enum ScreenOverlap {
 /// Starts the daily phone count: one schedule from the quest day's start to the next, with a threshold event every few minutes.
 /// Screen Time counts only the apps the player chose, so the picker should hold All Apps & Categories.
 enum ScreenTimeEnforcement {
-    static func syncMonitoring() {
+    /// A running count is left alone at launch. Only a new selection restarts it.
+    static func syncMonitoring(restart: Bool = false) {
         #if os(iOS)
         let center = DeviceActivityCenter()
         let name = DeviceActivityName(PhoneScreenGroup.activity)
+        if !restart, center.activities.contains(name) { return }
         center.stopMonitoring([name])
         let selection = PhoneScreenGroup.load()
         guard !(selection.applicationTokens.isEmpty && selection.categoryTokens.isEmpty && selection.webDomainTokens.isEmpty) else { return }
@@ -191,7 +195,12 @@ enum ScreenTimeEnforcement {
                 threshold: DateComponents(minute: minutes)
             )
         }
-        try? center.startMonitoring(name, during: schedule, events: events)
+        do {
+            try center.startMonitoring(name, during: schedule, events: events)
+            PenaltyGroup.defaults.removeObject(forKey: PhoneScreenGroup.startErrorKey)
+        } catch {
+            PenaltyGroup.defaults.set(String(describing: error), forKey: PhoneScreenGroup.startErrorKey)
+        }
         #endif
     }
 }
