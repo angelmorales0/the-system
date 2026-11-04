@@ -461,6 +461,7 @@ final class GameStore: ObservableObject {
             // The stat levels first: max HP is built from them.
             self.statInputs = (remote.codeforces, remote.monkeytype, remote.financeMonths, bodyMass, focusDays, self.statInputs?.inputs ?? StatInputs())
             self.recomputeStatLevels(now: now)
+            next.applyMonthlyPenalty(board: self.monthlyBoard, catalog: self.catalog, now: now)
             // After today's readiness, so a red recovery hits HP and sets the regeneration speed.
             next.applyHitPoints(integrations: day, maxHP: HitPoints.maxHP(for: self.statLevels), now: now)
             // After today's screen time too, so only the new minutes add fatigue.

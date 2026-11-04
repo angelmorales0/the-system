@@ -49,6 +49,8 @@ nonisolated struct CodeforcesReading: Codable, Equatable {
     var checkedAt: Date?
     /// Rated contests, oldest first. Nil when `user.rating` failed.
     var history: [CodeforcesContest]? = nil
+    /// True when `user.status` failed and a rated contest has no known language. No monthly quest is judged then.
+    var languagesPending: Bool? = nil
 
     /// The rating after the newest contest in this language.
     func rating(in language: CodeforcesLanguage) -> Int? {

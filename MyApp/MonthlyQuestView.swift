@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The third page: this month's quests, then last month's result. Mercury and Codeforces decide every row.
+/// The third page: this month's quests. Mercury, Codeforces, and Monkeytype decide every row.
 struct MonthlyQuestView: View {
     @EnvironmentObject private var store: GameStore
 
@@ -27,6 +27,14 @@ struct MonthlyQuestView: View {
         }
     }
 
+    private var warning: AttributedString {
+        var text = AttributedString("WARNING: Failure to complete a monthly quest will result in a penalty.")
+        if let range = text.range(of: "penalty", options: .caseInsensitive) {
+            text[range].foregroundColor = QuestLight.penalty
+        }
+        return text
+    }
+
     private func content(_ board: MonthlyBoard) -> some View {
         VStack(spacing: 0) {
             QuestInfoHeader()
@@ -44,14 +52,14 @@ struct MonthlyQuestView: View {
             VStack(spacing: 14) {
                 ForEach(board.rows) { MonthlyQuestRowView(row: $0) }
             }
-            if !board.lastRows.isEmpty {
-                QuestSectionTitle(text: board.lastMonthName)
-                    .padding(.top, 30)
-                    .padding(.bottom, 16)
-                VStack(spacing: 14) {
-                    ForEach(board.lastRows) { MonthlyQuestRowView(row: $0) }
-                }
-            }
+            Text(warning)
+                .font(.system(.footnote, design: .default))
+                .lineSpacing(9)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(QuestLight.ink)
+                .shadow(color: QuestLight.blue.opacity(0.7), radius: 6)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 30)
         }
     }
 }

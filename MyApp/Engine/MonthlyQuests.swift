@@ -20,6 +20,8 @@ nonisolated struct MonthlyQuestRow: Equatable, Identifiable {
 nonisolated struct MonthlyBoard: Equatable {
     var monthName: String
     var rows: [MonthlyQuestRow]
+    /// "YYYY-MM".
+    var lastMonth: String
     var lastMonthName: String
     var lastRows: [MonthlyQuestRow]
 }
@@ -84,6 +86,7 @@ enum MonthlyQuests {
             rows: [budgetRow(month: months.this, finance: financeMonths, excuses: excuses, ended: false, daysLeft: daysLeft(dayKey: dayKey))]
                 + CodeforcesLanguage.allCases.map { codeforcesRow(month: months.this, language: $0, reading: codeforces, ended: false) }
                 + [typingRow(typing)],
+            lastMonth: months.last,
             lastMonthName: name(of: months.last),
             lastRows: months.last < firstMonth ? [] : [budgetRow(month: months.last, finance: financeMonths, excuses: excuses, ended: true, daysLeft: 0)]
                 + CodeforcesLanguage.allCases.map { codeforcesRow(month: months.last, language: $0, reading: codeforces, ended: true) }
@@ -141,7 +144,7 @@ enum MonthlyQuests {
     static func codeforcesRow(month: String, language: CodeforcesLanguage, reading: CodeforcesReading?, ended: Bool) -> MonthlyQuestRow {
         let id = codeforcesId(language)
         let none = MonthlyQuestRow(id: id, title: "\(language.rawValue) rating", progress: "[--]", status: .noData, share: nil)
-        guard let reading, reading.available, let history = reading.history,
+        guard let reading, reading.available, reading.languagesPending != true, let history = reading.history,
               let start = QuestDay.start(of: "\(month)-01"), let end = QuestDay.start(of: "\(MercuryClient.nextMonth(month))-01") else { return none }
         let monthStart = Int(start.timeIntervalSince1970), monthEnd = Int(end.timeIntervalSince1970)
         let contests = history.filter { $0.language == language }
@@ -178,6 +181,18 @@ enum MonthlyQuests {
         }
         let wpm = Int(best)
         return MonthlyQuestRow(id: typingId, title: title, progress: "[\(wpm)/\(goal)]", status: wpm >= goal ? .cleared : .active, share: min(best / Double(goal), 1))
+    }
+
+    // MARK: - Penalty
+
+    enum Verdict: Equatable {
+        case wait, passed, missed
+    }
+
+    /// A failed row is a miss. Without one, a row with no data waits, so a failed read can never punish or excuse a month.
+    static func verdict(_ rows: [MonthlyQuestRow]) -> Verdict {
+        if rows.contains(where: { $0.status == .failed }) { return .missed }
+        return rows.isEmpty || rows.contains { $0.status == .noData } ? .wait : .passed
     }
 
     // MARK: - Self-check (runs in DEBUG at launch)
@@ -295,6 +310,42 @@ enum MonthlyQuests {
         if !boards[0].lastRows.isEmpty || boards[1].lastRows.count != 4 || boards[0].rows.count != 5 {
             errors.append("a month from before these quests should show no result")
         }
+        func row(_ status: MonthlyQuestRow.Status) -> MonthlyQuestRow { MonthlyQuestRow(id: "\(status)", title: "", progress: "", status: status, share: nil) }
+        if verdict([]) != .wait || verdict([row(.cleared), row(.noData)]) != .wait || verdict([row(.cleared)]) != .passed
+            || verdict([row(.noData), row(.failed)]) != .missed {
+            errors.append("the monthly verdict is wrong")
+        }
+        var pendingLanguages = reading
+        pendingLanguages.languagesPending = true
+        if codeforcesRow(month: "2026-11", language: .cpp, reading: pendingLanguages, ended: true).status != .noData {
+            errors.append("a failed language read must not fail a monthly quest")
+        }
+        func judged(_ rows: [MonthlyQuestRow]) -> MonthlyBoard {
+            MonthlyBoard(monthName: "December", rows: [], lastMonth: "2026-11", lastMonthName: "November", lastRows: rows)
+        }
+        let catalog = FallbackCatalog.bundled()
+        let firstOfDecember = QuestDay.start(of: "2026-12-01") ?? .now
+        var game = GameSnapshot.fresh(catalog: catalog, now: firstOfDecember)
+        game.applyMonthlyPenalty(board: judged([row(.noData)]), catalog: catalog, now: firstOfDecember)
+        if game.player.penaltyOpen || game.monthlyPenaltyMonth != nil {
+            errors.append("a month with no data should wait")
+        }
+        game.applyMonthlyPenalty(board: judged([row(.failed), row(.failed), row(.failed)]), catalog: catalog, now: firstOfDecember)
+        let penalty = PenaltyQuests.rows(in: game.bundle)
+        if !game.player.penaltyOpen || game.monthlyPenaltyMonth != "2026-11" || penalty.count != 1 || penalty.first?.progress.target != 10 {
+            errors.append("any missed monthly quests should open one 10K, got \(penalty)")
+        }
+        game.player.penaltyOpen = false
+        game.bundle.quests.removeAll { $0.kind == .penalty }
+        game.applyMonthlyPenalty(board: judged([row(.failed)]), catalog: catalog, now: firstOfDecember)
+        if game.player.penaltyOpen {
+            errors.append("a month should open its penalty only once")
+        }
+        var clean = GameSnapshot.fresh(catalog: catalog, now: firstOfDecember)
+        clean.applyMonthlyPenalty(board: judged([row(.cleared)]), catalog: catalog, now: firstOfDecember)
+        if clean.player.penaltyOpen || clean.monthlyPenaltyMonth != "2026-11" {
+            errors.append("a cleared month should open no penalty")
+        }
         if name(of: "2026-11") != "November" || name(of: "2026-01") != "January" {
             errors.append("month names wrong")
         }
@@ -302,5 +353,18 @@ enum MonthlyQuests {
             errors.append("days left should count today")
         }
         return errors
+    }
+}
+
+extension GameSnapshot {
+    /// Judges last month once, when its data is in. Any missed monthly quest opens the normal penalty: one 10K.
+    mutating func applyMonthlyPenalty(board: MonthlyBoard, catalog: FallbackCatalog, now: Date) {
+        guard monthlyPenaltyMonth.map({ $0 < board.lastMonth }) ?? true else { return }
+        let verdict = MonthlyQuests.verdict(board.lastRows)
+        guard verdict != .wait else { return }
+        monthlyPenaltyMonth = board.lastMonth
+        guard verdict == .missed else { return }
+        player.penaltyOpen = true
+        bundle = PenaltyQuests.ensure(in: bundle, open: true, band: trainingBand, catalog: catalog, now: now)
     }
 }

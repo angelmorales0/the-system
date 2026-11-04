@@ -3,7 +3,7 @@ import Foundation
 /// An open penalty (`player.penaltyOpen`) adds red `kind: .penalty` rows to the top of the normal day.
 /// It does not change the day mode. A Full Recovery day adds none; the penalty waits for the next day.
 /// While a row is open, every app is locked (see `PenaltyEnforcement`), so rows verify from Apple Health only.
-/// The rows are always the same: a flat 10K. Another missed day while it is open changes nothing.
+/// The rows are always the same: a flat 10K. Another missed day or month while it is open changes nothing.
 enum PenaltyQuests {
 
     /// Adds the rows once, above the day's quests. Existing penalty rows keep their progress.

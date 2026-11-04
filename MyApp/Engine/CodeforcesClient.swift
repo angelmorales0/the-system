@@ -84,6 +84,8 @@ enum CodeforcesClient {
         base.rank = user["rank"]?.stringValue
         base.contests = history?.arrayValue?.count ?? 0
         base.history = history?.arrayValue?.compactMap { contest($0, languages: languages) }.sorted { $0.time < $1.time }
+        let ids = history?.arrayValue?.compactMap { $0["contestId"]?.doubleValue }.map { String(Int($0)) } ?? []
+        base.languagesPending = ids.contains { languages[$0] == nil } ? true : nil
         base.checkedAt = Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down))
         return base
     }
@@ -123,6 +125,13 @@ enum CodeforcesClient {
         )
         if dated.history?.map(\.newRating) != [1500, 1520] || dated.history?.map(\.language) != [nil, .java] {
             errors.append("Codeforces should keep the rated contests, oldest first, with their language")
+        }
+        if dated.languagesPending != nil {
+            errors.append("known languages, an empty one included, should not be pending")
+        }
+        let pending = reading(info: .array([.object(["handle": .string("tourist")])]), history: .array([.object(["contestId": .number(7)])]), handle: "tourist", now: now)
+        if pending.languagesPending != true {
+            errors.append("a contest with no language lookup should be pending")
         }
         func submission(_ contest: Double, _ language: String, _ verdict: String, type: String = "CONTESTANT") -> JSONValue {
             .object(["contestId": .number(contest), "programmingLanguage": .string(language), "verdict": .string(verdict),
