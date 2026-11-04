@@ -19,7 +19,7 @@ final class GameStore: ObservableObject {
     @Published private(set) var verificationNote: String?
     @Published private(set) var clock = Date()
     @Published private(set) var dayClock: DayClock
-    /// Algorithm levels for the status radar. 0 until a stat's data arrives.
+    /// Stat levels for the Status page. 0 until a stat's data arrives.
     @Published private(set) var statLevels: StatLevelSet = .empty
     /// One saved reading per day for the stat history charts.
     @Published private(set) var statHistory = StatLevelHistory()
@@ -329,6 +329,7 @@ final class GameStore: ObservableObject {
     }
     var bundle: QuestBundle { snapshot.bundle }
     var goalQuests: [Quest] { bundle.goalQuests }
+    var optionalQuests: [Quest] { bundle.optionalQuests }
 
     func rowLabel(for quest: Quest) -> String {
         guard quest.status != .completed,
@@ -536,6 +537,8 @@ final class GameStore: ObservableObject {
         let dayKey = QuestDay.key(for: now)
         guard snapshot.bundle.dayKey == dayKey else { return }
         guard snapshot.generationAttemptDayKey != dayKey else { return }
+        // A day the player spent a token on has nothing to plan.
+        guard !snapshot.signals.spendingFullRecovery, snapshot.fullRecoveryDayKey != dayKey else { return }
         var next = snapshot
         next.generationAttemptDayKey = dayKey
         snapshot = next
@@ -551,7 +554,7 @@ final class GameStore: ObservableObject {
             return
         }
         persist()
-        let context = ContextBuilder.make(snapshot: snapshot, now: now, targets: statTargets, bodyMass: statInputs?.bodyMass, levels: statLevels)
+        let context = ContextBuilder.make(snapshot: snapshot, now: now, targets: statTargets, bodyMass: statInputs?.bodyMass, levels: statLevels, integrations: integrations)
         Task { [weak self] in
             await self?.runGeneration(context: context, dayKey: dayKey)
         }
@@ -583,9 +586,12 @@ final class GameStore: ObservableObject {
         guard decision.selectedMode == context.modeDecision.selectedMode else { return }
         guard let accepted = QuestSafety.accepting(bundle, context: context, assignedAt: now),
               let prepared = TrainingDay.exerciseOnly(accepted) else { return }
+        // A rest day keeps the planner's words but none of its rows. The app adds Stretching and Screen Time.
+        var plan = prepared
+        if plan.mode == .fullRecovery { plan.quests = [] }
         var next = snapshot
-        next.generatedBundle = prepared
-        next.bundle = next.finished(prepared, catalog: catalog, now: now)
+        next.generatedBundle = plan
+        next.bundle = next.finished(plan, catalog: catalog, now: now)
         snapshot = next
         runningTimersRemoveMissing()
         persist()

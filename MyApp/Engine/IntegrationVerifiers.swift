@@ -55,7 +55,10 @@ struct StravaActivityVerifier: Verifier {
     func evaluate(quest: Quest, context: VerificationContext) -> VerificationResult {
         guard quest.verification.method == method else { return .unchanged }
         let reading = context.integrations.strava
-        guard reading.configured, reading.available else {
+        let stravaReady = reading.configured && reading.available
+        // An open penalty locks the apps, so it must not depend on one service: a run in Strava or Apple Health clears it.
+        let anySource = quest.kind == .penalty
+        if !stravaReady, !anySource || context.integrations.health.access != .requested {
             return .incomplete(reason: reading.reason.isEmpty ? "TODO: Strava is not connected." : reading.reason)
         }
         let types = IntegrationMatch.strings(quest.verification.params["types"])
@@ -63,13 +66,14 @@ struct StravaActivityVerifier: Verifier {
         let minimum = quest.verification.params["minMovingTimeSec"]?.doubleValue
             ?? (quest.progress.unit == "min" ? quest.progress.target * 60 : 0)
         let candidates = context.integrations.workouts.filter { workout in
-            workout.members.contains { $0.source == "strava" } && IntegrationMatch.matches(workout, types: types)
+            (anySource || workout.members.contains { $0.source == "strava" }) && IntegrationMatch.matches(workout, types: types)
         }
         let matches = candidates.filter { $0.movingTimeSec + 0.001 >= minimum && DistanceRule.meets($0, minDistance) }
+        let source = candidates.contains { $0.members.contains { $0.source == "strava" } } || candidates.isEmpty ? "strava" : "healthkit"
         if matches.isEmpty, minDistance != nil {
-            return DistanceRule.progress(candidates, quest: quest, context: context, source: "strava")
+            return DistanceRule.progress(candidates, quest: quest, context: context, source: source)
         }
-        return workoutResult(matches, quest: quest, context: context, source: "strava")
+        return workoutResult(matches, quest: quest, context: context, source: source)
     }
 }
 

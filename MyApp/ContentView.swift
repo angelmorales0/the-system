@@ -81,11 +81,6 @@ struct SystemBackground: View {
     }
 }
 
-struct ScreenContainer<Content: View>: View {
-    @ViewBuilder var content: Content
-    var body: some View { ZStack { SystemBackground(); content } }
-}
-
 /// Every card in the app uses the daily quest window: the same glass, circuitry, stepped rails,
 /// electric beams, and ink text with a cyan glow. The padding clears the rails and the beams.
 struct SystemPanel<Content: View>: View {

@@ -92,6 +92,13 @@ struct SystemView: View {
                 }
             }
 
+            if !store.optionalQuests.isEmpty {
+                VStack(spacing: 1) {
+                    ForEach(store.optionalQuests) { questRow($0) }
+                }
+                .padding(.top, 14)
+            }
+
             if let note = store.verificationNote, !note.isEmpty {
                 Text(note)
                     .font(.caption)
@@ -175,7 +182,8 @@ struct SystemView: View {
     private func questRow(_ quest: Quest) -> some View {
         // Open penalty rows sit in the normal list, in red, with a PENALTY tag.
         let penalty = quest.kind == .penalty
-        let ink = penalty ? QuestLight.penalty : screenTimeInk(quest) ?? QuestLight.ink
+        let optional = quest.kind == .optional
+        let ink = penalty ? QuestLight.penalty : screenTimeInk(quest) ?? QuestLight.ink.opacity(optional ? 0.7 : 1)
         // Blue once this run unlocked Beyond the Limit: [15.2/10km].
         let beyond = store.snapshot.beyondTheLimitToday?.questId == quest.id
         return Button {
@@ -183,8 +191,8 @@ struct SystemView: View {
         } label: {
             HStack(spacing: 11) {
                 HStack(spacing: 6) {
-                    if penalty {
-                        Text("PENALTY")
+                    if penalty || optional {
+                        Text(penalty ? "PENALTY" : "OPTIONAL")
                             .font(.caption2.weight(.semibold))
                             .tracking(1)
                     }

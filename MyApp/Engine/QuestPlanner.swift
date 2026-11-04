@@ -5,7 +5,8 @@ import Foundation
 /// The Anthropic API key comes from the Keychain and goes only into the `x-api-key` header.
 enum QuestPlanner {
     static let modes: Set<String> = ["performance_training", "full_recovery"]
-    static let methods: Set<String> = ["whoop_strain", "strava_activity", "hevy_sets", "healthkit_workout", "screen_time_limit", "manual_confirm", "timer_session"]
+    /// What a plan can use and pass validation. The app adds Screen Time and Stretching itself.
+    static let methods: Set<String> = ["strava_activity", "hevy_sets", "healthkit_workout", "screen_time_limit"]
     static let stats: Set<String> = ["STR", "END", "INT", "AGI", "FOC", "REC", "FIN"]
     static let secretKeys: Set<String> = ["password", "apikey", "api_key", "authorization", "secret", "token", "xai_api_key", "anthropic_api_key", "openai_api_key"]
     static let unsafe = ["starve", "all-nighter", "all nighter", "ignore injury", "max debt"]
@@ -156,7 +157,7 @@ enum QuestPlanner {
 
     App rules:
     - Obey modeDecision.selectedMode. Do not change it. lockedByRules is authoritative.
-    - performance_training is strength and 5K or 10K runs only. Lifts use hevy_sets, or healthkit_workout with activityType traditionalStrengthTraining. A run is always a 5K or a 10K: strava_activity with types ["Run"] and minDistanceMeters 5000 or 10000, progress target 5 or 10, unit "km". Prefer the 10K. Two 10Ks on one day are two separate quests. No walks, intervals, sprints, other run distances, protein, nutrition, spending, or stretch quests. The app adds its own Stretching quest.
+    - performance_training is strength and 5K or 10K runs only. Lifts use hevy_sets. A run is always a 5K or a 10K: strava_activity with types ["Run"] and minDistanceMeters 5000 or 10000, progress target 5 or 10, unit "km". Prefer the 10K. Two 10Ks on one day are two separate quests. No walks, intervals, sprints, other run distances, protein, nutrition, spending, or stretch quests. The app adds its own Stretching quest.
     - Use kind daily or optional only. Never write penalty quests: the app adds them itself when player.penaltyOpen is true.
     - Required quests (kind other than optional) <= constraints.maxRequiredQuests. Optional quests <= constraints.maxOptionalQuests. Total quests <= 9.
     - Titles are at most 48 characters. The narrative, at most 280 characters, says why today looks the way it does.

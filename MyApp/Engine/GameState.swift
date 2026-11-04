@@ -17,7 +17,6 @@ struct GameSnapshot: Codable, Equatable {
     var runningTimers: [TimerRun] = []
     /// Today's WHOOP recovery. Not copied into `player.stats.REC`.
     var readiness: ReadinessSnapshot?
-    /// Rolling recovery-capacity placeholder. The radar REC stat stays XP-driven.
     /// Mercury aggregates for the quest day. Not a dollar balance.
     var finance: FinanceSnapshot?
     /// The newest month whose monthly quests were judged, "YYYY-MM". Each month opens at most one penalty.
@@ -124,9 +123,14 @@ struct GameSnapshot: Codable, Equatable {
         questHistory = Array(questHistory.prefix(QuestDayRecord.keepDays))
     }
 
-    /// A Screen Time row that stayed under the total cap all day completes as the day ends, with its XP.
+    /// A Screen Time row that stayed under the total cap all day completes as the day ends. The phone's last count comes in first.
+    /// A day with no reading at all stays pending: it opens no penalty, but it is no pass and pays no gold.
     mutating func settleScreenTime() {
-        guard let index = bundle.quests.firstIndex(where: { $0.id == ScreenTime.questId && $0.status == .pending }) else { return }
+        if let minutes = PhoneScreenGroup.minutes(for: bundle.dayKey) {
+            applyScreenTime(phoneMinutes: minutes, workMinutes: nil)
+        }
+        guard let index = bundle.quests.firstIndex(where: { $0.id == ScreenTime.questId && $0.status == .pending }),
+              screenTimeToday.hasReading else { return }
         complete(at: index)
     }
 

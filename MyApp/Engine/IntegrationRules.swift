@@ -127,6 +127,41 @@ enum IntegrationRules {
             errors.append("a long enough run should complete, got \(cleared)")
         }
 
+        // A penalty clears from a run in Apple Health alone, and a normal quest still needs Strava.
+        let healthRun = event("healthkit", "h1", "Running", start, 60 * 60, 10_000)
+        var healthOnly = day
+        healthOnly.health.access = .requested
+        healthOnly.workouts = WorkoutDedupe.canonical([healthRun])
+        let tenK: [String: JSONValue] = ["types": .array([.string("Run")]), "minDistanceMeters": .number(10_000)]
+        var penaltyRun = quest(method: .stravaActivity, params: tenK)
+        penaltyRun.kind = .penalty
+        if case .completed(let evidence) = StravaActivityVerifier().evaluate(quest: penaltyRun, context: context(healthOnly, now: start)) {
+            if evidence.source != "healthkit" { errors.append("a Health run should be the penalty's evidence") }
+        } else {
+            errors.append("a 10K in Apple Health should clear a penalty with Strava off")
+        }
+        if case .completed = StravaActivityVerifier().evaluate(quest: quest(method: .stravaActivity, params: tenK), context: context(healthOnly, now: start)) {
+            errors.append("a normal quest should still need Strava")
+        }
+        if case .completed = StravaActivityVerifier().evaluate(quest: penaltyRun, context: context(day, now: start)) {
+            errors.append("a penalty should not clear with no Strava and no Health")
+        }
+
+        var quiet = GameSnapshot.fresh(catalog: catalog, now: dayOne)
+        func screenRow(_ game: GameSnapshot) -> Quest? { game.bundle.quests.first { $0.id == ScreenTime.questId } }
+        if screenRow(quiet) == nil {
+            errors.append("a Training day should have a Screen Time row")
+        }
+        quiet.settleScreenTime()
+        if screenRow(quiet)?.status != .pending {
+            errors.append("Screen Time with no reading should not pass")
+        }
+        quiet.applyScreenTime(phoneMinutes: 30, workMinutes: nil)
+        quiet.settleScreenTime()
+        if screenRow(quiet)?.status != .completed {
+            errors.append("Screen Time under the cap with a reading should pass")
+        }
+
         // Hevy: count today's working Bench Press sets. Warm-ups, other bench variants, and short sets do not count.
         let benchQuest = quest(method: .hevySets, params: ["exercise": .string("Bench Press"), "sets": .number(4), "minReps": .number(5)])
         if case .incomplete(let reason) = HevySetsVerifier().evaluate(quest: benchQuest, context: context(day, now: start)) {

@@ -36,14 +36,8 @@ enum DailyStretch {
     }
 
     /// Minutes logged so far, as the row shows them.
-    static func progressMinutes(in bundle: QuestBundle) -> Double {
-        bundle.quests.first(where: { $0.id == questId })?.progress.current ?? 0
-    }
 
     /// True or false once the row exists; nil when today's bundle has none.
-    static func isDone(in bundle: QuestBundle) -> Bool? {
-        bundle.quests.first(where: { $0.id == questId }).map { $0.status == .completed }
-    }
 
     static func check() -> [String] {
         var errors: [String] = []
@@ -94,9 +88,6 @@ enum DailyStretch {
         }
         if ensure(in: added, now: now).quests.count != added.quests.count {
             errors.append("Stretching must be added only once")
-        }
-        if isDone(in: added) != false || isDone(in: bundle) != nil {
-            errors.append("isDone should be false when open and nil when missing")
         }
         return errors
     }

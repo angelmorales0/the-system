@@ -7,12 +7,13 @@ enum ContextBuilder {
     /// `targets` are the stat targets the player kept. `bodyMass` is the newest Apple Health weigh-in.
     /// `levels` are the stat levels on the Status page, so the planner sees the same numbers as the player.
     static func make(snapshot: GameSnapshot, now: Date = .now, targets: StatTargets = StatTargets(), bodyMass: BodyMassReading? = nil,
-                     levels: StatLevelSet = .empty) -> MorningContext {
+                     levels: StatLevelSet = .empty, integrations: DayIntegrationSnapshot? = nil) -> MorningContext {
         let dayKey = QuestDay.key(for: now)
         let decision = ModePicker.decide(snapshot.modeInput(now: now))
         let player = snapshot.player
         let readinessToday = snapshot.readiness?.capturedOn == dayKey ? snapshot.readiness : nil
         let financeToday = snapshot.finance?.dayKey == dayKey ? snapshot.finance : nil
+        let screenTimeToday = snapshot.screenTime?.dayKey == dayKey && snapshot.screenTime?.hasReading == true
         return MorningContext(
             schemaVersion: 1,
             player: MorningPlayer(
@@ -25,7 +26,7 @@ enum ContextBuilder {
                 maxStatLevel: StatLevel.maxLevel,
                 fullRecoveryBank: player.fullRecoveryBank,
                 penaltyOpen: player.penaltyOpen,
-                streaks: .unknown
+                streaks: streaks(snapshot: snapshot, dayKey: dayKey)
             ),
             modeDecision: MorningModeDecision(decision),
             whoop: MorningWhoop(
@@ -54,18 +55,17 @@ enum ContextBuilder {
                 state: financeToday?.paceState ?? "unavailable"
             ),
             focus: MorningFocus(
-                // A saved picker selection is not minute data. Tokens stay in the App Group.
-                screenTimeAvailable: false,
-                distractingMinutesYesterday: nil,
+                screenTimeAvailable: screenTimeToday,
+                distractingMinutesYesterday: screenMinutesYesterday(snapshot: snapshot, dayKey: dayKey),
                 deepWorkMinutesYesterday: nil,
                 pickupCountYesterday: nil
             ),
             integrationsFreshness: MorningFreshness(
                 whoop: readinessToday == nil ? "unavailable" : "ok",
-                strava: "unavailable",
-                healthkit: "unavailable",
+                strava: integrations?.strava.available == true ? "ok" : "unavailable",
+                healthkit: integrations?.health.access == .requested ? "ok" : "unavailable",
                 mercury: financeToday == nil ? "unavailable" : "ok",
-                screenTime: "unavailable"
+                screenTime: screenTimeToday ? "ok" : "unavailable"
             ),
             recentQuestTitles: snapshot.recentQuestTitles.prefix(8).map { redact($0) },
             constraints: constraints(noGym: snapshot.noGymDayKey == dayKey),
@@ -79,6 +79,24 @@ enum ContextBuilder {
             ),
             rest: rest(snapshot: snapshot, dayKey: dayKey, readiness: readinessToday)
         )
+    }
+
+    /// From the days that ended, newest first. Protein has no source, so its streak stays 0.
+    static func streaks(snapshot: GameSnapshot, dayKey: String) -> MorningStreaks {
+        let days = snapshot.questHistory
+        return MorningStreaks(
+            dailyQuestClear: days.prefix { !$0.missedRequired }.count,
+            training: snapshot.trainedDaysInARow(before: dayKey),
+            proteinHit: 0,
+            missedLastNDays: days.prefix(7).filter(\.missedRequired).count
+        )
+    }
+
+    /// Yesterday's Screen Time total, from its saved row.
+    static func screenMinutesYesterday(snapshot: GameSnapshot, dayKey: String) -> Int? {
+        let yesterday = QuestDay.key(byAddingDays: -1, to: dayKey)
+        let row = snapshot.questHistory.first { $0.dayKey == yesterday }?.quests.first { $0.method == .screenTimeLimit }
+        return row.map { Int($0.done) }
     }
 
     /// The week's rest as the planner sees it, with the app's own rest signals from today's data.

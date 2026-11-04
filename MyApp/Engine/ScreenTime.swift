@@ -60,6 +60,8 @@ struct ScreenTimeDay: Codable, Equatable {
     var phoneMinutes = 0
     var workMinutes = 0
     var phoneMeasured = false
+    /// True once the phone or a Mac reported minutes for the day.
+    var hasReading: Bool { phoneMeasured || workMeasured }
     var workMeasured = false
     /// Phone minutes that surely happened while a Mac was also counting (see `ScreenOverlap`). Counted once.
     /// Nil until the Macs' minute bitmap arrives. Optional, so days saved before it existed still load.
@@ -115,10 +117,6 @@ enum PhoneScreenGroup {
             if let minutes = Int(minutes) { times[minutes] = Date(timeIntervalSince1970: seconds) }
         }
         return times
-    }
-
-    static var hasSelection: Bool {
-        PenaltyGroup.defaults.data(forKey: selectionKey) != nil
     }
 
     #if os(iOS)

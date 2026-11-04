@@ -1,6 +1,6 @@
 import Foundation
 
-/// The seven stat levels (0...350) that the status radar draws, and the overall level (0...146) they add up to.
+/// The seven stat levels (0...350) on the Status page, and the overall level (0...146) they add up to.
 /// Each stat comes from its algorithm. A target with no data drops out and the rest share its weight;
 /// a stat with no data at all scores 0. Nothing falls back to XP points.
 struct StatLevelSet: Equatable {
@@ -35,23 +35,10 @@ struct StatLevelSet: Equatable {
     }
 
     /// 0...1: how far the stats are from this overall level to the next one, for the progress bar.
-    var overallProgress: Double {
-        if isAllMax { return 1 }
-        return min(max(Double(Self.overallMaxLevel) * overallFraction - Double(overallLevel), 0), 1)
-    }
 
     /// Stat levels still needed for the next overall level, spread across any stats.
-    var statLevelsToNextOverall: Int {
-        guard !isAllMax else { return 0 }
-        let perLevel = Double(Stat.allCases.count * StatLevel.maxLevel) / Double(Self.overallMaxLevel)
-        let needed = Double(overallLevel + 1) * perLevel - overallFraction * Double(Stat.allCases.count * StatLevel.maxLevel)
-        return max(1, Int(needed.rounded(.up)))
-    }
 
     /// Radar order follows `Stat.allCases`, the same order the XP stats used.
-    var radar: [(label: String, value: Double)] {
-        Stat.allCases.map { (label: $0.rawValue, value: Double(self[$0])) }
-    }
 
     /// Everything the phone reads for the seven stats. `inputs` holds the histories (`StatInputLoader`): Hevy workouts
     /// for STR and the AGI tests, WHOOP and Apple Health recovery days for REC, and the runs, swims, VO₂ max, and
@@ -102,9 +89,6 @@ struct StatLevelSet: Equatable {
         let none = compute(codeforces: .disconnected(reason: "TODO"), financeMonths: [], now: now)
         if let stat = Stat.allCases.first(where: { none[$0] != 0 }) {
             errors.append("with no data every stat should be 0, got \(stat.rawValue) \(none[stat])")
-        }
-        if none.radar.map(\.label) != Stat.allCases.map(\.rawValue) {
-            errors.append("radar should list every stat in order")
         }
 
         var rated = CodeforcesReading.disconnected(reason: "")
@@ -172,14 +156,14 @@ struct StatLevelSet: Equatable {
         }
         var almost = uniform(StatLevel.maxLevel)
         almost.levels[.FIN] = StatLevel.maxLevel - 1
-        if almost.overallLevel != Self.overallMaxLevel - 1 || almost.statLevelsToNextOverall != 1 {
-            errors.append("one stat at 349 should stop at overall 145 and need 1 stat level, got \(almost.overallLevel) \(almost.statLevelsToNextOverall)")
+        if almost.overallLevel != Self.overallMaxLevel - 1 {
+            errors.append("one stat at 349 should stop at overall 145, got \(almost.overallLevel)")
         }
         // One stat at max and the rest at 0 is 1/7 of the way: overall 20.
         var single = uniform(0)
         single.levels[.STR] = StatLevel.maxLevel
-        if single.overallLevel != 20 || single.overallProgress <= 0 || single.overallProgress >= 1 {
-            errors.append("one maxed stat should be overall 20 with partial progress, got \(single.overallLevel) \(single.overallProgress)")
+        if single.overallLevel != 20 {
+            errors.append("one maxed stat should be overall 20, got \(single.overallLevel)")
         }
         if single.overallXP != StatLevel.maxLevel || uniform(StatLevel.maxLevel).overallXP != Self.overallMaxXP || Self.overallMaxXP != 2_450 {
             errors.append("overall XP should add the stat levels up to 2450, got \(single.overallXP) \(uniform(StatLevel.maxLevel).overallXP)")

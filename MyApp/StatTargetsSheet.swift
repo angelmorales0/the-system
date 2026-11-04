@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Opens from a stat on the status radar. Lists the stat's max level targets; each one can be removed or added back.
+/// Opens from a stat on the Status page. Lists the stat's max level targets; each one can be removed or added back.
 /// On STR, the player can also add an own goal (an exercise and a target) and delete it again.
 struct StatTargetsSheet: View {
     let stat: Stat

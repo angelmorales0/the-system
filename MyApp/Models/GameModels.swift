@@ -1,6 +1,6 @@
 import Foundation
 
-/// Seven persistent stats. FIN is quest XP plus a small Mercury projection, not a balance.
+/// Seven persistent stats. Each level comes from real results (see `StatLevelSet`), never from clearing quests.
 enum Stat: String, Codable, CaseIterable, Equatable {
     case STR, END, INT, AGI, FOC, REC, FIN
 }
@@ -246,6 +246,11 @@ struct QuestBundle: Codable, Equatable {
         quests.filter { $0.kind != .optional }
     }
 
+    /// Extra quests of the day. Missing one has no cost.
+    var optionalQuests: [Quest] {
+        quests.filter { $0.kind == .optional }
+    }
+
     var warningCopy: String {
         let text = warnings.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return text.isEmpty ? Self.defaultWarning : text
@@ -317,11 +322,6 @@ struct PlayerState: Equatable {
         fullRecoveryBank: 7,
         penaltyOpen: false
     )
-
-    var statusDisplayName: String {
-        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (trimmed.isEmpty ? "Angel" : trimmed).uppercased()
-    }
 
     /// The bank has no cap.
     mutating func depositRecoveryToken() {

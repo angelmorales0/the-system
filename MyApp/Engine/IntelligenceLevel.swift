@@ -1,8 +1,5 @@
 import Foundation
 
-/// The backend's `GET /v1/integrations/codeforces/snapshot` reply. The backend reads the
-/// official Codeforces API (user.info and user.rating); the phone never calls Codeforces.
-/// `checkedAt` is ISO 8601 with `Z`.
 /// Codeforces gives one rating to an account. A contest counts for the language of most of the player's submissions in it.
 nonisolated enum CodeforcesLanguage: String, Codable, CaseIterable, Identifiable {
     case cpp = "C++"
@@ -35,6 +32,7 @@ nonisolated struct CodeforcesContest: Codable, Equatable {
     var language: CodeforcesLanguage? = nil
 }
 
+/// One read of the official Codeforces API (user.info and user.rating). `checkedAt` is ISO 8601 with `Z`.
 nonisolated struct CodeforcesReading: Codable, Equatable {
     var available: Bool
     var configured: Bool

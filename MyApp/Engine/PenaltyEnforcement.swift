@@ -11,7 +11,6 @@ import ManagedSettings
 enum PenaltyGroup {
     static let suiteName = "group.com.angelmorales.thesystem"
     static let penaltyActiveKey = "penaltyActive"
-    static let selectionKey = "familyActivitySelection"
     /// Apps that stay open during a penalty: The System, Strava, and Spotify, picked by the player.
     static let allowedSelectionKey = "penaltyAllowedSelection"
     /// Apps that leave the Home Screen during a penalty. Allowed apps are never hidden.
