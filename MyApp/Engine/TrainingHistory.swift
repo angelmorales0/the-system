@@ -25,6 +25,8 @@ enum TrainingHistory {
     static let runKmPer7Days = 50
     static let runStepKm = 5
     static let maxRunKmPerDay = 20
+    /// A leg day runs one 10K at most: heavy squats and deadlifts are barred on a two-10K day, so more would cost the lift.
+    static let legDayMaxRunKm = 10
     /// Km a "No gym today" day adds on top of the window's runs. They never count toward the 50 km window:
     /// this much is taken off such a day when the window is built.
     static let noGymAddedKm = 10
@@ -67,7 +69,8 @@ enum TrainingHistory {
             activities: activities.activities,
             whoop: recovery.records,
             goals: context["goals"] ?? .object([:]),
-            questDays: context["recentDays"]?.arrayValue ?? []
+            questDays: context["recentDays"]?.arrayValue ?? [],
+            legDay: context["split"]?["today"]?["lowerBody"].truthy == true && context["constraints"]?["noGymToday"].truthy != true
         ).objectValue ?? [:]
         history["sources"] = .object(["hevy": .string(workouts.status), "strava": .string(activities.status), "whoop": .string(recovery.status)])
         let result = JSONValue.object(history)
@@ -78,7 +81,7 @@ enum TrainingHistory {
     // MARK: - Summaries (pure)
 
     static func summarize(today: String, zone: TimeZone, workouts: [HevyWorkout], activities: [JSONValue], whoop: [String: [JSONValue]],
-                          goals: JSONValue, questDays: [JSONValue]) -> JSONValue {
+                          goals: JSONValue, questDays: [JSONValue], legDay: Bool = false) -> JSONValue {
         let lifts = liftSummaries(workouts, today: today, zone: zone)
         let sessions = liftSessions(workouts, lifts: lifts, today: today, zone: zone)
         let runs = runList(activities, today: today, zone: zone)
@@ -94,7 +97,7 @@ enum TrainingHistory {
             "runs": .array(runs),
             "recovery": .array(recovery),
             "week": weekSummary(runs: runs, sessions: sessions, questDays: questDays, recovery: recovery, today: today),
-            "runWindow": runWindow(runs, goalKm: goalKm, noGymDays: Set(questDays.filter { $0["noGym"].truthy }.compactMap { $0["dayKey"]?.stringValue })),
+            "runWindow": runWindow(runs, goalKm: goalKm, noGymDays: Set(questDays.filter { $0["noGym"].truthy }.compactMap { $0["dayKey"]?.stringValue }), legDay: legDay),
             "fatigue": fatigueSummary(lifts.json, recovery: recovery),
             "limits": .object([
                 "heavyLowerMaxPer7Days": .number(Double(heavyLowerMaxPer7Days)),
@@ -447,12 +450,13 @@ enum TrainingHistory {
 
     /// What today must run so the 7 days ending today hold `goalKm`. The last 6 days count; today's runs fill the rest.
     /// `noGymDays` are quest days that ran an added 10K: its km are taken off (`noGymAddedKm`).
-    static func runWindow(_ runs: [JSONValue], goalKm: Int, noGymDays: Set<String> = []) -> JSONValue {
+    /// `legDay` holds today to `legDayMaxRunKm`; the km it leaves out show as `shortfallKm`.
+    static func runWindow(_ runs: [JSONValue], goalKm: Int, noGymDays: Set<String> = [], legDay: Bool = false) -> JSONValue {
         let prior = windowKm(runs, noGymDays: noGymDays)
         let needed = max(0, Double(goalKm) - prior)
         let hundredths = Int(needed * 100)
         let steps = (hundredths + runStepKm * 100 - 1) / (runStepKm * 100)
-        let planned = min(maxRunKmPerDay, steps * runStepKm)
+        let planned = min(legDay ? legDayMaxRunKm : maxRunKmPerDay, steps * runStepKm)
         return .object([
             "goalKm": .number(Double(goalKm)),
             "kmLast6Days": .number(prior),
@@ -649,6 +653,10 @@ enum TrainingHistory {
         }
         if runWindow([], goalKm: 50)["runsToday"] != .array([.string("10K"), .string("10K")]) {
             errors.append("starting from zero should give the most one day allows")
+        }
+        let legDay = runWindow([tenK(1, 10), tenK(2, 10)], goalKm: 50, legDay: true)
+        if legDay["plannedKmToday"]?.intValue != 10 || legDay["runsToday"] != .array([.string("10K")]) || legDay["shortfallKm"]?.doubleValue != 20 {
+            errors.append("a leg day should run one 10K, got \(legDay.sortedString())")
         }
         let week = history["week"] ?? .null
         // Load: 25.03 km this week against 9 km in the previous three weeks (3 km per week), one session against none, strain 9.3 against none.
