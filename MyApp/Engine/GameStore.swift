@@ -52,7 +52,7 @@ final class GameStore: ObservableObject {
             + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
             + NoGymDayRules.check() + PenaltyDecay.check() + RestRules.check() + RestScore.check() + SecretStore.check() + SecretSeed.check() + ConnectionStatusStore.check()
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MercuryClient.check()
-            + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check() + WhoopStressClient.check()
+            + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check()
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
@@ -420,7 +420,6 @@ final class GameStore: ObservableObject {
             let remote = await IntegrationClient.load(dayKey: dayKey)
             let focusDays = FocusTracking.loadDays()
             let macScreen = await MacScreenClient.load(dayKey: dayKey)
-            let whoopStress = await WhoopStressClient.stress(dayKey: dayKey)
             guard let self else { return }
             self.refreshingIntegrations = false
             var next = self.snapshot
@@ -444,7 +443,7 @@ final class GameStore: ObservableObject {
             // After today's readiness, so a red recovery hits HP and sets the regeneration speed.
             next.applyHitPoints(integrations: day, maxHP: HitPoints.maxHP(for: self.statLevels), now: now)
             // After today's screen time too, so only the new minutes add fatigue.
-            next.applyFatigue(integrations: day, whoopStress: whoopStress, now: now)
+            next.applyFatigue(integrations: day, now: now)
             self.snapshot = next
             self.integrations = day
             if rebuilt {

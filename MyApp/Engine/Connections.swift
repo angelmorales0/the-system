@@ -48,9 +48,7 @@ nonisolated enum Connection: String, CaseIterable, Identifiable {
         for field in typedSecrets { SecretStore.delete(field.item) }
         switch self {
         case .strava: SecretStore.delete(.stravaTokens)
-        case .whoop:
-            SecretStore.delete(.whoopTokens)
-            WhoopStressClient.signOut()
+        case .whoop: SecretStore.delete(.whoopTokens)
         case .codeforces: CodeforcesSettings.handle = nil
         case .mercury: MercuryClient.deleteLedger()
         default: break
