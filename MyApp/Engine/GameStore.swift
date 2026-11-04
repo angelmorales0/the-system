@@ -130,6 +130,20 @@ final class GameStore: ObservableObject {
         enforcePenalty()
     }
 
+    /// From Settings: spends one of this week's free rest days on today.
+    func useRestDay(now: Date = .now) {
+        var next = snapshot
+        let message = next.useRestDay(catalog: catalog, now: now)
+        let used = next.restDayKeys.count != snapshot.restDayKeys.count
+        snapshot = next
+        verificationNote = message
+        clock = now
+        cue(used ? .fullRecovery : .questFail)
+        if used { runningTimersRemoveMissing() }
+        persist()
+        enforcePenalty()
+    }
+
     /// From the penalty screen: one token ends the open penalty. The cleared cue plays from the flag change.
     func clearPenaltyWithFullRecovery(now: Date = .now) {
         var next = snapshot

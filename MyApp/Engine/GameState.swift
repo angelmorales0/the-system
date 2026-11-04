@@ -43,6 +43,8 @@ struct GameSnapshot: Codable, Equatable {
     var plannerRestDayKey: String?
     /// The planner's one sentence on why that day rests. The Rest Day shows it as its narrative.
     var plannerRestReason: String?
+    /// Quest days the player spent a rest day on, oldest first. `RestDays` sets how many a week may hold.
+    var restDayKeys: [String] = []
     /// Earned on perfect days. Spent in `Shop`.
     var gold: Int = 0
     /// Potions used, oldest first. Prices, cooldowns, and stat excuses read this.
@@ -171,7 +173,28 @@ struct GameSnapshot: Codable, Equatable {
         fullRecoveryDayKey = today
         generatedBundle = nil
         rebuildBundle(catalog: catalog, now: now)
-        // A row already finished keeps its place and its status; one the rest day does not have goes before Stretching.
+        keepFinished(done)
+        return "Full Recovery day assigned. A missed training set will not open a penalty."
+    }
+
+    /// Spends one of this week's rest days on today. Finished work stays done, and an unused rest day ends with its week.
+    mutating func useRestDay(catalog: FallbackCatalog, now: Date) -> String {
+        let today = QuestDay.key(for: now)
+        guard !player.penaltyOpen else { return "Clear the penalty first." }
+        if signals.spendingFullRecovery || fullRecoveryDayKey == today || (bundle.dayKey == today && bundle.mode == .fullRecovery) {
+            return "Today is already a rest day."
+        }
+        guard restDaysLeft(on: today) > 0 else { return "No rest days left this week." }
+        let done = bundle.dayKey == today ? bundle.quests.filter { $0.status == .completed } : []
+        restDayKeys = Array((restDayKeys + [today]).suffix(RestDays.keepDays))
+        generatedBundle = nil
+        rebuildBundle(catalog: catalog, now: now)
+        keepFinished(done)
+        return "Rest day used. \(restDaysLeft(on: today)) left this week."
+    }
+
+    /// A row already finished keeps its place and its status; one the rest day does not have goes before Stretching.
+    private mutating func keepFinished(_ done: [Quest]) {
         for quest in done {
             if let index = bundle.quests.firstIndex(where: { $0.id == quest.id }) {
                 bundle.quests[index] = quest
@@ -182,7 +205,6 @@ struct GameSnapshot: Codable, Equatable {
         }
         let ids = Set(bundle.quests.map(\.id))
         runningTimers.removeAll { !ids.contains($0.questId) }
-        return "Full Recovery day assigned. A missed training set will not open a penalty."
     }
 
     /// A token an older build queued for tomorrow from today's settings goes to today instead.
@@ -299,18 +321,8 @@ struct GameSnapshot: Codable, Equatable {
         )
     }
 
-    /// Header of the free weekly rest day. A token day keeps the catalog's "Full Recovery Day".
+    /// Header of a free rest day. A token day keeps the catalog's "Full Recovery Day".
     static let restDayHeader = "Rest Day"
-    /// Narrative of the forced seventh day, and of a picked day with no reason on record.
-    static let forcedRestNarrative = "The seventh day. Training is waived; the body does the work."
-    static let pickedRestNarrative = "The System calls a rest. Training is waived; the body does the work."
-
-    /// What the Rest Day says under its header: the planner's reason on its picked day, else the fixed line.
-    func restDayNarrative(on dayKey: String) -> String {
-        guard plannerRestDayKey == dayKey else { return Self.forcedRestNarrative }
-        let reason = plannerRestReason?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return reason.isEmpty ? Self.pickedRestNarrative : reason
-    }
 
     private func recordedModes() -> [String: QuestMode] {
         Dictionary(questHistory.map { ($0.dayKey, $0.mode) }, uniquingKeysWith: { first, _ in first })
@@ -327,27 +339,26 @@ struct GameSnapshot: Codable, Equatable {
         return count
     }
 
-    /// A Full Recovery day (a token, a forced rest, or the planner's pick) sits in the six quest days before `dayKey`.
-    func restTaken(before dayKey: String) -> Bool {
-        let modes = recordedModes()
-        return (1..<ModePicker.restEveryDays).contains { modes[QuestDay.key(byAddingDays: -$0, to: dayKey)] == .fullRecovery }
-    }
-
-    /// Today rests: the planner picked it, or six quest days trained in a row and the seventh is forced.
-    /// An open penalty is served first: no rest day while one is open.
+    /// Today rests because the player spent a rest day on it. An open penalty is served first.
     func restDue(on dayKey: String) -> Bool {
-        guard !player.penaltyOpen else { return false }
-        return plannerRestDayKey == dayKey || trainedDaysInARow(before: dayKey) >= ModePicker.restEveryDays - 1
+        !player.penaltyOpen && restDayKeys.contains(dayKey)
     }
 
-    /// The planner may make `dayKey` the rest day: no penalty, no rest in the last six days, not already forced,
-    /// and at least `ModePicker.restMinTrainedDays` trained days behind it, so two rests never touch.
-    func restAvailable(on dayKey: String) -> Bool {
-        !player.penaltyOpen && !restDue(on: dayKey) && !restTaken(before: dayKey)
-            && trainedDaysInARow(before: dayKey) >= ModePicker.restMinTrainedDays
+    /// The player spends rest days, so the planner never makes a day rest.
+    func restAvailable(on dayKey: String) -> Bool { false }
+
+    /// Rest days spent in the quest week that holds `dayKey`.
+    func restDaysUsed(on dayKey: String) -> Int {
+        let week = RestDays.weekKey(of: dayKey)
+        return restDayKeys.filter { RestDays.weekKey(of: $0) == week }.count
     }
 
-    /// Today is the free weekly rest day, not a token day.
+    /// Rest days still open in the quest week that holds `dayKey`.
+    func restDaysLeft(on dayKey: String) -> Int {
+        max(RestDays.allowance(on: dayKey) - restDaysUsed(on: dayKey), 0)
+    }
+
+    /// Today is a free rest day, not a token day.
     var isRestDay: Bool {
         bundle.mode == .fullRecovery && !signals.spendingFullRecovery && fullRecoveryDayKey != bundle.dayKey && restDue(on: bundle.dayKey)
     }
@@ -475,7 +486,7 @@ struct GameSnapshot: Codable, Equatable {
         var day = TrainingDay.cappingWorkouts(noGymDayKey == bundle.dayKey ? NoGymDay.cardioOnly(bundle, now: now) : bundle)
         if day.mode == .fullRecovery, !signals.spendingFullRecovery, fullRecoveryDayKey != day.dayKey, restDue(on: day.dayKey) {
             day.headerLine = Self.restDayHeader
-            day.narrative = restDayNarrative(on: day.dayKey)
+            day.narrative = ""
         }
         return PenaltyQuests.ensure(
             in: DailyStretch.ensure(in: ScreenTime.ensure(in: day, now: now), now: now),
@@ -523,7 +534,7 @@ extension GameSnapshot {
         case finance
         case fullRecoveryDayKey, queuedFullRecoveryDayKey
         case hiddenUnlocks
-        case noGymDayKey, plannerRestDayKey, plannerRestReason
+        case noGymDayKey, plannerRestDayKey, plannerRestReason, restDayKeys
         case questHistory, screenTime
         case gold, potionLog, lastGoldReward
         case hitPoints, fatigue
@@ -546,6 +557,7 @@ extension GameSnapshot {
         noGymDayKey = try container.decodeIfPresent(String.self, forKey: .noGymDayKey)
         plannerRestDayKey = try container.decodeIfPresent(String.self, forKey: .plannerRestDayKey)
         plannerRestReason = try container.decodeIfPresent(String.self, forKey: .plannerRestReason)
+        restDayKeys = try container.decodeIfPresent([String].self, forKey: .restDayKeys) ?? []
         generationAttemptDayKey = try container.decodeIfPresent(String.self, forKey: .generationAttemptDayKey)
         generatedBundle = try container.decodeIfPresent(QuestBundle.self, forKey: .generatedBundle)
         questHistory = try container.decodeIfPresent([QuestDayRecord].self, forKey: .questHistory) ?? []
@@ -574,6 +586,7 @@ extension GameSnapshot {
         try container.encodeIfPresent(noGymDayKey, forKey: .noGymDayKey)
         try container.encodeIfPresent(plannerRestDayKey, forKey: .plannerRestDayKey)
         try container.encodeIfPresent(plannerRestReason, forKey: .plannerRestReason)
+        try container.encode(restDayKeys, forKey: .restDayKeys)
         try container.encode(questHistory, forKey: .questHistory)
         try container.encodeIfPresent(screenTime, forKey: .screenTime)
         try container.encodeIfPresent(generationAttemptDayKey, forKey: .generationAttemptDayKey)

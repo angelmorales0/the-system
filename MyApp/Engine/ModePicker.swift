@@ -4,7 +4,7 @@ struct ModePickerInput: Equatable {
     var spendingFullRecovery: Bool
     var readinessBand: ReadinessBand
     var sleepPerformance: Int?
-    /// True when today rests (`GameSnapshot.restDue`): the planner picked it, or the seventh day is forced.
+    /// True when the player spent a free rest day on today (`GameSnapshot.restDue`).
     var restDue = false
 }
 
@@ -17,18 +17,14 @@ struct ModeDecision: Equatable {
 }
 
 /// Rules-only day mode. The LLM is not allowed to override this once it exists.
-/// Every day is Performance Training unless a Full Recovery token is spent or the weekly rest is due:
-/// one Full Recovery day in every seven quest days, free, with no penalty. The planner picks the day
-/// (`GameSnapshot.restAvailable`); after six trained days in a row the seventh is forced. Readiness and sleep
-/// size the Training day through `trainingBand`; they never pick a different mode.
+/// Every day is Performance Training unless the player spends a Full Recovery token or a free rest day
+/// (`RestDays`). Readiness and sleep size the Training day through `trainingBand`; they never pick a different mode.
 /// An open penalty does not pick a mode; `PenaltyQuests` adds its rows to the day.
 enum ModePicker {
     /// Sleep performance under this drops the training band one step.
     static let lowSleepPerformance = 60
-    /// At least one rest day in every run of this many quest days.
+    /// The run window: today and the six quest days before it.
     static let restEveryDays = 7
-    /// The planner may rest only after this many trained days in a row, so two rests never touch.
-    static let restMinTrainedDays = 2
     static let weeklyRestReason = "weekly_rest"
 
     static func decide(_ input: ModePickerInput) -> ModeDecision {
@@ -98,7 +94,32 @@ enum ModePicker {
     }
 }
 
-/// The weekly rest day and the run rest, played out over real quest days.
+/// Free rest days. Each Monday-to-Sunday quest week rolls 1 or 2, and the player spends them on any day that week.
+/// The same week always rolls the same number, so a reload cannot reroll it. An unused rest day ends with its week.
+enum RestDays {
+    static let allowanceRange = 1...2
+    /// Rest days kept on record, more than the longest lookup needs.
+    static let keepDays = 40
+
+    /// The Monday of the quest week that holds `dayKey`.
+    static func weekKey(of dayKey: String) -> String {
+        guard let date = QuestDay.date(from: dayKey) else { return dayKey }
+        let weekday = QuestDay.calendar.component(.weekday, from: date)  // Sunday is 1.
+        return QuestDay.key(byAddingDays: -((weekday + 5) % 7), to: dayKey)
+    }
+
+    static func allowance(on dayKey: String) -> Int {
+        // FNV-1a: stable across launches, unlike `Hasher`. Its low bits follow the digits, so the roll reads the high bits.
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in "rest:\(weekKey(of: dayKey))".utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x100_0000_01b3
+        }
+        return allowanceRange.lowerBound + Int((hash >> 40) % UInt64(allowanceRange.count))
+    }
+}
+
+/// The weekly rest days and the run rest, played out over real quest days.
 enum RestRules {
     static func check() -> [String] {
         var errors: [String] = []
@@ -112,87 +133,83 @@ enum RestRules {
             }
         }
 
-        // Six trained days, then the seventh rests: Full Recovery, "Rest Day", no token spent, no penalty, no gold.
+        // Weeks run Monday to Sunday, and each one rolls 1 or 2 rest days for good.
+        if RestDays.weekKey(of: "2026-10-05") != "2026-10-05" || RestDays.weekKey(of: "2026-10-11") != "2026-10-05" || RestDays.weekKey(of: "2026-10-12") != "2026-10-12" {
+            errors.append("a quest week should run Monday to Sunday")
+        }
+        let weeks = (0..<52).map { QuestDay.key(byAddingDays: $0 * 7, to: "2026-10-05") }
+        let rolls = weeks.map { RestDays.allowance(on: $0) }
+        if rolls != weeks.map({ RestDays.allowance(on: QuestDay.key(byAddingDays: 6, to: $0)) }) {
+            errors.append("every day of a week should roll the same number")
+        }
+        if Set(rolls) != [1, 2] || !(15...37).contains(rolls.filter { $0 == 2 }.count) {
+            errors.append("weeks should roll a mix of 1 and 2 rest days, got \(rolls)")
+        }
+
+        // Nothing rests by itself: seven days in a row train.
         var week = GameSnapshot.fresh(catalog: catalog, now: dayOne)
         let bank = week.player.fullRecoveryBank
-        for offset in 0..<6 {
+        for offset in 0..<7 {
             if week.bundle.mode != .performanceTraining { errors.append("day \(offset + 1) should train, got \(week.bundle.mode)") }
             finishRequired(&week, now: day(offset))
             week.refreshIfNeeded(catalog: catalog, now: day(offset + 1))
         }
-        if week.bundle.mode != .fullRecovery || week.bundle.headerLine != GameSnapshot.restDayHeader || week.player.fullRecoveryBank != bank {
-            errors.append("the seventh day should be a free Rest Day, got \(week.bundle.mode) \(week.bundle.headerLine) bank \(week.player.fullRecoveryBank - bank)")
+        if week.restAvailable(on: week.bundle.dayKey) { errors.append("the planner should not make a day rest") }
+
+        // A spent rest day: Full Recovery, "Rest Day", no token spent, no run, no lifts, no penalty, no gold.
+        var spent = GameSnapshot.fresh(catalog: catalog, now: dayOne)
+        let today = spent.bundle.dayKey
+        let allowance = RestDays.allowance(on: today)
+        let liftId = spent.bundle.quests.first { TrainingDay.isStrength($0) && $0.id != DailyStretch.questId }?.id
+        if let liftId, let index = spent.bundle.quests.firstIndex(where: { $0.id == liftId }) {
+            spent.bundle.quests[index].status = .completed
         }
-        if week.bundle.quests.contains(where: { TrainingDay.isRaceRun($0) || TrainingDay.isStrength($0) && $0.id != DailyStretch.questId }) {
-            errors.append("a Rest Day should hold no run and no lifts, got \(week.bundle.quests.map(\.title))")
+        _ = spent.useRestDay(catalog: catalog, now: dayOne)
+        if spent.bundle.mode != .fullRecovery || spent.bundle.headerLine != GameSnapshot.restDayHeader || spent.player.fullRecoveryBank != bank || !spent.isRestDay {
+            errors.append("a spent rest day should be a free Rest Day, got \(spent.bundle.mode) \(spent.bundle.headerLine)")
         }
-        if week.bundle.narrative != GameSnapshot.forcedRestNarrative { errors.append("the forced seventh day should show the seventh-day line, got \(week.bundle.narrative)") }
-        if week.spendFullRecovery(catalog: catalog, now: day(6)).contains("tomorrow") || week.player.fullRecoveryBank != bank {
+        if spent.bundle.quests.contains(where: { TrainingDay.isRaceRun($0) || (TrainingDay.isStrength($0) && $0.id != DailyStretch.questId && $0.id != liftId) }) {
+            errors.append("a Rest Day should hold no open run and no open lifts, got \(spent.bundle.quests.map(\.title))")
+        }
+        if let liftId, spent.bundle.quests.first(where: { $0.id == liftId })?.status != .completed {
+            errors.append("a rest day should keep finished work")
+        }
+        if spent.restDaysLeft(on: today) != allowance - 1 || !spent.useRestDay(catalog: catalog, now: dayOne).contains("already") || spent.restDaysUsed(on: today) != 1 {
+            errors.append("a second rest on the same day should change nothing")
+        }
+        if spent.spendFullRecovery(catalog: catalog, now: dayOne).contains("tomorrow") || spent.player.fullRecoveryBank != bank {
             errors.append("a token on a Rest Day should stay in the bank")
         }
-        let gold = week.gold
-        week.refreshIfNeeded(catalog: catalog, now: day(7))
-        if week.player.penaltyOpen || week.gold != gold || week.bundle.mode != .performanceTraining {
-            errors.append("the day after a Rest Day should train again with no penalty, got penalty \(week.player.penaltyOpen) mode \(week.bundle.mode)")
+        let gold = spent.gold
+        spent.refreshIfNeeded(catalog: catalog, now: day(1))
+        if spent.player.penaltyOpen || spent.gold != gold || spent.bundle.mode != .performanceTraining {
+            errors.append("the day after a Rest Day should train again with no penalty, got penalty \(spent.player.penaltyOpen) mode \(spent.bundle.mode)")
         }
 
-        // The planner picks the rest day: not on day 1 or 2, open from day 3, closed for six days after it.
-        var picked = GameSnapshot.fresh(catalog: catalog, now: dayOne)
-        if picked.restAvailable(on: picked.bundle.dayKey) { errors.append("the planner should not rest on day 1") }
-        for offset in 0..<2 {
-            finishRequired(&picked, now: day(offset))
-            picked.refreshIfNeeded(catalog: catalog, now: day(offset + 1))
+        // The week's rest days run out, and the next week starts fresh with no carry-over.
+        var used = GameSnapshot.fresh(catalog: catalog, now: dayOne)
+        for offset in 0..<allowance {
+            used.refreshIfNeeded(catalog: catalog, now: day(offset))
+            _ = used.useRestDay(catalog: catalog, now: day(offset))
+            if used.bundle.mode != .fullRecovery { errors.append("rest day \(offset + 1) of \(allowance) should rest") }
         }
-        if !picked.restAvailable(on: picked.bundle.dayKey) || picked.trainedDaysInARow(before: picked.bundle.dayKey) != 2 {
-            errors.append("after two trained days the planner may rest, got \(picked.trainedDaysInARow(before: picked.bundle.dayKey)) days")
+        let empty = day(allowance)
+        used.refreshIfNeeded(catalog: catalog, now: empty)
+        if !used.useRestDay(catalog: catalog, now: empty).contains("No rest days") || used.bundle.mode != .performanceTraining {
+            errors.append("a week with no rest days left should keep training")
         }
-        picked.plannerRestDayKey = picked.bundle.dayKey
-        picked.rebuildBundle(catalog: catalog, now: day(2))
-        if picked.bundle.mode != .fullRecovery || picked.bundle.headerLine != GameSnapshot.restDayHeader {
-            errors.append("the planner's rest day should be a Rest Day, got \(picked.bundle.mode) \(picked.bundle.headerLine)")
+        let nextMonday = day(7)
+        used.refreshIfNeeded(catalog: catalog, now: nextMonday)
+        if used.restDaysUsed(on: used.bundle.dayKey) != 0 || used.restDaysLeft(on: used.bundle.dayKey) != RestDays.allowance(on: used.bundle.dayKey) {
+            errors.append("a new week should start with its own rest days")
         }
-        // The Rest Day says why: the planner's reason, the fixed line when it gave none, the seventh-day line when forced.
-        if picked.bundle.narrative != GameSnapshot.pickedRestNarrative { errors.append("a picked rest with no reason should show the fixed line, got \(picked.bundle.narrative)") }
-        picked.plannerRestReason = "HRV 18% under baseline for three days. Rest to protect the next block."
-        picked.rebuildBundle(catalog: catalog, now: day(2))
-        if picked.bundle.narrative != picked.plannerRestReason || !picked.isRestDay { errors.append("a picked rest should show the planner's reason, got \(picked.bundle.narrative)") }
-
-        picked.refreshIfNeeded(catalog: catalog, now: day(3))
-        for offset in 3..<9 {
-            if picked.bundle.mode != .performanceTraining { errors.append("day \(offset + 1) after a picked rest should train") }
-            if picked.restAvailable(on: picked.bundle.dayKey) || !picked.restTaken(before: picked.bundle.dayKey) {
-                errors.append("rest should not be open again while the pick sits in the last six days (day \(offset + 1))")
-            }
-            finishRequired(&picked, now: day(offset))
-            picked.refreshIfNeeded(catalog: catalog, now: day(offset + 1))
-        }
-        // Day 10: the pick on day 3 left the six-day lookback, six trained days behind: forced.
-        if picked.bundle.mode != .fullRecovery { errors.append("six trained days after the picked rest should force the next, got \(picked.bundle.mode)") }
-
-        // A token spent mid-week counts as the rest, so the forced day moves out a week.
-        var token = GameSnapshot.fresh(catalog: catalog, now: dayOne)
-        token.player.fullRecoveryBank = 1
-        for offset in 0..<3 {
-            finishRequired(&token, now: day(offset))
-            token.refreshIfNeeded(catalog: catalog, now: day(offset + 1))
-        }
-        _ = token.spendFullRecovery(catalog: catalog, now: day(3))
-        if token.bundle.mode != .fullRecovery { errors.append("a quiet day 4 should take the token") }
-        for offset in 3..<10 {
-            finishRequired(&token, now: day(offset))
-            token.refreshIfNeeded(catalog: catalog, now: day(offset + 1))
-            if (4...9).contains(offset + 1), token.bundle.mode != .performanceTraining { errors.append("a token on day 4 should push the rest day to day 11, day \(offset + 2) rested") }
-        }
-        if token.bundle.mode != .fullRecovery { errors.append("the rest should fall seven days after the token day, got \(token.bundle.mode) on day 11") }
 
         // An open penalty is served first.
         var owed = GameSnapshot.fresh(catalog: catalog, now: dayOne)
-        for offset in 0..<6 {
-            finishRequired(&owed, now: day(offset))
-            owed.refreshIfNeeded(catalog: catalog, now: day(offset + 1))
-        }
         owed.player.penaltyOpen = true
-        if owed.restDue(on: QuestDay.key(for: day(6))) { errors.append("a penalty should be served before the rest day") }
+        if !owed.useRestDay(catalog: catalog, now: dayOne).contains("penalty") || owed.restDaysUsed(on: owed.bundle.dayKey) != 0 {
+            errors.append("a penalty should be served before a rest day")
+        }
 
         // Run rest offline: 50 km in the last six quest days drops today's run rows and keeps the lifts.
         var ran = GameSnapshot.fresh(catalog: catalog, now: dayOne)

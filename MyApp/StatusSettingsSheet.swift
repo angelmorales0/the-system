@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// Opens from the gear on the STATUS window: Full Recovery, the No Gym and sound checkboxes, the other settings screens,
+/// Opens from the gear on the STATUS window: rest days, Full Recovery, the No Gym and sound checkboxes, the other settings screens,
 /// and every connection with its checkbox. The shop opens from the STATUS window.
 struct StatusSettingsSheet: View {
     @EnvironmentObject private var store: GameStore
     @State private var confirmRecovery = false
+    @State private var confirmRest = false
     @State private var showShields = false
     @State private var showScreenTime = false
     @State private var showAppIcon = false
@@ -13,6 +14,7 @@ struct StatusSettingsSheet: View {
     var body: some View {
         QuestSheet(title: "Settings") {
             VStack(spacing: 20) {
+                restDayButton
                 Button {
                     confirmRecovery = true
                 } label: {
@@ -70,6 +72,12 @@ struct StatusSettingsSheet: View {
         } message: {
             Text("Today becomes a rest day. Finished quests stay done. Missed training does not open a penalty today.")
         }
+        .confirmationDialog("Use one rest day?", isPresented: $confirmRest, titleVisibility: .visible) {
+            Button("Use rest day") { store.useRestDay() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Today becomes a rest day. Finished quests stay done.")
+        }
         .sheet(isPresented: $showShields, onDismiss: { SystemSound.systemClose.play() }) {
             PenaltyTargetsSheet()
         }
@@ -79,6 +87,38 @@ struct StatusSettingsSheet: View {
         .sheet(isPresented: $showAppIcon, onDismiss: { SystemSound.systemClose.play() }) {
             AppIconSheet()
         }
+    }
+
+    /// This week's free rest days: the ones left, out of the 1 or 2 the week rolled.
+    private var restDayButton: some View {
+        let day = store.snapshot.bundle.dayKey
+        let left = store.snapshot.restDaysLeft(on: day)
+        return Button {
+            confirmRest = true
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("REST DAYS")
+                        .font(.caption.weight(.semibold))
+                        .tracking(1.1)
+                        .foregroundStyle(SystemTheme.muted)
+                    Text("\(left)/\(RestDays.allowance(on: day))")
+                        .font(.title2.weight(.bold))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                }
+                Spacer()
+                Image(systemName: "moon.fill")
+                    .font(.title2)
+                    .foregroundStyle(SystemTheme.cyan)
+                    .shadow(color: SystemTheme.cyan.opacity(0.35), radius: 4)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(left == 0 || store.snapshot.bundle.mode == .fullRecovery || store.player.penaltyOpen)
+        .opacity(left == 0 || store.snapshot.bundle.mode == .fullRecovery ? 0.45 : 1)
+        .accessibilityIdentifier("restDayButton")
     }
 
     /// Every link opens a System window, so each one plays the open cue.
