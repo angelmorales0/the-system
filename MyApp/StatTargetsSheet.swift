@@ -35,11 +35,6 @@ struct StatTargetsSheet: View {
     /// Active targets, with and without data, in display order.
     private var active: [StatRequirement] { report.removing(removed).requirements }
 
-    /// The weight each active target carries, scaled to 100 among them. A target with no data keeps its weight and scores 0.
-    private var countedWeights: [String: Double] {
-        Dictionary(uniqueKeysWithValues: report.removing(removed).counted.map { ($0.category, $0.weight) })
-    }
-
     private var removedTargets: [StatRequirement] { report.requirements.filter { removed.contains($0.category) } }
 
     var body: some View {
@@ -103,7 +98,7 @@ struct StatTargetsSheet: View {
                         .font(.subheadline.weight(.semibold))
                     Spacer(minLength: 8)
                     if !isRemoved {
-                        Text(countedWeights[requirement.category].map { "\(Int($0.rounded()))%" } ?? "NO DATA")
+                        Text("\(Int((requirement.progress * 100).rounded(.down)))%")
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(SystemTheme.muted)
                     }
