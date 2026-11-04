@@ -98,6 +98,7 @@ struct ConnectionDetailView: View {
     var onChange: () -> Void = {}
     @State private var typed: [String: String] = [:]
     @State private var handle = CodeforcesSettings.handle ?? ""
+    @State private var username = MonkeytypeSettings.username ?? ""
     @State private var result = ""
     @State private var working = false
     @State private var refresh = 0
@@ -107,6 +108,11 @@ struct ConnectionDetailView: View {
             VStack(alignment: .leading, spacing: 12) {
                 if connection == .codeforces {
                     TextField("Codeforces handle", text: $handle)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                if connection == .monkeytype {
+                    TextField("Monkeytype username", text: $username)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
@@ -128,6 +134,7 @@ struct ConnectionDetailView: View {
                     connection.forget()
                     typed = [:]
                     handle = ""
+                    username = ""
                     result = "Removed."
                     refresh += 1
                     onChange()
@@ -158,6 +165,9 @@ struct ConnectionDetailView: View {
         }
         if connection == .codeforces {
             CodeforcesSettings.handle = handle
+        }
+        if connection == .monkeytype {
+            MonkeytypeSettings.username = username
         }
         typed = [:]
         working = true

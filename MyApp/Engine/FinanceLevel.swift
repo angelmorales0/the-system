@@ -18,6 +18,10 @@ nonisolated struct FinanceMonth: Codable, Equatable {
     var budgetUsd: Double?
     /// True when the month has ended. The month in progress never scores.
     var complete: Bool
+    var necessaryUsd: Double? = nil
+    var discretionaryUsd: Double? = nil
+    /// The part of the spending that paid a credit card bill. Mercury does not see the purchases on the card.
+    var cardBillUsd: Double? = nil
 }
 
 /// Deterministic FIN (finance) level 0...350.
@@ -270,7 +274,7 @@ enum FinanceLevel {
         // The phone decodes the backend JSON; extra keys are ignored.
         let json = #"{"month":"2026-09","incomeUsd":10000,"postTaxIncomeUsd":7000,"spendingUsd":3600,"necessaryUsd":2800,"discretionaryUsd":800,"budgetUsd":null,"complete":true,"available":true,"configured":true,"reason":""}"#
         let decoded = try? JSONDecoder().decode(FinanceMonth.self, from: Data(json.utf8))
-        if decoded != FinanceMonth(month: "2026-09", postTaxIncomeUsd: 7000, spendingUsd: 3600, budgetUsd: nil, complete: true) {
+        if decoded != FinanceMonth(month: "2026-09", postTaxIncomeUsd: 7000, spendingUsd: 3600, budgetUsd: nil, complete: true, necessaryUsd: 2800, discretionaryUsd: 800) {
             errors.append("backend month JSON should decode, got \(String(describing: decoded))")
         }
 

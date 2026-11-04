@@ -59,6 +59,7 @@ struct StatLevelSet: Equatable {
     /// `focusDays` are the iPhone Screen Time days. `targets` removes targets and adds the player's own STR goals.
     static func compute(
         codeforces: CodeforcesReading,
+        typing: MonkeytypeReading = .disconnected(reason: ""),
         financeMonths: [FinanceMonth],
         bodyMass: [BodyMassReading] = [],
         focusDays: [FocusDay] = [],
@@ -74,7 +75,7 @@ struct StatLevelSet: Equatable {
         let reports: [Stat: StatLevelReport] = [
             .STR: StrengthLevel.evaluate(workouts: inputs.hevyWorkouts, custom: targets.custom, now: now),
             .END: EnduranceLevel.evaluate(efforts: inputs.runEfforts, swims: inputs.swimEfforts, vo2: inputs.vo2, zoneTwo: inputs.zoneTwo, bodyMass: bodyMass, now: now),
-            .INT: IntelligenceLevel.evaluate(codeforces),
+            .INT: IntelligenceLevel.evaluate(codeforces, typing: typing),
             .AGI: AgilityLevel.evaluate(measurements: inputs.agility, now: now),
             .FOC: FocusLevel.evaluate(days: focusDays),
             .REC: RecoveryLevel.evaluate(days: recoveryDays).statReport,
@@ -112,8 +113,10 @@ struct StatLevelSet: Equatable {
         rated.rating = 2100
         rated.maxRating = 2100
         rated.contests = 20
+        rated.history = CodeforcesLanguage.allCases.map { CodeforcesContest(time: 1, oldRating: 2000, newRating: 2100, language: $0) }
         let month = FinanceMonth(month: "2026-09", postTaxIncomeUsd: 30_000, spendingUsd: 18_000, budgetUsd: 20_000, complete: true)
-        let connected = compute(codeforces: rated, financeMonths: [month], now: now)
+        let fast = MonkeytypeReading(available: true, configured: true, reason: "", username: "t", bestWpm: 200)
+        let connected = compute(codeforces: rated, typing: fast, financeMonths: [month], now: now)
         if connected[.INT] != StatLevel.maxLevel || connected[.FIN] != StatLevel.maxLevel || connected[.STR] != 0 {
             errors.append("a 2100 rating and a perfect month should give INT and FIN 146, got INT \(connected[.INT]) FIN \(connected[.FIN])")
         }

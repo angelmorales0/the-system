@@ -3,6 +3,38 @@ import Foundation
 /// The backend's `GET /v1/integrations/codeforces/snapshot` reply. The backend reads the
 /// official Codeforces API (user.info and user.rating); the phone never calls Codeforces.
 /// `checkedAt` is ISO 8601 with `Z`.
+/// Codeforces gives one rating to an account. A contest counts for the language of most of the player's submissions in it.
+nonisolated enum CodeforcesLanguage: String, Codable, CaseIterable, Identifiable {
+    case cpp = "C++"
+    case java = "Java"
+    case python = "Python"
+
+    var id: String { rawValue }
+
+    /// Reads a `programmingLanguage` value such as "GNU G++20 13.2", "Java 21", or "PyPy 3-64". Other languages give nil.
+    init?(submission name: String) {
+        let lower = name.lowercased()
+        if lower.contains("c++") || lower.contains("g++") || lower.contains("clang++") {
+            self = .cpp
+        } else if lower.hasPrefix("java"), !lower.hasPrefix("javascript") {
+            self = .java
+        } else if lower.contains("python") || lower.contains("pypy") {
+            self = .python
+        } else {
+            return nil
+        }
+    }
+}
+
+nonisolated struct CodeforcesContest: Codable, Equatable {
+    /// `ratingUpdateTimeSeconds`.
+    var time: Int
+    var oldRating: Int
+    var newRating: Int
+    /// Nil when the contest has no submissions in C++, Java, or Python.
+    var language: CodeforcesLanguage? = nil
+}
+
 nonisolated struct CodeforcesReading: Codable, Equatable {
     var available: Bool
     var configured: Bool
@@ -15,37 +47,68 @@ nonisolated struct CodeforcesReading: Codable, Equatable {
     /// Rated contests from user.rating.
     var contests: Int
     var checkedAt: Date?
+    /// Rated contests, oldest first. Nil when `user.rating` failed.
+    var history: [CodeforcesContest]? = nil
+
+    /// The rating after the newest contest in this language.
+    func rating(in language: CodeforcesLanguage) -> Int? {
+        history?.last { $0.language == language }?.newRating
+    }
 
     static func disconnected(reason: String) -> CodeforcesReading {
         CodeforcesReading(available: false, configured: false, reason: reason, handle: nil, rating: nil, maxRating: nil, rank: nil, contests: 0, checkedAt: nil)
     }
 }
 
-/// Deterministic INT level 0...350 from one Codeforces reading.
+/// Deterministic INT level 0...350 from the Codeforces rating in each language and the Monkeytype best.
 /// Pure: the same reading always gives the same report. No network and no clock.
 enum IntelligenceLevel {
     /// 800 is the lowest problem rating; 2100 is Master. 1200 ≈ 30%, 1900 ≈ 85%.
     static let ratingBand = StatLevel.Band(floor: 800, target: 2100)
 
+    /// 40 WPM is an everyday typist. 200 is the goal.
+    static let typingBand = StatLevel.Band(floor: 40, target: 200)
+
     enum Weight {
-        static let rating = 100.0
+        static let rating = 30.0
+        static let typing = 10.0
     }
 
-    static func evaluate(_ reading: CodeforcesReading) -> StatLevelReport {
-        StatLevelReport(stat: .INT, requirements: [rating(reading)])
+    static func category(_ language: CodeforcesLanguage) -> String { "Codeforces \(language.rawValue)" }
+    static let typingCategory = "Typing speed"
+
+    static func evaluate(_ reading: CodeforcesReading, typing: MonkeytypeReading = .disconnected(reason: "")) -> StatLevelReport {
+        StatLevelReport(stat: .INT, requirements: CodeforcesLanguage.allCases.map { rating(reading, language: $0) } + [typingSpeed(typing)])
     }
 
-    /// Strict rule: current rating ≥ 2100. The peak (maxRating) shows in the detail but does not score.
-    private static func rating(_ reading: CodeforcesReading) -> StatRequirement {
-        let category = "Codeforces rating"
+    /// Strict rule: 200 WPM or more on a 60 second Monkeytype test.
+    private static func typingSpeed(_ reading: MonkeytypeReading) -> StatRequirement {
+        guard reading.available, let best = reading.bestWpm else {
+            return StatRequirement(category: typingCategory, passed: false, progress: 0, weight: Weight.typing, detail: reading.reason, hasData: false)
+        }
+        return StatRequirement(
+            category: typingCategory,
+            passed: best >= typingBand.target,
+            progress: typingBand.progress(best),
+            weight: Weight.typing,
+            detail: "\(Int(best)) WPM best in 60 seconds; target \(Int(typingBand.target))"
+        )
+    }
+
+    /// Strict rule: rating ≥ 2100 after the newest contest in the language. The peak (maxRating) shows in the detail but does not score.
+    private static func rating(_ reading: CodeforcesReading, language: CodeforcesLanguage) -> StatRequirement {
+        let category = category(language)
         guard reading.configured, reading.available else {
             return StatRequirement(category: category, passed: false, progress: 0, weight: Weight.rating, detail: reading.reason, hasData: false)
         }
         let who = reading.handle.map { "\($0): " } ?? ""
-        guard reading.contests > 0, let current = reading.rating else {
+        guard reading.contests > 0, reading.rating != nil else {
             return StatRequirement(category: category, passed: false, progress: 0, weight: Weight.rating, detail: who + "unrated", hasData: false)
         }
-        var detail = who + "rating \(current)"
+        guard let current = reading.rating(in: language) else {
+            return StatRequirement(category: category, passed: false, progress: 0, weight: Weight.rating, detail: who + "no rated contest in \(language.rawValue)", hasData: false)
+        }
+        var detail = who + "rating \(current) after the last \(language.rawValue) contest"
         if let rank = reading.rank { detail += " (\(rank))" }
         if let peak = reading.maxRating { detail += ", max \(peak)" }
         detail += ", \(reading.contests) rated contests; target \(Int(ratingBand.target))"
@@ -61,34 +124,62 @@ enum IntelligenceLevel {
     // MARK: - Self-check (runs in DEBUG at launch)
 
     static func reading(rating: Int?, maxRating: Int? = nil, contests: Int = 20) -> CodeforcesReading {
-        CodeforcesReading(available: true, configured: true, reason: "", handle: "tester", rating: rating, maxRating: maxRating ?? rating, rank: nil, contests: contests, checkedAt: Date(timeIntervalSince1970: 0))
+        var reading = CodeforcesReading(available: true, configured: true, reason: "", handle: "tester", rating: rating, maxRating: maxRating ?? rating, rank: nil, contests: contests, checkedAt: Date(timeIntervalSince1970: 0))
+        if let rating, contests > 0 {
+            reading.history = CodeforcesLanguage.allCases.map { CodeforcesContest(time: 1, oldRating: rating, newRating: rating, language: $0) }
+        }
+        return reading
     }
 
     static func check() -> [String] {
         var errors: [String] = []
+        func typing(_ wpm: Double) -> MonkeytypeReading {
+            MonkeytypeReading(available: true, configured: true, reason: "", username: "t", bestWpm: wpm)
+        }
 
-        let top = evaluate(reading(rating: 2100))
+        let top = evaluate(reading(rating: 2100), typing: typing(200))
         if !top.isMaxLevel || top.level != StatLevel.maxLevel || abs(top.score - 100) > 0.001 {
             errors.append("rating 2100 should be the max level and score 100, got level \(top.level) score \(top.score)")
         }
-        if top.stat != .INT || top.requirements.count != 1 || top.requirements.reduce(0, { $0 + $1.weight }) != 100 {
-            errors.append("INT should have one requirement with weight 100")
+        if top.stat != .INT || top.requirements.count != 4 || top.requirements.reduce(0, { $0 + $1.weight }) != 100 {
+            errors.append("INT should have three languages and typing, with weights that add to 100")
+        }
+        for (name, language) in [("GNU G++20 13.2 (64 bit, winlibs)", CodeforcesLanguage.cpp), ("C++23 (GCC 14-64, msys2)", .cpp), ("Java 21 64bit", .java), ("PyPy 3-64", .python), ("Python 3", .python)] {
+            if CodeforcesLanguage(submission: name) != language { errors.append("\(name) should read as \(language.rawValue)") }
+        }
+        if CodeforcesLanguage(submission: "JavaScript V8") != nil || CodeforcesLanguage(submission: "Rust 1.75") != nil {
+            errors.append("other languages should not count")
+        }
+        var cppOnly = reading(rating: 2100)
+        cppOnly.history = [CodeforcesContest(time: 1, oldRating: 2000, newRating: 2100, language: .cpp)]
+        let oneLanguage = evaluate(cppOnly)
+        if oneLanguage.requirements.filter(\.hasData).map(\.category) != ["Codeforces C++"] {
+            errors.append("a language with no rated contest should have no data")
+        }
+        var early = cppOnly
+        early.history?.append(CodeforcesContest(time: 2, oldRating: 2100, newRating: 1500, language: .java))
+        if early.rating(in: .cpp) != 2100 || early.rating(in: .java) != 1500 || early.rating(in: .python) != nil {
+            errors.append("each language should keep the rating of its own newest contest")
+        }
+        let typed = evaluate(reading(rating: 2100), typing: typing(120))
+        if abs((typed.requirements.last?.progress ?? 0) - 0.5) > 0.0001 || typed.isMaxLevel {
+            errors.append("120 WPM should be half the typing band and hold INT under the max")
         }
 
-        let almost = evaluate(reading(rating: 2099))
+        let almost = evaluate(reading(rating: 2099), typing: typing(200))
         if almost.isMaxLevel || almost.level > StatLevel.maxLevel - 1 {
             errors.append("rating 2099 should stay at one under the max level or lower, got \(almost.level)")
         }
 
         for floor in [800, 600] {
-            let report = evaluate(reading(rating: floor))
+            let report = evaluate(reading(rating: floor), typing: typing(40))
             if report.level != 0 || report.score != 0 {
                 errors.append("rating \(floor) should be level 0, got level \(report.level)")
             }
         }
 
-        // 1450 is halfway between 800 and 2100: progress 0.5, score 50, level 175.
-        let half = evaluate(reading(rating: 1450))
+        // 1450 is halfway between 800 and 2100, and 120 WPM is halfway between 40 and 200: score 50, level 175.
+        let half = evaluate(reading(rating: 1450), typing: typing(120))
         if abs((half.requirements.first?.progress ?? 0) - 0.5) > 0.0001 || half.level != 175 {
             errors.append("rating 1450 should be band 0.5 and level 175, got \(half.requirements.first?.progress ?? -1) level \(half.level)")
         }
@@ -120,8 +211,8 @@ enum IntelligenceLevel {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         if let decoded = try? decoder.decode(CodeforcesReading.self, from: Data(json.utf8)) {
-            if decoded.rating != 2150 || decoded.checkedAt == nil || !evaluate(decoded).isMaxLevel {
-                errors.append("decoded backend reading should be rating 2150 and the max level, got \(decoded)")
+            if decoded.rating != 2150 || decoded.checkedAt == nil {
+                errors.append("decoded backend reading should be rating 2150, got \(decoded)")
             }
         } else {
             errors.append("backend Codeforces JSON should decode")

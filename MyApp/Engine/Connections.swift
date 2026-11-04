@@ -2,7 +2,7 @@ import Foundation
 
 /// One service the phone reads directly, with no server between.
 nonisolated enum Connection: String, CaseIterable, Identifiable {
-    case hevy, strava, whoop, codeforces, mercury, claude
+    case hevy, strava, whoop, codeforces, monkeytype, mercury, claude
 
     var id: String { rawValue }
 
@@ -12,18 +12,19 @@ nonisolated enum Connection: String, CaseIterable, Identifiable {
         case .strava: "Strava"
         case .whoop: "WHOOP"
         case .codeforces: "Codeforces"
+        case .monkeytype: "Monkeytype"
         case .mercury: "Mercury"
         case .claude: "Claude"
         }
     }
 
-    /// The Keychain items the owner types in for this service. Codeforces needs none: its handle is public.
+    /// The Keychain items the owner types in for this service. Codeforces and Monkeytype need none: their names are public.
     var typedSecrets: [SecretField] {
         switch self {
         case .hevy: [SecretField(item: .hevyApiKey, label: "API key")]
         case .strava: [SecretField(item: .stravaClientId, label: "Client ID"), SecretField(item: .stravaClientSecret, label: "Client secret")]
         case .whoop: [SecretField(item: .whoopClientId, label: "Client ID"), SecretField(item: .whoopClientSecret, label: "Client secret")]
-        case .codeforces: []
+        case .codeforces, .monkeytype: []
         case .mercury: [SecretField(item: .mercuryToken, label: "Read Only API token")]
         case .claude: [SecretField(item: .anthropicApiKey, label: "Anthropic API key")]
         }
@@ -34,6 +35,8 @@ nonisolated enum Connection: String, CaseIterable, Identifiable {
         switch self {
         case .codeforces:
             return CodeforcesSettings.handle != nil
+        case .monkeytype:
+            return MonkeytypeSettings.username != nil
         case .strava:
             return typedSecrets.allSatisfy { SecretStore.has($0.item) } && SecretStore.has(.stravaTokens)
         case .whoop:
@@ -50,6 +53,7 @@ nonisolated enum Connection: String, CaseIterable, Identifiable {
         case .strava: SecretStore.delete(.stravaTokens)
         case .whoop: SecretStore.delete(.whoopTokens)
         case .codeforces: CodeforcesSettings.handle = nil
+        case .monkeytype: MonkeytypeSettings.username = nil
         case .mercury: MercuryClient.deleteLedger()
         default: break
         }

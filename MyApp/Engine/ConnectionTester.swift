@@ -16,6 +16,8 @@ enum ConnectionTester {
             outcome = await WhoopClient.test()
         case .codeforces:
             outcome = await CodeforcesClient.test()
+        case .monkeytype:
+            outcome = await MonkeytypeClient.test()
         case .mercury:
             outcome = await MercuryClient.test()
         case .claude:

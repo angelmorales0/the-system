@@ -6,11 +6,12 @@ struct RemoteDayReadings: Equatable {
     var mercury: MercuryDayReading
     var hevy: HevyDayReading
     var codeforces: CodeforcesReading
+    var monkeytype: MonkeytypeReading
     /// Mercury months with real data only, newest last. A disconnected month is left out so it cannot pass the budget rule.
     var financeMonths: [FinanceMonth]
 }
 
-/// Reads WHOOP, Strava, Mercury, Hevy, and Codeforces on the phone, with the keys in the Keychain. No server is needed.
+/// Reads WHOOP, Strava, Mercury, Hevy, Codeforces, and Monkeytype on the phone, with the keys in the Keychain. No server is needed.
 enum IntegrationClient {
     static func load(dayKey: String) async -> RemoteDayReadings {
         let months = financeMonthKeys(dayKey: dayKey)
@@ -18,19 +19,22 @@ enum IntegrationClient {
         async let stravaReading = StravaClient.snapshot(dayKey: dayKey)
         async let whoopReading = WhoopClient.snapshot(dayKey: dayKey)
         async let codeforcesReading = CodeforcesClient.snapshot()
+        async let monkeytypeReading = MonkeytypeClient.snapshot()
         async let mercuryReading = MercuryClient.load(dayKey: dayKey, months: [months.last, months.this])
-        let (whoop, strava, mercury, hevy, codeforces) = await (whoopReading, stravaReading, mercuryReading, hevyReading, codeforcesReading)
+        let (whoop, strava, mercury, hevy, codeforces, monkeytype) = await (whoopReading, stravaReading, mercuryReading, hevyReading, codeforcesReading, monkeytypeReading)
         record(.whoop, configured: whoop.configured, available: whoop.available, reason: whoop.reason)
         record(.strava, configured: strava.configured, available: strava.available, reason: strava.reason)
         record(.mercury, configured: mercury.day.configured, available: mercury.day.available, reason: mercury.day.reason)
         record(.hevy, configured: hevy.configured, available: hevy.available, reason: hevy.reason)
         record(.codeforces, configured: codeforces.configured, available: codeforces.available, reason: codeforces.reason)
+        record(.monkeytype, configured: monkeytype.configured, available: monkeytype.available, reason: monkeytype.reason)
         return RemoteDayReadings(
             whoop: whoop,
             strava: strava,
             mercury: mercury.day,
             hevy: hevy,
             codeforces: codeforces,
+            monkeytype: monkeytype,
             financeMonths: mercury.months
         )
     }

@@ -34,6 +34,8 @@ nonisolated struct MercurySettings: Codable, Equatable {
     var budget: Double? { monthlyBudgetUsd.flatMap { $0 > 0 ? $0 : nil } }
 
     static let budgetLockMonths = 3
+    /// The budget before one is typed. It has no `budgetSetAt`, so the first typed budget can replace it.
+    static let defaultBudgetUsd = 1_000.0
 
     /// The day the budget can change again, or nil when it was never set.
     func budgetUnlockDate(calendar: Calendar = .current) -> Date? {
@@ -116,10 +118,14 @@ enum MercuryClient {
         "Advertising", "Charity", "Political", "Parking", "GroundTransportation", "Other",
     ]
     static let transferKinds: Set<String> = ["internalTransfer", "treasuryTransfer"]
+    /// Money moved to the owner's own accounts, such as Fidelity. A category override still wins.
+    static let ownMoneyCategories: Set<String> = ["Investment"]
     static let ignoredKinds: Set<String> = ["interestPayment"]
     static let deadStatuses: Set<String> = ["cancelled", "failed", "blocked", "reversed"]
     static let incomeStatuses: Set<String> = ["sent"]
     static let rentHints = ["rent", "landlord"]
+    /// Bank text of a credit card bill. Mercury sees the bill, not the purchases on the card.
+    static let cardBillHint = "CCPYMT"
 
     static var la: TimeZone { OnDeviceTime.losAngeles }
 
@@ -127,9 +133,13 @@ enum MercuryClient {
 
     /// Today's snapshot and the two FIN months. Syncs first when the cache is stale.
     static func load(dayKey: String, months: [String], now: Date = .now) async -> (day: MercuryDayReading, months: [FinanceMonth]) {
-        let settings = MercurySettings.load()
+        var settings = MercurySettings.load()
         guard let token = SecretStore.read(.mercuryToken) else {
             return (empty(dayKey, reason: "TODO: Type a Mercury Read Only token in Status → Connections.", configured: false), [])
+        }
+        if settings.monthlyBudgetUsd == nil {
+            settings.monthlyBudgetUsd = MercurySettings.defaultBudgetUsd
+            settings.save()
         }
         var ledger = loadLedger()
         if ledger.syncedAt.map({ now.timeIntervalSince($0) > syncSeconds }) ?? true {
@@ -265,6 +275,7 @@ enum MercuryClient {
             "postedAt": txn["postedAt"],
             "createdAt": txn["createdAt"],
             "counterpartyName": .string(txn["counterpartyName"]?.stringValue ?? ""),
+            "bankDescription": .string(txn["bankDescription"]?.stringValue ?? ""),
             "accountId": txn["accountId"],
         ])
     }
@@ -309,6 +320,7 @@ enum MercuryClient {
         if amount == 0 { return "ignore" }
         let category = categoryName(txn)
         if let mapped = overrides[category], !mapped.isEmpty { return mapped }
+        if ownMoneyCategories.contains(category) { return "transfer" }
         let name = (txn["counterpartyName"]?.stringValue ?? "").lowercased()
         if rentHints.contains(where: { name.contains($0) }) { return "necessary" }
         if necessary.contains(category) { return "necessary" }
@@ -420,9 +432,12 @@ enum MercuryClient {
         var budgetUsd: Double?
         var taxReserveRate: Double
         var complete: Bool
+        /// The part of the spending that paid a credit card bill.
+        var cardBillUsd: Double = 0
 
         var financeMonth: FinanceMonth {
-            FinanceMonth(month: month, postTaxIncomeUsd: postTaxIncomeUsd, spendingUsd: spendingUsd, budgetUsd: budgetUsd, complete: complete)
+            FinanceMonth(month: month, postTaxIncomeUsd: postTaxIncomeUsd, spendingUsd: spendingUsd, budgetUsd: budgetUsd, complete: complete,
+                         necessaryUsd: necessaryUsd, discretionaryUsd: discretionaryUsd, cardBillUsd: cardBillUsd)
         }
     }
 
@@ -444,21 +459,27 @@ enum MercuryClient {
     static func monthSummary(_ transactions: [JSONValue], month: String, settings: MercurySettings, now: Date) -> MonthSummary {
         let overrides = settings.overrides
         let rate = settings.taxRate
-        var income = 0.0, necessaryTotal = 0.0, discretionaryTotal = 0.0
+        var income = 0.0, necessaryTotal = 0.0, discretionaryTotal = 0.0, cardBills = 0.0
         for txn in transactions where txn.objectValue != nil {
             guard when(txn).prefix(7) == month, let amount = amount(txn) else { continue }
-            switch classify(txn, overrides: overrides, incomePattern: settings.incomeCounterpartyRegex) {
+            let tag = classify(txn, overrides: overrides, incomePattern: settings.incomeCounterpartyRegex)
+            switch tag {
             case "income": income += amount
             case "necessary": necessaryTotal += abs(amount)
             case "discretionary": discretionaryTotal += abs(amount)
             default: break
             }
+            if tag == "necessary" || tag == "discretionary", isCardBill(txn) { cardBills += abs(amount) }
         }
         return MonthSummary(
             month: month, incomeUsd: round2(income), postTaxIncomeUsd: round2(income * (1 - rate)),
             spendingUsd: round2(necessaryTotal + discretionaryTotal), necessaryUsd: round2(necessaryTotal), discretionaryUsd: round2(discretionaryTotal),
-            budgetUsd: settings.budget, taxReserveRate: rate, complete: monthComplete(month, now: now)
+            budgetUsd: settings.budget, taxReserveRate: rate, complete: monthComplete(month, now: now), cardBillUsd: round2(cardBills)
         )
+    }
+
+    static func isCardBill(_ txn: JSONValue) -> Bool {
+        (txn["bankDescription"]?.stringValue ?? "").uppercased().contains(cardBillHint)
     }
 
     static func round2(_ value: Double) -> Double { (value * 100).rounded() / 100 }
@@ -507,6 +528,22 @@ enum MercuryClient {
         }
         if classify(payroll, overrides: [:], incomePattern: "^Client") != "ignore" {
             errors.append("an income pattern should drop other counterparties")
+        }
+        let fidelity = txn("f", -6000, "other", "2026-08-26T17:00:00Z", "Investment", name: "Fidelity")
+        if classify(fidelity, overrides: [:]) != "transfer" || classify(fidelity, overrides: ["Investment": "discretionary"]) != "discretionary" {
+            errors.append("money moved to Fidelity should not be spending unless an override says so")
+        }
+        var bill = txn("b", -3000, "other", "2026-08-11T17:00:00Z", "Fees", name: "Wells Fargo")
+        if case .object(var fields) = bill {
+            fields["bankDescription"] = .string("WELLS FARGO CARD; CCPYMT; TESTER")
+            bill = .object(fields)
+        }
+        let august = monthSummary([bill, fidelity], month: "2026-08", settings: MercurySettings(), now: OnDeviceTime.parse("2026-10-17T19:00:00Z") ?? .now)
+        if august.spendingUsd != 3000 || august.cardBillUsd != 3000 || august.financeMonth.cardBillUsd != 3000 {
+            errors.append("a card bill should count as spending and show on its own, got \(august)")
+        }
+        if slimTransaction(bill)["bankDescription"]?.stringValue?.contains(cardBillHint) != true {
+            errors.append("the Mercury cache should keep the bank text that marks a card bill")
         }
         let noon = OnDeviceTime.parse("2026-10-01T19:00:00Z") ?? .now  // 12:00 in Los Angeles
         let summary = summarize([grocery, dinner, payroll, transfer, interest], day: "2026-10-01", accounts: [.object(["availableBalance": .number(4000)])],

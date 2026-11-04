@@ -40,7 +40,7 @@ final class GameStore: ObservableObject {
     private var lastStretchRefresh = Date.distantPast
     /// The last live stat inputs, so a target change can recalculate without a new fetch. Nil until the first refresh.
     /// `inputs` holds the histories (Hevy, WHOOP, Strava, Health), loaded after the day's snapshot by `refreshStatInputs`.
-    private var statInputs: (codeforces: CodeforcesReading, financeMonths: [FinanceMonth], bodyMass: BodyMassReading?, focusDays: [FocusDay], inputs: StatInputs)?
+    private var statInputs: (codeforces: CodeforcesReading, typing: MonkeytypeReading, financeMonths: [FinanceMonth], bodyMass: BodyMassReading?, focusDays: [FocusDay], inputs: StatInputs)?
     private var refreshingStatInputs = false
 
     init(persistence: GamePersistence = .standard) {
@@ -51,9 +51,10 @@ final class GameStore: ObservableObject {
             + HiddenQuestRules.check() + RecoveryHolidayRules.check() + ShopRules.check()
             + DailyStretch.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
             + NoGymDayRules.check() + PenaltyDecay.check() + RestRules.check() + RestScore.check() + SecretStore.check() + SecretSeed.check() + ConnectionStatusStore.check()
-            + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MercuryClient.check()
+            + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MonkeytypeClient.check() + MercuryClient.check()
             + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check()
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
+            + MonthlyQuests.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -237,6 +238,11 @@ final class GameStore: ObservableObject {
 
     /// Before the first refresh there are no live inputs; the next refresh applies the new targets.
     /// `announce` plays the level-up cue when the STATUS level rises; an edit to the targets stays quiet.
+    /// This month's and last month's quests, from the latest Mercury and Codeforces readings.
+    var monthlyBoard: MonthlyBoard {
+        MonthlyQuests.board(codeforces: statInputs?.codeforces, typing: statInputs?.typing, financeMonths: statInputs?.financeMonths ?? [], excuses: snapshot.potionExcuses, now: .now)
+    }
+
     private func recomputeStatLevels(now: Date, announce: Bool = true) {
         guard let statInputs else { return }
         let before = statLevels
@@ -247,6 +253,7 @@ final class GameStore: ObservableObject {
         }
         statLevels = StatLevelSet.compute(
             codeforces: statInputs.codeforces,
+            typing: statInputs.typing,
             financeMonths: statInputs.financeMonths,
             bodyMass: statInputs.bodyMass.map { [$0] } ?? [],
             focusDays: statInputs.focusDays,
@@ -438,7 +445,7 @@ final class GameStore: ObservableObject {
                 hevy: remote.hevy
             )
             // The stat levels first: max HP is built from them.
-            self.statInputs = (remote.codeforces, remote.financeMonths, bodyMass, focusDays, self.statInputs?.inputs ?? StatInputs())
+            self.statInputs = (remote.codeforces, remote.monkeytype, remote.financeMonths, bodyMass, focusDays, self.statInputs?.inputs ?? StatInputs())
             self.recomputeStatLevels(now: now)
             // After today's readiness, so a red recovery hits HP and sets the regeneration speed.
             next.applyHitPoints(integrations: day, maxHP: HitPoints.maxHP(for: self.statLevels), now: now)

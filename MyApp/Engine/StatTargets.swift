@@ -188,7 +188,10 @@ struct StatTargets: Codable, Equatable {
         goals["1-mile swim"] = "\(clock(EnduranceLevel.swimMileBand.target)) or faster"
         goals["Body weight"] = "\(Int(EnduranceLevel.bodyWeightTargetLb)) lb, within \(Int(EnduranceLevel.bodyWeightToleranceLb)) lb"
 
-        goals["Codeforces rating"] = "\(Int(IntelligenceLevel.ratingBand.target)) rating (Master)"
+        for language in CodeforcesLanguage.allCases {
+            goals[IntelligenceLevel.category(language)] = "\(Int(IntelligenceLevel.ratingBand.target)) rating in \(language.rawValue)"
+        }
+        goals[IntelligenceLevel.typingCategory] = "\(Int(IntelligenceLevel.typingBand.target)) WPM on Monkeytype"
 
         goals["Vertical jump"] = "\(Int(AgilityLevel.verticalJumpBand.target)) in"
         goals["Front splits"] = "Full splits, both legs"
