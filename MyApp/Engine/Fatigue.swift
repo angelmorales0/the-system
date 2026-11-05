@@ -52,7 +52,7 @@ struct FatigueState: Codable, Equatable {
 }
 
 /// Pure fatigue math, so the store, the status sheet, and the check share it.
-///   Decay       × 0.6 per day (40%/day of the current value), the days scaled by `HitPoints.regenMultiplier`
+///   Decay       − 35 points per day, down to 0, the days scaled by `HitPoints.regenMultiplier`
 ///               (recovery 0: × 0.5 speed, 50 or no reading: × 1, 100: × 1.5)
 ///   Workout     + 50 × the session's HP drain share (a 50 min run: +12.5, at most +30), once per session
 ///   Recovery    WHOOP recovery under 67: + 0.3 per point under 67 (recovery 20: +14.1), once per WHOOP day
@@ -61,7 +61,7 @@ struct FatigueState: Codable, Equatable {
 ///   Red         at or above 80
 enum Fatigue {
     static let maxValue = 100.0
-    static let keepPerDay = 0.6
+    static let lossPerDay = 35.0
     static let perWorkoutDrain = 50.0
     static let lowRecoveryBelow = 67
     static let perRecoveryPoint = 0.3
@@ -132,7 +132,7 @@ enum Fatigue {
         let todays = recoveryDayKey == todayKey
         let hours = Swift.max(0, now.timeIntervalSince(next.updatedAt) / 3600)
         let speed = HitPoints.regenMultiplier(recoveryScore: todays ? recoveryScore : nil)
-        next.value *= pow(keepPerDay, hours / 24 * speed)
+        next.value = Swift.max(0, next.value - lossPerDay * hours / 24 * speed)
         let stress = stressScore(hrv: todays ? hrv : nil, hrvBaseline: next.hrvBaseline, dayStrain: dayStrain)
         next.value += stressPerHour(stress) * hours
         next.updatedAt = Swift.max(now, next.updatedAt)
@@ -185,8 +185,11 @@ enum Fatigue {
         }
 
         let tired = FatigueState(value: 50, updatedAt: start)
-        if !near(run(tired, hours: 24).value, 30) {
-            errors.append("fatigue should fall 40% in a day at a normal recovery")
+        if !near(run(tired, hours: 24).value, 15) {
+            errors.append("fatigue should fall 35 points in a day at a normal recovery")
+        }
+        if run(FatigueState(value: 70, updatedAt: start), hours: 48).value != 0 || run(tired, hours: 240).value != 0 {
+            errors.append("two full rest days should clear 70 fatigue, and fatigue should stop at 0")
         }
         let green = run(tired, hours: 24, recovery: 100, recoveryDay: day)
         let red = run(tired, hours: 24, recovery: 50, recoveryDay: day)
