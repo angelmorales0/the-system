@@ -126,23 +126,25 @@ enum PenaltyMonitorShields {
 enum PhoneScreenMonitor {
     static let activity = "screenTimeDay"
     static let eventPrefix = "phone_"
-    static let minutesKey = "screenTimePhoneMinutes"
-    static let dayKey = "screenTimePhoneDayKey"
-    static let timesKey = "screenTimePhoneTimes"
+    static let daysKey = "screenTimePhoneDays"
+    /// Older days are dropped. The app reads the current day and the day that just ended.
+    static let keepDays = 3
 
-    /// `phone_95` → 95 minutes of phone use today. Keeps the highest value of the quest day,
-    /// and when each threshold was reached, so the app can find phone time that overlaps Mac time.
+    /// `phone_95` → 95 minutes of phone use today. Days run midnight to midnight, like Apple's Screen Time.
+    /// Keeps when each threshold was reached, so the app can find phone time that overlaps Mac time.
     nonisolated static func record(_ event: String, now: Date) {
         guard event.hasPrefix(eventPrefix), let minutes = Int(event.dropFirst(eventPrefix.count)) else { return }
         let defaults = UserDefaults(suiteName: PenaltyMonitorGroup.suiteName) ?? .standard
-        let today = PenaltyMonitorShields.questDayKey(for: now)
-        let sameDay = defaults.string(forKey: dayKey) == today
-        let previous = sameDay ? defaults.integer(forKey: minutesKey) : 0
-        var times = sameDay ? defaults.dictionary(forKey: timesKey) as? [String: Double] ?? [:] : [:]
+        let parts = Calendar.autoupdatingCurrent.dateComponents([.year, .month, .day], from: now)
+        let today = String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
+        var days = defaults.dictionary(forKey: daysKey) as? [String: [String: Double]] ?? [:]
+        var times = days[today] ?? [:]
         times[String(minutes)] = times[String(minutes)] ?? now.timeIntervalSince1970
-        defaults.set(today, forKey: dayKey)
-        defaults.set(max(previous, minutes), forKey: minutesKey)
-        defaults.set(times, forKey: timesKey)
+        days[today] = times
+        for old in days.keys.sorted().dropLast(keepDays) {
+            days.removeValue(forKey: old)
+        }
+        defaults.set(days, forKey: daysKey)
     }
 }
 

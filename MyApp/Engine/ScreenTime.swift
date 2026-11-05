@@ -88,13 +88,12 @@ struct ScreenTimeDay: Codable, Equatable {
 /// App Group storage shared with the Screen Time monitor. The monitor repeats these strings; change them together.
 enum PhoneScreenGroup {
     static let selectionKey = "screenTimeSelection"
-    static let minutesKey = "screenTimePhoneMinutes"
-    static let dayKey = "screenTimePhoneDayKey"
+    /// Calendar day → threshold minutes → when the monitor saw it, as seconds since 1970. Days run midnight to midnight, like Apple's Screen Time.
+    /// The newest days stay, so the 5:00 check still finds the day that ended at midnight.
+    static let daysKey = "screenTimePhoneDays"
     static let activity = "screenTimeDay"
     /// Event names are this prefix plus the minutes they mark: `phone_95`.
     static let eventPrefix = "phone_"
-    /// Threshold minutes → when the monitor saw it, as seconds since 1970.
-    static let timesKey = "screenTimePhoneTimes"
     /// Why iOS refused to start the daily count. Nil after a good start.
     static let startErrorKey = "screenTimeStartError"
 
@@ -104,14 +103,12 @@ enum PhoneScreenGroup {
 
     /// Phone minutes the monitor wrote for `dayKey`, or nil when it has none for that day.
     static func minutes(for dayKey: String, defaults: UserDefaults = PenaltyGroup.defaults) -> Int? {
-        guard defaults.string(forKey: Self.dayKey) == dayKey else { return nil }
-        return defaults.integer(forKey: minutesKey)
+        times(for: dayKey, defaults: defaults).keys.max()
     }
 
     /// When each phone threshold was reached on `dayKey`. Empty when the monitor has none for that day.
     static func times(for dayKey: String, defaults: UserDefaults = PenaltyGroup.defaults) -> [Int: Date] {
-        guard defaults.string(forKey: Self.dayKey) == dayKey,
-              let raw = defaults.dictionary(forKey: timesKey) as? [String: Double] else { return [:] }
+        guard let days = defaults.dictionary(forKey: daysKey) as? [String: [String: Double]], let raw = days[dayKey] else { return [:] }
         var times: [Int: Date] = [:]
         for (minutes, seconds) in raw {
             if let minutes = Int(minutes) { times[minutes] = Date(timeIntervalSince1970: seconds) }
@@ -169,21 +166,23 @@ enum ScreenOverlap {
     }
 }
 
-/// Starts the daily phone count: one schedule from the quest day's start to the next, with a threshold event every few minutes.
+/// Starts the daily phone count: one schedule from midnight to midnight, with a threshold event every minute.
+/// A quest day takes the count of its calendar date, so phone use after midnight belongs to the next quest day, as in Apple's Screen Time.
 /// Screen Time counts only the apps the player chose, so the picker should hold All Apps & Categories.
 enum ScreenTimeEnforcement {
-    /// A running count is left alone at launch. Only a new selection or a new step list restarts it.
+    /// A running count is left alone at launch. Only a new selection, step list, or schedule restarts it.
     static func syncMonitoring(restart: Bool = false) {
         #if os(iOS)
         let center = DeviceActivityCenter()
         let name = DeviceActivityName(PhoneScreenGroup.activity)
-        if !restart, center.activities.contains(name), center.events(for: name).count == PhoneScreenGroup.thresholds.count { return }
+        if !restart, center.activities.contains(name), center.events(for: name).count == PhoneScreenGroup.thresholds.count,
+           center.schedule(for: name)?.intervalStart.hour == 0 { return }
         center.stopMonitoring([name])
         let selection = PhoneScreenGroup.load()
         guard !(selection.applicationTokens.isEmpty && selection.categoryTokens.isEmpty && selection.webDomainTokens.isEmpty) else { return }
         let schedule = DeviceActivitySchedule(
-            intervalStart: DateComponents(hour: QuestDay.startHour, minute: 0),
-            intervalEnd: DateComponents(hour: (QuestDay.startHour + 23) % 24, minute: 59),
+            intervalStart: DateComponents(hour: 0, minute: 0),
+            intervalEnd: DateComponents(hour: 23, minute: 59),
             repeats: true
         )
         var events: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:]
@@ -310,6 +309,18 @@ enum ScreenTimeRules {
         if PhoneScreenGroup.thresholds.first != 1 || PhoneScreenGroup.thresholds.last ?? 0 <= ScreenTime.failAfterMinutes
             || PhoneScreenGroup.thresholds != Array(1...(PhoneScreenGroup.thresholds.last ?? 0)) {
             errors.append("phone thresholds should run every minute from 1 past the total cap")
+        }
+        // Each calendar day keeps its own count, so a count that ended at midnight is still there at 5:00.
+        let phoneSuite = "com.angelmorales.thesystem.selfcheck.phone"
+        if let defaults = UserDefaults(suiteName: phoneSuite) {
+            defaults.set(["2026-10-05": ["1": 10.0, "2": 70.0], "2026-10-06": ["1": 90.0]], forKey: PhoneScreenGroup.daysKey)
+            if PhoneScreenGroup.minutes(for: "2026-10-05", defaults: defaults) != 2
+                || PhoneScreenGroup.minutes(for: "2026-10-06", defaults: defaults) != 1
+                || PhoneScreenGroup.minutes(for: "2026-10-07", defaults: defaults) != nil
+                || PhoneScreenGroup.times(for: "2026-10-05", defaults: defaults)[2] != Date(timeIntervalSince1970: 70) {
+                errors.append("each calendar day should keep its own phone count")
+            }
+            defaults.removePersistentDomain(forName: phoneSuite)
         }
         // Phone 10:00–10:10 while a Mac was active 10:00–10:15: the second 5 minutes surely overlap.
         if let start = QuestDay.start(of: "2026-10-05") {
