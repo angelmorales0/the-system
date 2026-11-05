@@ -152,7 +152,12 @@ enum ScreenOverlap {
         var shared = 0
         var lastMinutes = 0
         var windowStart = 0
-        for (minutes, time) in phoneTimes.filter({ $0.key % windowMinutes == 0 }).sorted(by: { $0.key < $1.key }) {
+        let steps = phoneTimes.filter { $0.key % windowMinutes == 0 }.sorted { $0.key < $1.key }
+        // iOS can report many steps at once. A batch is one window, or the same Mac minute counts once per step.
+        let windows = steps.indices.filter { index in
+            index == steps.count - 1 || Int(steps[index].value.timeIntervalSince(dayStart) / 60) != Int(steps[index + 1].value.timeIntervalSince(dayStart) / 60)
+        }.map { steps[$0] }
+        for (minutes, time) in windows {
             let offset = time.timeIntervalSince(dayStart) / 60
             let windowEnd = min(slots, max(windowStart, Int(offset.rounded(.up))))
             let phone = minutes - lastMinutes
@@ -335,6 +340,11 @@ enum ScreenTimeRules {
             let everyMinute = Dictionary(uniqueKeysWithValues: (1...10).map { ($0, at(300 + $0)) })
             if ScreenOverlap.minutes(phoneTimes: everyMinute, macActive: Data(bits), dayStart: start) != 4 {
                 errors.append("1-minute phone steps should share the same 4 minutes as 5-minute steps")
+            }
+            // A batch of steps reported in one minute is one window, so it cannot count one Mac minute many times.
+            let batch = Dictionary(uniqueKeysWithValues: stride(from: 5, through: 50, by: 5).map { ($0, at(310)) })
+            if ScreenOverlap.minutes(phoneTimes: batch, macActive: Data(bits), dayStart: start) != 0 {
+                errors.append("a batch of phone steps should not repeat Mac minutes")
             }
             // Phone use while every Mac was idle shares nothing.
             if ScreenOverlap.minutes(phoneTimes: [5: at(605), 10: at(610)], macActive: Data(bits), dayStart: start) != 0 {
