@@ -61,13 +61,13 @@
 
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* MyApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MyApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C00000000000000000000001 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+		C00000000000000000000002 /* MyApp-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "MyApp-Info.plist"; sourceTree = "<group>"; };
 		F20000000000000000000001 /* PenaltyMonitor.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PenaltyMonitor.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F30000000000000000000001 /* PenaltyShieldConfig.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PenaltyShieldConfig.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F40000000000000000000001 /* PenaltyShieldAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PenaltyShieldAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F50000000000000000000001 /* PenaltyActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PenaltyActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F60000000000000000000001 /* FocusTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FocusTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		C00000000000000000000001 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
-		C00000000000000000000002 /* MyApp-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "MyApp-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
