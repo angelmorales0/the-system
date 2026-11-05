@@ -45,6 +45,12 @@ struct ContentView: View {
                 store.refreshForToday()
             }
         }
+        .task(id: scenePhase) {
+            while scenePhase == .active, !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                store.readPhoneMinutes()
+            }
+        }
     }
 
     /// The first page. Launch with `-startPage 1` in DEBUG to open on another page.

@@ -417,6 +417,16 @@ final class GameStore: ObservableObject {
         enforcePenalty()
     }
 
+    /// Takes the newest phone count while the app stays open. The monitor writes it every minute of phone use.
+    func readPhoneMinutes() {
+        var next = snapshot
+        next.applyScreenTime(phoneMinutes: PhoneScreenGroup.minutes(for: next.bundle.dayKey), workMinutes: nil)
+        guard next.screenTimeToday != snapshot.screenTimeToday else { return }
+        snapshot = next
+        persist()
+        enforcePenalty()
+    }
+
     private func observeHealthUpdates() {
         HealthKitBridge.startObservers()
         Task { @MainActor [weak self] in
