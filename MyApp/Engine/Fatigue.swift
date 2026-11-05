@@ -52,22 +52,25 @@ struct FatigueState: Codable, Equatable {
 }
 
 /// Pure fatigue math, so the store, the status sheet, and the check share it.
-///   Decay       − 35 points per day, down to 0, the days scaled by `HitPoints.regenMultiplier`
+/// `swing` multiplies every rule that moves the meter, so it swings wider but each load clears in the same time.
+///   Decay       − 105 points per day, down to 0, the days scaled by `HitPoints.regenMultiplier`
 ///               (recovery 0: × 0.5 speed, 50 or no reading: × 1, 100: × 1.5)
-///   Workout     + 50 × the session's HP drain share (a 50 min run: +12.5, at most +30), once per session
-///   Recovery    WHOOP recovery under 67: + 0.3 per point under 67 (recovery 20: +14.1), once per WHOOP day
-///   Stress      score 0...100 from `stressScore`; above 30 it adds up to 1 point per hour: (stress − 30) / 70 per hour
-///   Screen      + 1 per hour of new screen time today (phone + Mac, shared minutes once); only the increase counts
+///   Workout     + 150 × the session's HP drain share (a 50 min run: +37.5, at most +90), once per session
+///   Recovery    WHOOP recovery under 67: + 0.9 per point under 67 (recovery 20: +42.3), once per WHOOP day
+///   Stress      score 0...100 from `stressScore`; above 30 it adds up to 3 points per hour: 3 × (stress − 30) / 70 per hour
+///   Screen      + 3 per hour of new screen time today (phone + Mac, shared minutes once); only the increase counts
 ///   Red         at or above 80
 enum Fatigue {
     static let maxValue = 100.0
-    static let lossPerDay = 35.0
-    static let perWorkoutDrain = 50.0
+    /// 3 is 200% more extreme than the base numbers below.
+    static let swing = 3.0
+    static let lossPerDay = 35.0 * swing
+    static let perWorkoutDrain = 50.0 * swing
     static let lowRecoveryBelow = 67
-    static let perRecoveryPoint = 0.3
+    static let perRecoveryPoint = 0.3 * swing
     static let stressFloor = 30.0
-    static let stressPerHourAtMax = 1.0
-    static let perScreenHour = 1.0
+    static let stressPerHourAtMax = 1.0 * swing
+    static let perScreenHour = 1.0 * swing
     /// At or above this, the fatigue meter turns red.
     static let redAt = 80
     /// Stress weights when both signals exist.
@@ -185,14 +188,14 @@ enum Fatigue {
         }
 
         let tired = FatigueState(value: 50, updatedAt: start)
-        if !near(run(tired, hours: 24).value, 15) {
-            errors.append("fatigue should fall 35 points in a day at a normal recovery")
+        if !near(run(tired, hours: 8).value, 15) {
+            errors.append("fatigue should fall 105 points in a day at a normal recovery")
         }
-        if run(FatigueState(value: 70, updatedAt: start), hours: 48).value != 0 || run(tired, hours: 240).value != 0 {
-            errors.append("two full rest days should clear 70 fatigue, and fatigue should stop at 0")
+        if run(FatigueState(value: maxValue, updatedAt: start), hours: 48).value != 0 || run(tired, hours: 240).value != 0 {
+            errors.append("two full rest days should clear a full meter, and fatigue should stop at 0")
         }
-        let green = run(tired, hours: 24, recovery: 100, recoveryDay: day)
-        let red = run(tired, hours: 24, recovery: 50, recoveryDay: day)
+        let green = run(tired, hours: 8, recovery: 100, recoveryDay: day)
+        let red = run(tired, hours: 8, recovery: 50, recoveryDay: day)
         if !(green.value < red.value) {
             errors.append("a high recovery should clear fatigue faster")
         }
@@ -204,7 +207,7 @@ enum Fatigue {
         let session = HPWorkout(ids: ["strava:1", "healthkit:a"], drainFraction: 0.25)
         let once = run(nil, workouts: [session])
         let again = run(once, workouts: [HPWorkout(ids: ["whoop:z", "healthkit:a"], drainFraction: 0.25)])
-        if !near(once.value, 12.5) || !near(again.value, 12.5) {
+        if !near(once.value, 37.5) || !near(again.value, 37.5) {
             errors.append("a workout should add fatigue once, even when a new source joins it")
         }
 
@@ -212,7 +215,7 @@ enum Fatigue {
         let lowAgain = run(low, recovery: 20, recoveryDay: day)
         let yesterday = run(nil, recovery: 20, recoveryDay: "2026-10-27")
         let fine = run(nil, recovery: 67, recoveryDay: day)
-        if !near(low.value, 14.1) || low.value != lowAgain.value || yesterday.value != 0 || fine.value != 0 {
+        if !near(low.value, 42.3) || low.value != lowAgain.value || yesterday.value != 0 || fine.value != 0 {
             errors.append("only today's low recovery should add fatigue, once")
         }
 
@@ -220,8 +223,8 @@ enum Fatigue {
         let more = run(screen, screen: 180)
         let stale = run(more, screen: 90)
         let nextDay = run(stale, screenDay: "2026-10-29", screen: 60)
-        if !near(screen.value, 2) || !near(more.value, 3) || !near(stale.value, 3) || !near(nextDay.value, 4) {
-            errors.append("screen time should add 1 per hour, counting only the increase each day")
+        if !near(screen.value, 6) || !near(more.value, 9) || !near(stale.value, 9) || !near(nextDay.value, 12) {
+            errors.append("screen time should add 3 per hour, counting only the increase each day")
         }
 
         if stressScore(hrv: nil, hrvBaseline: nil, dayStrain: nil) != nil
@@ -233,8 +236,8 @@ enum Fatigue {
         }
         let calm = FatigueState(value: 0, updatedAt: start, hrvBaseline: 60, hrvDayKey: "2026-10-27")
         let stressed = run(calm, hours: 10, hrv: 42, strain: 21)
-        if !near(stressed.value, 10) || stressPerHour(30) != 0 {
-            errors.append("full stress should add 1 point per hour, nothing at or under 30")
+        if !near(stressed.value, 30) || stressPerHour(30) != 0 {
+            errors.append("full stress should add 3 points per hour, nothing at or under 30")
         }
         let learned = run(calm, recovery: 70, recoveryDay: day, hrv: 74)
         let learnedAgain = run(learned, recovery: 70, recoveryDay: day, hrv: 74)

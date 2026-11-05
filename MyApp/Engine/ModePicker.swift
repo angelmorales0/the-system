@@ -277,8 +277,9 @@ enum RestScore {
 
     /// Points at or above this rest the day.
     static let restAt = 3
-    static let highFatigue = 80
-    static let raisedFatigue = 60
+    /// A hard day peaks near 94 on the fatigue meter, so these sit at the top of it.
+    static let highFatigue = 100
+    static let raisedFatigue = 90
     /// HRV under this share of the running baseline counts as low.
     static let lowHrvShare = TrainingHistory.hrvDropShare
 
@@ -330,9 +331,9 @@ enum RestScore {
         expect(Input(readinessBand: .yellow, sleepPerformance: 50), rest: false, "a yellow morning after a bad night")
         expect(Input(readinessBand: .yellow, sleepPerformance: 50, hrv: 40, hrvBaseline: 60), rest: true, "yellow, low sleep, and low HRV")
         expect(Input(readinessBand: .green, hrv: 59, hrvBaseline: 60), rest: false, "HRV just under baseline")
-        expect(Input(fatigue: 80), rest: true, "fatigue at 80")
-        expect(Input(fatigue: 79), rest: false, "fatigue at 79 alone")
-        expect(Input(readinessBand: .red, fatigue: 60), rest: true, "a red morning with raised fatigue")
+        expect(Input(fatigue: 100), rest: true, "fatigue at 100")
+        expect(Input(fatigue: 99), rest: false, "fatigue at 99 alone")
+        expect(Input(readinessBand: .red, fatigue: 90), rest: true, "a red morning with raised fatigue")
         expect(Input(hpCritical: true), rest: true, "critical HP")
         let two = score(Input(readinessBand: .red, yesterdayBand: .red))
         if two.reason != "Recovery in the red two mornings in a row. Rest to protect the next block." { errors.append("the reason should lead with the first signal, got \(two.reason)") }
