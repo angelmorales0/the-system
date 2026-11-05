@@ -425,11 +425,20 @@ final class GameStore: ObservableObject {
     /// Takes the newest phone count while the app stays open. The monitor writes it every minute of phone use.
     func readPhoneMinutes() {
         var next = snapshot
-        next.applyScreenTime(phoneMinutes: PhoneScreenGroup.minutes(for: next.bundle.dayKey), workMinutes: nil)
+        let phone = PhoneScreenGroup.minutes(for: next.bundle.dayKey)
+        next.correctPhoneScreenTime(to: phone)
+        next.applyScreenTime(phoneMinutes: phone, workMinutes: nil)
+        rearmPhoneCount()
         guard next.screenTimeToday != snapshot.screenTimeToday else { return }
         snapshot = next
         persist()
         enforcePenalty()
+    }
+
+    private func rearmPhoneCount() {
+        if persistence == .standard {
+            ScreenTimeEnforcement.rearmAfterBurst(now: .now)
+        }
     }
 
     private func observeHealthUpdates() {
@@ -461,8 +470,11 @@ final class GameStore: ObservableObject {
             self.refreshingIntegrations = false
             var next = self.snapshot
             let rebuilt = next.applyWhoopReadiness(remote.whoop, catalog: self.catalog, now: now)
+            let phone = PhoneScreenGroup.minutes(for: next.bundle.dayKey)
+            next.correctPhoneScreenTime(to: phone)
+            self.rearmPhoneCount()
             next.applyScreenTime(
-                phoneMinutes: PhoneScreenGroup.minutes(for: next.bundle.dayKey),
+                phoneMinutes: phone,
                 workMinutes: macScreen?.minutes(for: next.bundle.dayKey),
                 overlapMinutes: Self.screenOverlap(dayKey: next.bundle.dayKey, macScreen: macScreen)
             )

@@ -96,24 +96,47 @@ enum PhoneScreenGroup {
     static let eventPrefix = "phone_"
     /// Why iOS refused to start the daily count. Nil after a good start.
     static let startErrorKey = "screenTimeStartError"
+    /// The one-day count that takes over after a false burst used up the day's thresholds.
+    static let rearmActivity = "screenTimeRearm"
+    /// `["day": calendar day, "count": restarts that day]`.
+    static let rearmKey = "screenTimeRearmDay"
 
     /// Thresholds the monitor reports: every minute, past the failure point.
     /// Phone minutes can be the whole day on a day with no Mac work.
     static let thresholds = Array(1...(ScreenTime.failAfterMinutes + 10))
 
-    /// Phone minutes the monitor wrote for `dayKey`, or nil when it has none for that day.
+    /// Phone minutes the monitor wrote for `dayKey`, without false bursts. Nil when it has none for that day.
     static func minutes(for dayKey: String, defaults: UserDefaults = PenaltyGroup.defaults) -> Int? {
-        times(for: dayKey, defaults: defaults).keys.max()
+        let raw = rawTimes(for: dayKey, defaults: defaults)
+        return raw.isEmpty ? nil : PhoneBurst.trusted(raw).keys.max() ?? 0
     }
 
-    /// When each phone threshold was reached on `dayKey`. Empty when the monitor has none for that day.
+    /// When each trusted phone threshold was reached on `dayKey`. Empty when the monitor has none for that day.
     static func times(for dayKey: String, defaults: UserDefaults = PenaltyGroup.defaults) -> [Int: Date] {
+        PhoneBurst.trusted(rawTimes(for: dayKey, defaults: defaults))
+    }
+
+    /// Every threshold the monitor wrote for `dayKey`, false bursts included.
+    static func rawTimes(for dayKey: String, defaults: UserDefaults = PenaltyGroup.defaults) -> [Int: Date] {
         guard let days = defaults.dictionary(forKey: daysKey) as? [String: [String: Double]], let raw = days[dayKey] else { return [:] }
         var times: [Int: Date] = [:]
         for (minutes, seconds) in raw {
             if let minutes = Int(minutes) { times[minutes] = Date(timeIntervalSince1970: seconds) }
         }
         return times
+    }
+
+    /// Replaces the stored thresholds of `dayKey`. A re-armed step could not write over a false one otherwise.
+    static func keep(_ times: [Int: Date], for dayKey: String, defaults: UserDefaults = PenaltyGroup.defaults) {
+        var days = defaults.dictionary(forKey: daysKey) as? [String: [String: Double]] ?? [:]
+        days[dayKey] = Dictionary(uniqueKeysWithValues: times.map { (String($0.key), $0.value.timeIntervalSince1970) })
+        defaults.set(days, forKey: daysKey)
+    }
+
+    /// The monitor's day: midnight to midnight, not the 5:00 quest day.
+    static func calendarDayKey(_ date: Date) -> String {
+        let parts = Calendar.autoupdatingCurrent.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
     }
 
     #if os(iOS)
@@ -134,6 +157,43 @@ enum PhoneScreenGroup {
         PenaltyGroup.defaults.set(data, forKey: selectionKey)
     }
     #endif
+}
+
+/// iOS can fire hundreds of phone thresholds at once with no real use behind them (iOS 26.2 onward; on 2026-11-05,
+/// 484 steps came in 3.5 seconds and took the count from 56 to 540). Real steps arrive with the use.
+/// Steps that arrive together form a group, and a group counts only if its growth fits the time since the last trusted step.
+enum PhoneBurst {
+    /// Steps closer than this are one group. False bursts are under 1 second apart, real steps 25 seconds or more.
+    static let groupSeconds: TimeInterval = 10
+    /// Extra growth a group may have, for a step that came late and the steps that catch up after it.
+    static let slackMinutes = 5
+    /// The most one group can add, however long the phone was quiet. Also covers the first group of a day.
+    static let maxGrowth = 30
+
+    static func trusted(_ times: [Int: Date]) -> [Int: Date] {
+        var kept: [Int: Date] = [:]
+        var top = 0
+        var lastTrusted: Date?
+        var group: [(minutes: Int, time: Date)] = []
+
+        func closeGroup() {
+            guard let highest = group.map(\.minutes).max(), let newest = group.last?.time, let oldest = group.first?.time else { return }
+            let gap = lastTrusted.map { Int((oldest.timeIntervalSince($0) / 60).rounded(.up)) } ?? maxGrowth
+            if highest - top <= min(gap + slackMinutes, maxGrowth) {
+                for step in group { kept[step.minutes] = step.time }
+                top = max(top, highest)
+                lastTrusted = newest
+            }
+            group = []
+        }
+
+        for (minutes, time) in times.sorted(by: { ($0.value, $0.key) < ($1.value, $1.key) }) {
+            if let previous = group.last, time.timeIntervalSince(previous.time) >= groupSeconds { closeGroup() }
+            group.append((minutes, time))
+        }
+        closeGroup()
+        return kept
+    }
 }
 
 /// Finds phone minutes that happened while a Mac was counting, so the same minute is not counted twice.
@@ -182,7 +242,7 @@ enum ScreenTimeEnforcement {
         let name = DeviceActivityName(PhoneScreenGroup.activity)
         if !restart, center.activities.contains(name), center.events(for: name).count == PhoneScreenGroup.thresholds.count,
            center.schedule(for: name)?.intervalStart.hour == 0 { return }
-        center.stopMonitoring([name])
+        center.stopMonitoring([name, DeviceActivityName(PhoneScreenGroup.rearmActivity)])
         let selection = PhoneScreenGroup.load()
         guard !(selection.applicationTokens.isEmpty && selection.categoryTokens.isEmpty && selection.webDomainTokens.isEmpty) else { return }
         let schedule = DeviceActivitySchedule(
@@ -207,9 +267,79 @@ enum ScreenTimeEnforcement {
         }
         #endif
     }
+
+    /// Restarts per calendar day. A burst can come back right after a restart, so the count then holds.
+    static let maxRearms = 3
+    /// The burst must be over first, so the monitor does not write its last steps back.
+    static let rearmQuietSeconds: TimeInterval = 120
+    /// iOS refuses a schedule shorter than 15 minutes.
+    static let minRearmMinutes = 15
+
+    /// A false burst uses up every threshold, so iOS sends nothing more that day. This drops the false steps and
+    /// counts on from the trusted minutes. It runs as its own one-day schedule that starts now, so it holds no earlier use.
+    static func rearmAfterBurst(now: Date) {
+        #if os(iOS)
+        let defaults = PenaltyGroup.defaults
+        let dayKey = PhoneScreenGroup.calendarDayKey(now)
+        let raw = PhoneScreenGroup.rawTimes(for: dayKey)
+        let kept = PhoneBurst.trusted(raw)
+        guard kept.count < raw.count, let newest = raw.values.max(), now.timeIntervalSince(newest) >= rearmQuietSeconds else { return }
+        let record = defaults.dictionary(forKey: PhoneScreenGroup.rearmKey)
+        let used = record?["day"] as? String == dayKey ? record?["count"] as? Int ?? 0 : 0
+        let clock = Calendar.autoupdatingCurrent.dateComponents([.hour, .minute], from: now)
+        let hour = clock.hour ?? 0, minute = clock.minute ?? 0
+        guard used < maxRearms, hour * 60 + minute + minRearmMinutes <= 23 * 60 + 59 else { return }
+        let attempt: [String: Any] = ["day": dayKey, "count": used + 1]
+        defaults.set(attempt, forKey: PhoneScreenGroup.rearmKey)
+
+        let selection = PhoneScreenGroup.load()
+        guard !(selection.applicationTokens.isEmpty && selection.categoryTokens.isEmpty && selection.webDomainTokens.isEmpty) else { return }
+        let base = kept.keys.max() ?? 0
+        var events: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:]
+        for step in PhoneScreenGroup.thresholds where step > base {
+            events[DeviceActivityEvent.Name(PhoneScreenGroup.eventPrefix + String(step))] = DeviceActivityEvent(
+                applications: selection.applicationTokens,
+                categories: selection.categoryTokens,
+                webDomains: selection.webDomainTokens,
+                threshold: DateComponents(minute: step - base)
+            )
+        }
+        let center = DeviceActivityCenter()
+        let name = DeviceActivityName(PhoneScreenGroup.rearmActivity)
+        center.stopMonitoring([name])
+        do {
+            try center.startMonitoring(
+                name,
+                during: DeviceActivitySchedule(
+                    intervalStart: DateComponents(hour: hour, minute: minute),
+                    intervalEnd: DateComponents(hour: 23, minute: 59),
+                    repeats: false
+                ),
+                events: events
+            )
+            PhoneScreenGroup.keep(kept, for: dayKey)
+            defaults.removeObject(forKey: PhoneScreenGroup.startErrorKey)
+        } catch {
+            defaults.set(String(describing: error), forKey: PhoneScreenGroup.startErrorKey)
+        }
+        #endif
+    }
 }
 
 extension GameSnapshot {
+    /// A false burst may already be saved. Lowers the phone count to the trusted one and lifts a failure it alone caused.
+    /// Only this path may lower a count: `applyScreenTime` still keeps the larger reading.
+    mutating func correctPhoneScreenTime(to minutes: Int?) {
+        guard let minutes, var day = screenTime, day.dayKey == bundle.dayKey, day.phoneMinutes > minutes else { return }
+        day.phoneMinutes = minutes
+        screenTime = day
+        guard let index = bundle.quests.firstIndex(where: { $0.id == ScreenTime.questId }) else { return }
+        bundle.quests[index].progress.current = Double(day.totalMinutes)
+        if bundle.quests[index].status == .failed && !day.overTotal {
+            bundle.quests[index].status = .pending
+        }
+    }
+
     /// Takes the newest readings for today and moves the Screen Time row. Past the grace, the row fails and stays failed.
     mutating func applyScreenTime(phoneMinutes: Int?, workMinutes: Int?, overlapMinutes: Int? = nil) {
         var day = screenTime?.dayKey == bundle.dayKey ? screenTime ?? ScreenTimeDay(dayKey: bundle.dayKey) : ScreenTimeDay(dayKey: bundle.dayKey)
@@ -326,6 +456,66 @@ enum ScreenTimeRules {
                 errors.append("each calendar day should keep its own phone count")
             }
             defaults.removePersistentDomain(forName: phoneSuite)
+        }
+        // The burst of 2026-11-05: steady steps, then every step left in a few seconds, out of order.
+        if let start = QuestDay.start(of: "2026-10-05") {
+            let at = { (minute: Double) in start.addingTimeInterval(minute * 60) }
+            var steady = Dictionary(uniqueKeysWithValues: (1...56).map { ($0, at(Double($0) * 2)) })
+            var burst = steady
+            for (offset, step) in (57...540).reversed().enumerated() { burst[step] = at(114 + Double(offset) * 0.0001) }
+            if PhoneBurst.trusted(steady) != steady {
+                errors.append("steady phone steps should all be trusted")
+            }
+            if PhoneBurst.trusted(burst).keys.max() != 56 {
+                errors.append("a burst should leave the count at 56, got \(String(describing: PhoneBurst.trusted(burst).keys.max()))")
+            }
+            // A step of the old count that comes after the burst does not jump past it, and a re-armed step does not need it.
+            var stray = burst
+            stray[541] = at(400)
+            if PhoneBurst.trusted(stray).keys.max() != 56 {
+                errors.append("a lone step far past the trusted count should not count")
+            }
+            steady[57] = at(180)
+            if PhoneBurst.trusted(steady).keys.max() != 57 {
+                errors.append("the next step after a quiet spell should count")
+            }
+            // A real batch: 3 steps at once after 4 quiet minutes, then a late step and its catch-up.
+            let batch: [Int: Date] = [14: at(100), 15: at(104), 16: at(104.001), 17: at(104.002), 18: at(105), 19: at(105.5), 20: at(105.501), 21: at(105.502)]
+            if PhoneBurst.trusted(batch).count != batch.count {
+                errors.append("a small late batch should stay, got \(PhoneBurst.trusted(batch).keys.sorted())")
+            }
+            // The day's first group is a burst: nothing is trusted, and the count reads 0, not "no reading".
+            let first = Dictionary(uniqueKeysWithValues: (1...321).map { ($0, at(1000 + Double($0) * 0.0001)) })
+            if !PhoneBurst.trusted(first).isEmpty {
+                errors.append("a burst as the day's first group should not count")
+            }
+            let burstSuite = "com.angelmorales.thesystem.selfcheck.phoneburst"
+            if let defaults = UserDefaults(suiteName: burstSuite) {
+                PhoneScreenGroup.keep(first, for: "2026-10-05", defaults: defaults)
+                if PhoneScreenGroup.minutes(for: "2026-10-05", defaults: defaults) != 0 || PhoneScreenGroup.minutes(for: "2026-10-06", defaults: defaults) != nil {
+                    errors.append("a day of only false steps should read 0, and a day with none should read nil")
+                }
+                PhoneScreenGroup.keep(PhoneBurst.trusted(burst), for: "2026-10-05", defaults: defaults)
+                if PhoneScreenGroup.rawTimes(for: "2026-10-05", defaults: defaults).count != 56 {
+                    errors.append("keep should replace the day's stored steps")
+                }
+                defaults.removePersistentDomain(forName: burstSuite)
+            }
+            // A false reading already saved: the count drops and the failure lifts.
+            var saved = GameSnapshot.fresh(catalog: catalog, now: now)
+            saved.applyScreenTime(phoneMinutes: 540, workMinutes: 9, overlapMinutes: 0)
+            saved.correctPhoneScreenTime(to: 56)
+            let row = saved.bundle.quests.first { $0.id == ScreenTime.questId }
+            if saved.screenTimeToday.phoneMinutes != 56 || row?.status != .pending || row?.progress.current != 65 {
+                errors.append("a corrected burst should read 56 + 9 and lift the failure, got \(saved.screenTimeToday) \(String(describing: row?.status))")
+            }
+            // A real failure stays: the work minutes alone are past the grace.
+            var real = GameSnapshot.fresh(catalog: catalog, now: now)
+            real.applyScreenTime(phoneMinutes: 540, workMinutes: 535, overlapMinutes: 0)
+            real.correctPhoneScreenTime(to: 56)
+            if real.bundle.quests.first(where: { $0.id == ScreenTime.questId })?.status != .failed {
+                errors.append("a correction should not lift a failure the total still earns")
+            }
         }
         // Phone 10:00–10:10 while a Mac was active 10:00–10:15: the second 5 minutes surely overlap.
         if let start = QuestDay.start(of: "2026-10-05") {

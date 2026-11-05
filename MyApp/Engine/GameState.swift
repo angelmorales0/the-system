@@ -127,6 +127,7 @@ struct GameSnapshot: Codable, Equatable {
     /// A day with no reading at all stays pending: it opens no penalty, but it is no pass and pays no gold.
     mutating func settleScreenTime() {
         if let minutes = PhoneScreenGroup.minutes(for: bundle.dayKey) {
+            correctPhoneScreenTime(to: minutes)
             applyScreenTime(phoneMinutes: minutes, workMinutes: nil)
         }
         guard let index = bundle.quests.firstIndex(where: { $0.id == ScreenTime.questId && $0.status == .pending }),

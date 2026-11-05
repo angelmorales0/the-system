@@ -15,7 +15,7 @@ class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
             FocusMonitor.startDay(now: Date())
             return
         }
-        if activity.rawValue == PhoneScreenMonitor.activity { return }
+        if PhoneScreenMonitor.activities.contains(activity.rawValue) { return }
         if activity.rawValue == PenaltyMonitorGroup.dawnActivity {
             PenaltyMonitorShields.lockIfDayMissed(now: Date())
             return
@@ -28,7 +28,7 @@ class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
             FocusMonitor.endDay(now: Date())
             return
         }
-        if activity.rawValue == PhoneScreenMonitor.activity { return }
+        if PhoneScreenMonitor.activities.contains(activity.rawValue) { return }
         if activity.rawValue == PenaltyMonitorGroup.dawnActivity { return }
         PenaltyMonitorShields.reassert()
     }
@@ -38,7 +38,7 @@ class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
             FocusMonitor.record(event: event.rawValue, now: Date())
             return
         }
-        if activity.rawValue == PhoneScreenMonitor.activity {
+        if PhoneScreenMonitor.activities.contains(activity.rawValue) {
             PhoneScreenMonitor.record(event.rawValue, now: Date())
         }
     }
@@ -124,7 +124,8 @@ enum PenaltyMonitorShields {
 
 /// Mirrors `PhoneScreenGroup` in the app. Keep the strings in step.
 enum PhoneScreenMonitor {
-    static let activity = "screenTimeDay"
+    /// The daily count, and the one-day count the app starts after a false burst.
+    static let activities = ["screenTimeDay", "screenTimeRearm"]
     static let eventPrefix = "phone_"
     static let daysKey = "screenTimePhoneDays"
     /// Older days are dropped. The app reads the current day and the day that just ended.

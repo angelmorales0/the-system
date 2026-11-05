@@ -70,6 +70,8 @@ Copy `build/FocusTracker.dmg` to the work Mac, open it, and drag FocusTracker to
 - A video with no keyboard or mouse input stops counting after 5 minutes.
 - Mac + Mac overlap is exact to the minute. Phone + Mac overlap is a safe estimate: iOS reports only when phone use passes
   each 5- or 10-minute step, so the app removes only the overlap it can prove. Some real overlap can stay counted.
+- iOS can fire hundreds of phone thresholds at once with no real use. The app drops a group of steps that grows faster
+  than the time allows, and restarts the count from the trusted minutes, up to 3 times a day. After that the phone count holds.
 - After a Worker code change, paste the new `screentime-worker/worker.js` into the Worker (**Edit code → Deploy**).
 - If the work network blocks the Worker, minutes wait on the Mac and send when it can reach it.
 - Anyone with the token can read and write your Mac minutes. Keep it private; change the `TOKEN` secret to revoke it.
