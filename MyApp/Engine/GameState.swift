@@ -486,16 +486,19 @@ struct GameSnapshot: Codable, Equatable {
         bundle = finished(split, catalog: catalog, now: now)
     }
 
-    /// Adds the fixed rows every day gets: Stretching, then any open penalty.
+    /// Adds the fixed rows: Screen Time, Stretching unless it is a spent rest day, then any open penalty.
     /// On a "No gym today" day, the lifts first give way to a second 10K. A day holds at most two workouts.
     func finished(_ bundle: QuestBundle, catalog: FallbackCatalog, now: Date) -> QuestBundle {
         var day = TrainingDay.cappingWorkouts(noGymDayKey == bundle.dayKey ? NoGymDay.cardioOnly(bundle, now: now) : bundle)
-        if day.mode == .fullRecovery, !signals.spendingFullRecovery, fullRecoveryDayKey != day.dayKey, restDue(on: day.dayKey) {
+        let restDay = day.mode == .fullRecovery && !signals.spendingFullRecovery && fullRecoveryDayKey != day.dayKey && restDue(on: day.dayKey)
+        if restDay {
             day.headerLine = Self.restDayHeader
             day.narrative = ""
         }
+        let screen = ScreenTime.ensure(in: day, now: now)
+        let stretch = StretchSplit.today(history: questHistory, dayKey: day.dayKey)
         return PenaltyQuests.ensure(
-            in: DailyStretch.ensure(in: ScreenTime.ensure(in: day, now: now), now: now),
+            in: restDay ? screen : DailyStretch.ensure(in: screen, now: now, day: stretch),
             open: player.penaltyOpen,
             band: trainingBand,
             catalog: catalog,

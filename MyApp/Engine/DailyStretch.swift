@@ -1,37 +1,38 @@
 import Foundation
 
-/// A fixed `Stretching [0/10min]` row on every daily quest screen, whether the bundle came from the catalog
-/// or from generation.
+/// A `Stretching [0/20min]` row on the daily quest screen, whether the bundle came from the catalog
+/// or from generation. `StretchSplit` sets the day's stretches and minutes. A spent rest day has no row.
 /// It checks itself off from timed Hevy stretches or an Apple Health flexibility workout (see `StretchTime`).
 enum DailyStretch {
     static let questId = "daily_stretching"
     static let title = "Stretching"
-    static let minutes = 10.0
+    /// Names the row's `StretchSplit.Day`. It stays in the history, so the rotation can read it.
+    static let dayParam = "stretchDay"
 
-    static func quest(mode: QuestMode, now: Date) -> Quest {
+    static func quest(mode: QuestMode, now: Date, day: StretchSplit.Day = StretchSplit.rotation[0]) -> Quest {
         Quest(
             id: questId,
             title: title,
             kind: .daily,
             stat: .AGI,
-            verification: VerificationSpec(method: .hevySets, params: ["stretchMinutes": .number(minutes)]),
+            verification: VerificationSpec(method: .hevySets, params: ["stretchMinutes": .number(day.minutes), dayParam: .string(day.id)]),
             deadline: QuestDay.endOfDay(now),
             difficulty: .easy,
             mode: mode,
-            progress: QuestProgress(current: 0, target: minutes, unit: "min"),
+            progress: QuestProgress(current: 0, target: day.minutes, unit: "min"),
             status: .pending,
             assignedAt: now
         )
     }
 
     /// Adds the row once, after the last required quest. An existing row keeps its progress.
-    static func ensure(in bundle: QuestBundle, now: Date) -> QuestBundle {
+    static func ensure(in bundle: QuestBundle, now: Date, day: StretchSplit.Day = StretchSplit.rotation[0]) -> QuestBundle {
         // A Full Recovery day has no rows of its own; it still gets Stretching.
         guard !bundle.quests.isEmpty || bundle.mode == .fullRecovery,
               !bundle.quests.contains(where: { $0.id == questId }) else { return bundle }
         var copy = bundle
         let insertAt = copy.quests.lastIndex(where: { $0.kind != .optional }).map { $0 + 1 } ?? copy.quests.count
-        copy.quests.insert(quest(mode: bundle.mode, now: now), at: insertAt)
+        copy.quests.insert(quest(mode: bundle.mode, now: now, day: day), at: insertAt)
         return copy
     }
 
@@ -54,8 +55,8 @@ enum DailyStretch {
         if added.quests.map(\.id) != ["run_intervals", questId, "light_spend"] {
             errors.append("Stretching should sit after the required quests, got \(added.quests.map(\.id))")
         }
-        if added.quests.first(where: { $0.id == questId })?.progress.bracketLabel != "[0/10min]" {
-            errors.append("Stretching should read [0/10min]")
+        if added.quests.first(where: { $0.id == questId })?.progress.bracketLabel != "[0/20min]" {
+            errors.append("Stretching should read [0/20min] on the first split day")
         }
 
         // Stretch names: whole words only, so a split squat is not a stretch.

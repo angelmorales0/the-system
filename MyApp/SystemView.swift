@@ -80,6 +80,9 @@ struct SystemView: View {
                         if quest.id == ScreenTime.questId {
                             ScreenTimeSplit(day: store.snapshot.screenTimeToday)
                         }
+                        if quest.id == DailyStretch.questId, let day = StretchSplit.day(of: quest) {
+                            StretchDayList(day: day)
+                        }
                     case .lifts(let lifts):
                         liftGroupRow(lifts)
                         if liftsExpanded {
@@ -245,6 +248,45 @@ private enum GoalRow: Identifiable {
         case .quest(let quest): quest.id
         case .lifts: "gym_lifts"
         }
+    }
+}
+
+/// The day's stretches under the Stretching row, folded by default.
+private struct StretchDayList: View {
+    let day: StretchSplit.Day
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(day.name)
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.medium))
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                        .opacity(0.7)
+                }
+                .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(day.name)
+            .accessibilityHint(expanded ? "Hides the stretches" : "Shows the stretches")
+            if expanded {
+                ForEach(day.stretches, id: \.name) { stretch in
+                    HStack {
+                        Text(stretch.name)
+                        Spacer(minLength: 8)
+                        Text(stretch.label).monospacedDigit()
+                    }
+                }
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(QuestLight.ink.opacity(0.75))
+        .padding(.leading, 16)
     }
 }
 
