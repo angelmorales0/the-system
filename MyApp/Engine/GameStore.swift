@@ -329,6 +329,11 @@ final class GameStore: ObservableObject {
     }
     var bundle: QuestBundle { snapshot.bundle }
     var goalQuests: [Quest] { bundle.goalQuests }
+
+    /// Sets of this stretch in today's Hevy workouts.
+    func stretchSetsDone(_ stretch: StretchSplit.Stretch) -> Int {
+        StretchSplit.setsDone(stretch, workouts: integrations.hevy.workouts)
+    }
     var optionalQuests: [Quest] { bundle.optionalQuests }
 
     func rowLabel(for quest: Quest) -> String {

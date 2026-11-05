@@ -16,7 +16,8 @@ enum StretchSplit {
         var seconds = 60
 
         var minutes: Double { Double(sets * seconds * (perSide ? 2 : 1)) / 60 }
-        var label: String { "\(sets) × \(seconds)s\(perSide ? " per side" : "")" }
+        /// `[2/5 × 60s/side]`, like the set counts on the lift rows.
+        func label(done: Int) -> String { "[\(done)/\(sets) × \(seconds)s\(perSide ? "/side" : "")]" }
     }
 
     struct Day: Equatable {
@@ -66,6 +67,19 @@ enum StretchSplit {
         return rotation[0]
     }
 
+    /// Sets of this stretch logged today, from the timed working sets of its Hevy exercise. A set per side needs both sides.
+    /// Only the row's total minutes finish the day, so another stretch or Apple Health can still clear it.
+    static func setsDone(_ stretch: Stretch, workouts: [HevyWorkout]) -> Int {
+        let name = HevySetsVerifier.baseName(stretch.name)
+        let seconds = workouts.flatMap(\.exercises)
+            .filter { HevySetsVerifier.baseName($0.title) == name }
+            .flatMap(\.sets)
+            .filter(\.isWorking)
+            .reduce(0) { $0 + max(0, $1.durationSec ?? 0) }
+        let perSet = Double(stretch.seconds * (stretch.perSide ? 2 : 1))
+        return min(Int((seconds + 0.001) / perSet), stretch.sets)
+    }
+
     /// The day a Stretching row belongs to. Nil for a row saved before this split.
     static func day(of quest: Quest) -> Day? {
         rotation.first { $0.id == quest.verification.params[DailyStretch.dayParam]?.stringValue }
@@ -95,6 +109,27 @@ enum StretchSplit {
             if AgilityHevy.test(named: stretch.name) != nil { errors.append("\(stretch.name) must not read as an AGI test") }
         }
         if Set(rotation.map(\.id)).count != rotation.count { errors.append("stretch day ids should be unique") }
+
+        func timed(_ seconds: Double, type: String = "normal") -> HevySet {
+            HevySet(type: type, reps: nil, weightKg: nil, rpe: nil, durationSec: seconds)
+        }
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let couch = Stretch(name: "Couch Stretch", sets: 5, perSide: true)
+        let frog = Stretch(name: "Frog Stretch", sets: 3, perSide: false)
+        let session = HevyWorkout(id: "s", title: "Evening Stretch", start: now, end: now, exercises: [
+            HevyExercise(title: "Couch Stretch (Bodyweight)", sets: [timed(60), timed(60), timed(60), timed(60), timed(60), timed(30, type: "warmup")]),
+            HevyExercise(title: "Frog Stretch", sets: [timed(180), timed(60)]),
+        ])
+        if setsDone(couch, workouts: [session]) != 2 {
+            errors.append("5 minutes of a per-side stretch should be 2 sets, without warm-ups")
+        }
+        if setsDone(frog, workouts: [session]) != 3 {
+            errors.append("a stretch's sets should stop at its target")
+        }
+        if setsDone(couch, workouts: []) != 0 { errors.append("no workouts should be 0 sets") }
+        if couch.label(done: 2) != "[2/5 × 60s/side]" || frog.label(done: 0) != "[0/3 × 60s]" {
+            errors.append("stretch rows should show sets and time, got \(couch.label(done: 2))")
+        }
 
         func record(_ dayKey: String, _ id: String, _ status: QuestStatus) -> QuestDayRecord {
             QuestDayRecord(dayKey: dayKey, mode: .performanceTraining, trainingBand: .green, noGym: false, splitDay: nil,

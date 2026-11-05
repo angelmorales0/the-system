@@ -5,6 +5,8 @@ struct SystemView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     /// The gym row starts collapsed each launch.
     @State private var liftsExpanded = false
+    /// The stretching row starts collapsed each launch.
+    @State private var stretchExpanded = false
 
     var body: some View {
         ZStack {
@@ -76,12 +78,21 @@ struct SystemView: View {
                 ForEach(goalRows) { row in
                     switch row {
                     case .quest(let quest):
-                        questRow(quest)
+                        if quest.id == DailyStretch.questId, let day = StretchSplit.day(of: quest) {
+                            stretchGroupRow(quest, day: day)
+                            if stretchExpanded {
+                                Text(day.name)
+                                    .font(.caption)
+                                    .foregroundStyle(QuestLight.ink.opacity(0.75))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.leading, 16)
+                                ForEach(day.stretches, id: \.name) { stretchRow($0) }
+                            }
+                        } else {
+                            questRow(quest)
+                        }
                         if quest.id == ScreenTime.questId {
                             ScreenTimeSplit(day: store.snapshot.screenTimeToday)
-                        }
-                        if quest.id == DailyStretch.questId, let day = StretchSplit.day(of: quest) {
-                            StretchDayList(day: day)
                         }
                     case .lifts(let lifts):
                         liftGroupRow(lifts)
@@ -152,22 +163,59 @@ struct SystemView: View {
 
     private func liftGroupRow(_ lifts: [Quest]) -> some View {
         let done = lifts.filter { $0.status == .completed }.count
-        return Button {
-            withAnimation(.easeOut(duration: 0.2)) { liftsExpanded.toggle() }
+        return foldRow(title: liftGroupTitle, label: "[\(done)/\(lifts.count)]", checked: done == lifts.count, expanded: liftsExpanded) {
+            liftsExpanded.toggle()
+        }
+        .accessibilityValue("\(done) of \(lifts.count) exercises done, \(liftsExpanded ? "expanded" : "collapsed")")
+        .accessibilityHint(liftsExpanded ? "Hides the exercises" : "Shows the exercises")
+    }
+
+    private func stretchGroupRow(_ quest: Quest, day: StretchSplit.Day) -> some View {
+        foldRow(title: quest.title, label: store.rowLabel(for: quest), checked: quest.status == .completed, expanded: stretchExpanded) {
+            stretchExpanded.toggle()
+        }
+        .accessibilityValue("\(day.name), \(store.accessibilityValue(for: quest)), \(stretchExpanded ? "expanded" : "collapsed")")
+        .accessibilityHint(stretchExpanded ? "Hides the stretches" : "Shows the stretches")
+    }
+
+    /// One stretch with its sets and hold time. The Hevy log moves it, so it has no tap.
+    private func stretchRow(_ stretch: StretchSplit.Stretch) -> some View {
+        let done = store.stretchSetsDone(stretch)
+        return HStack(spacing: 11) {
+            Text(stretch.name)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(stretch.label(done: done))
+                .monospacedDigit()
+                .fixedSize(horizontal: true, vertical: false)
+            QuestCheckbox(checked: done >= stretch.sets)
+                .frame(width: 16, height: 17)
+        }
+        .font(.subheadline)
+        .foregroundStyle(QuestLight.ink)
+        .shadow(color: QuestLight.cyan.opacity(0.6), radius: 5)
+        .frame(minHeight: 44)
+        .padding(.leading, 16)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// A row that folds its nested rows in and out: the day's lifts, or the day's stretches.
+    private func foldRow(title: String, label: String, checked: Bool, expanded: Bool, toggle: @escaping () -> Void) -> some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.2)) { toggle() }
         } label: {
             HStack(spacing: 11) {
                 HStack(spacing: 6) {
-                    Text(liftGroupTitle)
+                    Text(title)
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.medium))
-                        .rotationEffect(.degrees(liftsExpanded ? 90 : 0))
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
                         .opacity(0.7)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                Text("[\(done)/\(lifts.count)]")
+                Text(label)
                     .monospacedDigit()
                     .fixedSize(horizontal: true, vertical: false)
-                QuestCheckbox(checked: done == lifts.count)
+                QuestCheckbox(checked: checked)
                     .frame(width: 16, height: 17)
             }
             .font(.subheadline)
@@ -177,9 +225,7 @@ struct SystemView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(liftGroupTitle)
-        .accessibilityValue("\(done) of \(lifts.count) exercises done, \(liftsExpanded ? "expanded" : "collapsed")")
-        .accessibilityHint(liftsExpanded ? "Hides the exercises" : "Shows the exercises")
+        .accessibilityLabel(title)
     }
 
     private func questRow(_ quest: Quest) -> some View {
@@ -248,45 +294,6 @@ private enum GoalRow: Identifiable {
         case .quest(let quest): quest.id
         case .lifts: "gym_lifts"
         }
-    }
-}
-
-/// The day's stretches under the Stretching row, folded by default.
-private struct StretchDayList: View {
-    let day: StretchSplit.Day
-    @State private var expanded = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Button {
-                withAnimation(.easeOut(duration: 0.2)) { expanded.toggle() }
-            } label: {
-                HStack(spacing: 6) {
-                    Text(day.name)
-                    Image(systemName: "chevron.right")
-                        .font(.caption2.weight(.medium))
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
-                        .opacity(0.7)
-                }
-                .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(day.name)
-            .accessibilityHint(expanded ? "Hides the stretches" : "Shows the stretches")
-            if expanded {
-                ForEach(day.stretches, id: \.name) { stretch in
-                    HStack {
-                        Text(stretch.name)
-                        Spacer(minLength: 8)
-                        Text(stretch.label).monospacedDigit()
-                    }
-                }
-            }
-        }
-        .font(.caption)
-        .foregroundStyle(QuestLight.ink.opacity(0.75))
-        .padding(.leading, 16)
     }
 }
 
