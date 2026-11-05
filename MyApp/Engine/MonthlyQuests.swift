@@ -83,12 +83,12 @@ enum MonthlyQuests {
         let months = IntegrationClient.financeMonthKeys(dayKey: dayKey)
         return MonthlyBoard(
             monthName: name(of: months.this),
-            rows: [budgetRow(month: months.this, finance: financeMonths, excuses: excuses, ended: false, daysLeft: daysLeft(dayKey: dayKey))]
+            rows: [budgetRow(month: months.this, finance: financeMonths, excuses: excuses, ended: false)]
                 + CodeforcesLanguage.allCases.map { codeforcesRow(month: months.this, language: $0, reading: codeforces, ended: false) }
                 + [typingRow(typing)],
             lastMonth: months.last,
             lastMonthName: name(of: months.last),
-            lastRows: months.last < firstMonth ? [] : [budgetRow(month: months.last, finance: financeMonths, excuses: excuses, ended: true, daysLeft: 0)]
+            lastRows: months.last < firstMonth ? [] : [budgetRow(month: months.last, finance: financeMonths, excuses: excuses, ended: true)]
                 + CodeforcesLanguage.allCases.map { codeforcesRow(month: months.last, language: $0, reading: codeforces, ended: true) }
         )
     }
@@ -98,16 +98,9 @@ enum MonthlyQuests {
         return names[number - 1]
     }
 
-    /// Days left in the month, today included.
-    static func daysLeft(dayKey: String) -> Int {
-        guard let date = QuestDay.date(from: dayKey), let days = QuestDay.calendar.range(of: .day, in: .month, for: date)?.count,
-              let today = Int(dayKey.suffix(2)) else { return 0 }
-        return max(days - today + 1, 1)
-    }
-
     // MARK: - Budget
 
-    static func budgetRow(month: String, finance: [FinanceMonth], excuses: PotionExcuses, ended: Bool, daysLeft: Int) -> MonthlyQuestRow {
+    static func budgetRow(month: String, finance: [FinanceMonth], excuses: PotionExcuses, ended: Bool) -> MonthlyQuestRow {
         let title = "Monthly budget"
         guard let raw = finance.first(where: { $0.month == month }) else {
             return MonthlyQuestRow(id: budgetId, title: title, progress: "[--]", status: .noData, share: nil)
@@ -115,23 +108,12 @@ enum MonthlyQuests {
         let spent = excuses.excusing(raw).spendingUsd
         let budget = raw.budgetUsd ?? MercurySettings.defaultBudgetUsd
         let over = spent > budget + FinanceLevel.budgetTolerance
-        var lines: [String] = []
-        if over {
-            lines.append("\(usd(spent - budget)) over budget")
-        } else if !ended {
-            lines.append("\(usd(budget - spent)) left, \(usd((budget - spent) / Double(max(daysLeft, 1)))) a day for \(daysLeft) days")
-        }
-        if let bills = raw.cardBillUsd, bills > 0 { lines.append("Card bills \(usd(bills))") }
-        if let necessary = raw.necessaryUsd { lines.append("Necessary \(usd(max(necessary - (raw.cardBillUsd ?? 0), 0)))") }
-        if let discretionary = raw.discretionaryUsd { lines.append("Discretionary \(usd(discretionary))") }
-        if raw.spendingUsd > spent { lines.append("Potion excused \(usd(raw.spendingUsd - spent))") }
         return MonthlyQuestRow(
             id: budgetId,
             title: title,
             progress: "[\(usd(spent))/\(usd(budget))]",
             status: over ? .failed : ended ? .cleared : .active,
-            share: min(spent / budget, 1),
-            lines: lines
+            share: min(spent / budget, 1)
         )
     }
 
@@ -243,25 +225,25 @@ enum MonthlyQuests {
 
         let spent = FinanceMonth(month: "2026-11", postTaxIncomeUsd: 0, spendingUsd: 700, budgetUsd: 1_000, complete: false,
                                  necessaryUsd: 500, discretionaryUsd: 200, cardBillUsd: 300)
-        let open = budgetRow(month: "2026-11", finance: [spent], excuses: .none, ended: false, daysLeft: 20)
+        let open = budgetRow(month: "2026-11", finance: [spent], excuses: .none, ended: false)
         if open.progress != "[$700/$1,000]" || open.status != .active || open.share != 0.7
-            || open.lines != ["$300 left, $15 a day for 20 days", "Card bills $300", "Necessary $200", "Discretionary $200"] {
-            errors.append("the budget row should show the month's spend and split, got \(open)")
+            || !open.lines.isEmpty {
+            errors.append("the budget row should show only the month's spend, got \(open)")
         }
-        if budgetRow(month: "2026-11", finance: [spent], excuses: .none, ended: true, daysLeft: 0).status != .cleared {
+        if budgetRow(month: "2026-11", finance: [spent], excuses: .none, ended: true).status != .cleared {
             errors.append("an ended month under budget should clear")
         }
         var high = spent
         high.spendingUsd = 1_200
-        let over = budgetRow(month: "2026-11", finance: [high], excuses: .none, ended: false, daysLeft: 20)
-        if over.status != .failed || over.lines.first != "$200 over budget" || over.share != 1 {
+        let over = budgetRow(month: "2026-11", finance: [high], excuses: .none, ended: false)
+        if over.status != .failed || !over.lines.isEmpty || over.share != 1 {
             errors.append("spend over budget should fail the quest at once, got \(over)")
         }
-        let excused = budgetRow(month: "2026-11", finance: [high], excuses: PotionExcuses(spendUsdByMonth: ["2026-11": 300]), ended: false, daysLeft: 20)
-        if excused.status != .active || excused.progress != "[$900/$1,000]" || excused.lines.last != "Potion excused $300" {
+        let excused = budgetRow(month: "2026-11", finance: [high], excuses: PotionExcuses(spendUsdByMonth: ["2026-11": 300]), ended: false)
+        if excused.status != .active || excused.progress != "[$900/$1,000]" {
             errors.append("the FIN potion should excuse spend from the budget quest, got \(excused)")
         }
-        if budgetRow(month: "2026-11", finance: [], excuses: .none, ended: false, daysLeft: 20).status != .noData {
+        if budgetRow(month: "2026-11", finance: [], excuses: .none, ended: false).status != .noData {
             errors.append("the budget row without Mercury should show no data")
         }
 
@@ -348,9 +330,6 @@ enum MonthlyQuests {
         }
         if name(of: "2026-11") != "November" || name(of: "2026-01") != "January" {
             errors.append("month names wrong")
-        }
-        if daysLeft(dayKey: "2026-11-03") != 28 || daysLeft(dayKey: "2026-11-30") != 1 {
-            errors.append("days left should count today")
         }
         return errors
     }
