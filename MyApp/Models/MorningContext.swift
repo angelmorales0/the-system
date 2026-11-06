@@ -99,9 +99,9 @@ struct MorningConstraints: Codable, Equatable {
     /// The player has no gym today: no strength quests, two 10K runs instead.
     var noGymToday = false
 
-    /// A split day is up to 6 lifts plus up to two 10Ks.
+    /// A split day is up to 6 lifts, two hip rows, and up to two 10Ks.
     static let standard = MorningConstraints(
-        maxRequiredQuests: 8,
+        maxRequiredQuests: 10,
         maxOptionalQuests: 1,
         preferAutoVerify: true,
         disallowUnsafeAdvice: true

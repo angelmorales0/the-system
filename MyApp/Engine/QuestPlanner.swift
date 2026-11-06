@@ -159,7 +159,7 @@ enum QuestPlanner {
     - Obey modeDecision.selectedMode. Do not change it. lockedByRules is authoritative.
     - performance_training is strength and 5K or 10K runs only. Lifts use hevy_sets. A run is always a 5K or a 10K: strava_activity with types ["Run"] and minDistanceMeters 5000 or 10000, progress target 5 or 10, unit "km". Prefer the 10K. Two 10Ks on one day are two separate quests. No walks, intervals, sprints, other run distances, protein, nutrition, spending, or stretch quests. The app adds its own Stretching quest.
     - Use kind daily or optional only. Never write penalty quests: the app adds them itself when player.penaltyOpen is true.
-    - Required quests (kind other than optional) <= constraints.maxRequiredQuests. Optional quests <= constraints.maxOptionalQuests. Total quests <= 9.
+    - Required quests (kind other than optional) <= constraints.maxRequiredQuests. Optional quests <= constraints.maxOptionalQuests. Total quests <= \(QuestSafety.maxQuests).
     - Titles are at most 48 characters. The narrative, at most 280 characters, says why today looks the way it does.
     - threat: two sentences for the penalty screen, at most 160 characters, in the voice of the System's urgent quest window. Sentence 1 names the fault behind a missed day as a presence that harms the Player: pick it from the data (missed quest days in trainingHistory.week, skipped stretching, high screen time, low readiness, few runs). Vary the noun: laziness, neglect, bad habits, complacency, weakness, avoidance. Sentence 2 is exactly "Run 10 km and ensure your safety." Cold, short, third person, no names, no advice, no exclamation marks, and never the word penalty. Examples: "Laziness is present and is damaging the Player. Run 10 km and ensure your safety." / "Neglect has taken hold and is wearing the Player down. Run 10 km and ensure your safety."
     - No run longer than 90 minutes when trainingBand is yellow.
@@ -519,10 +519,10 @@ enum QuestPlanner {
             problems.append("bundle has no quests")
             quests = []
         }
-        let requiredCap = constraints?["maxRequiredQuests"]?.intValue.flatMap { $0 == 0 ? nil : $0 } ?? 8
+        let requiredCap = constraints?["maxRequiredQuests"]?.intValue.flatMap { $0 == 0 ? nil : $0 } ?? MorningConstraints.standard.maxRequiredQuests
         let optionalCap = constraints?["maxOptionalQuests"]?.intValue.flatMap { $0 == 0 ? nil : $0 } ?? 1
         let objects = quests.filter { $0.objectValue != nil }
-        if quests.count > 9 { problems.append("too many quests") }
+        if quests.count > QuestSafety.maxQuests { problems.append("too many quests") }
         if objects.filter({ $0["kind"]?.stringValue != "optional" }).count > requiredCap { problems.append("too many required quests") }
         if objects.filter({ $0["kind"]?.stringValue == "optional" }).count > optionalCap { problems.append("too many optional quests") }
         var texts = [narrative, bundle["headerLine"]?.stringValue ?? ""]
