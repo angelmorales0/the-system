@@ -373,7 +373,7 @@ final class GameStore: ObservableObject {
             let result = ManualConfirmVerifier().evaluate(quest: quest, context: context)
             commit(result, questId: id, now: now)
         default:
-            if quest.verification.method.allowsLocalCheckbox {
+            if quest.allowsCheckOff {
                 var next = snapshot
                 let outcome = next.applyLocalOverride(questId: id, now: now)
                 snapshot = next

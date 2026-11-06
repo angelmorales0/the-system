@@ -297,7 +297,7 @@ struct GameSnapshot: Codable, Equatable {
     @discardableResult
     mutating func applyLocalOverride(questId: String, now: Date) -> VerificationApply {
         guard let quest = bundle.quests.first(where: { $0.id == questId }) else { return .ignored }
-        guard quest.verification.method.allowsLocalCheckbox else { return .ignored }
+        guard quest.allowsCheckOff else { return .ignored }
         let evidence = Evidence.make(
             source: "manual_override",
             externalId: "override:\(quest.id):\(bundle.dayKey)",

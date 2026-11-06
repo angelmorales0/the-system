@@ -2,7 +2,8 @@ import Foundation
 
 /// A `Stretching [0/20min]` row on the daily quest screen, whether the bundle came from the catalog
 /// or from generation. `StretchSplit` sets the day's stretches and minutes. A spent rest day has no row.
-/// It checks itself off from timed Hevy stretches or an Apple Health flexibility workout (see `StretchTime`).
+/// It checks itself off from timed Hevy stretches or an Apple Health flexibility workout (see `StretchTime`),
+/// or the player taps its checkbox. It is the only quest with a hand check.
 enum DailyStretch {
     static let questId = "daily_stretching"
     static let title = "Stretching"
@@ -89,6 +90,18 @@ enum DailyStretch {
         }
         if ensure(in: added, now: now).quests.count != added.quests.count {
             errors.append("Stretching must be added only once")
+        }
+        // The hand check completes Stretching, and only Stretching.
+        var snapshot = GameSnapshot.fresh(catalog: FallbackCatalog.bundled(), now: now)
+        if let lift = snapshot.bundle.quests.first(where: { $0.verification.method == .hevySets && $0.id != questId }) {
+            _ = snapshot.applyLocalOverride(questId: lift.id, now: now)
+            if snapshot.bundle.quests.first(where: { $0.id == lift.id })?.status != .pending {
+                errors.append("a lift must not take a hand check")
+            }
+        }
+        _ = snapshot.applyLocalOverride(questId: questId, now: now)
+        if snapshot.bundle.quests.first(where: { $0.id == questId })?.status != .completed {
+            errors.append("the hand check should complete Stretching, got \(snapshot.bundle.quests.map { "\($0.title) \($0.status)" })")
         }
         return errors
     }
