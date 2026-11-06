@@ -171,81 +171,69 @@ struct SystemView: View {
     }
 
     private func stretchGroupRow(_ quest: Quest, day: StretchSplit.Day) -> some View {
-        foldRow(title: quest.title, label: store.rowLabel(for: quest), checked: quest.status == .completed, expanded: stretchExpanded,
-                onCheck: { store.handleQuestTap(id: quest.id) }) {
+        foldRow(title: quest.title, label: store.rowLabel(for: quest), checked: quest.status == .completed, expanded: stretchExpanded) {
             stretchExpanded.toggle()
         }
         .accessibilityValue("\(day.name), \(store.accessibilityValue(for: quest)), \(stretchExpanded ? "expanded" : "collapsed")")
         .accessibilityHint(stretchExpanded ? "Hides the stretches" : "Shows the stretches")
     }
 
-    /// One stretch with its sets and hold time. The Hevy log moves it, so it has no tap.
+    /// One stretch with its sets and hold time. A tap checks it, and Hevy can fill it too.
+    /// With every stretch done, the Stretching row above completes.
     private func stretchRow(_ stretch: StretchSplit.Stretch) -> some View {
-        let done = store.stretchSetsDone(stretch)
-        return HStack(spacing: 11) {
-            Text(stretch.name)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text(stretch.label(done: done))
-                .monospacedDigit()
-                .fixedSize(horizontal: true, vertical: false)
-            QuestCheckbox(checked: done >= stretch.sets)
-                .frame(width: 16, height: 17)
+        let done = store.stretchDone(stretch)
+        return Button {
+            store.toggleStretch(stretch)
+        } label: {
+            HStack(spacing: 11) {
+                Text(stretch.name)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(stretch.label(done: done ? stretch.sets : store.stretchSetsDone(stretch)))
+                    .monospacedDigit()
+                    .fixedSize(horizontal: true, vertical: false)
+                QuestCheckbox(checked: done)
+                    .frame(width: 16, height: 17)
+            }
+            .font(.subheadline)
+            .foregroundStyle(QuestLight.ink)
+            .shadow(color: QuestLight.cyan.opacity(0.6), radius: 5)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
-        .font(.subheadline)
-        .foregroundStyle(QuestLight.ink)
-        .shadow(color: QuestLight.cyan.opacity(0.6), radius: 5)
-        .frame(minHeight: 44)
+        .buttonStyle(.plain)
         .padding(.leading, 16)
-        .accessibilityElement(children: .combine)
+        .accessibilityValue(done ? "Done" : "Not done")
+        .accessibilityHint("Checks off this stretch")
     }
 
     /// A row that folds its nested rows in and out: the day's lifts, or the day's stretches.
-    /// With `onCheck`, the checkbox is its own button, and the rest of the row still folds.
-    private func foldRow(title: String, label: String, checked: Bool, expanded: Bool, onCheck: (() -> Void)? = nil, toggle: @escaping () -> Void) -> some View {
-        HStack(spacing: 11) {
-            Button {
-                withAnimation(.easeOut(duration: 0.2)) { toggle() }
-            } label: {
-                HStack(spacing: 11) {
-                    HStack(spacing: 6) {
-                        Text(title)
-                        Image(systemName: "chevron.right")
-                            .font(.caption2.weight(.medium))
-                            .rotationEffect(.degrees(expanded ? 90 : 0))
-                            .opacity(0.7)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(label)
-                        .monospacedDigit()
-                        .fixedSize(horizontal: true, vertical: false)
-                    if onCheck == nil {
-                        QuestCheckbox(checked: checked)
-                            .frame(width: 16, height: 17)
-                    }
+    private func foldRow(title: String, label: String, checked: Bool, expanded: Bool, toggle: @escaping () -> Void) -> some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.2)) { toggle() }
+        } label: {
+            HStack(spacing: 11) {
+                HStack(spacing: 6) {
+                    Text(title)
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.medium))
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                        .opacity(0.7)
                 }
-                .contentShape(Rectangle())
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Text(label)
+                    .monospacedDigit()
+                    .fixedSize(horizontal: true, vertical: false)
+                QuestCheckbox(checked: checked)
+                    .frame(width: 16, height: 17)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(title)
-            if let onCheck {
-                Button(action: onCheck) {
-                    QuestCheckbox(checked: checked)
-                        .frame(width: 16, height: 17)
-                        .frame(width: 44, height: 44, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                // The tap area grows outward, so a tap on the label cannot check the quest: a check has no undo.
-                .padding(.trailing, -28)
-                .accessibilityLabel("Check off \(title)")
-                .accessibilityValue(checked ? "Done" : "Not done")
-                .accessibilityHint("")
-            }
+            .font(.subheadline)
+            .foregroundStyle(QuestLight.ink)
+            .shadow(color: QuestLight.cyan.opacity(0.6), radius: 5)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
-        .font(.subheadline)
-        .foregroundStyle(QuestLight.ink)
-        .shadow(color: QuestLight.cyan.opacity(0.6), radius: 5)
-        .frame(minHeight: 44)
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 
     private func questRow(_ quest: Quest) -> some View {

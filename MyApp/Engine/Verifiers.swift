@@ -144,16 +144,10 @@ struct IncompleteVerifier: Verifier {
 }
 
 extension VerificationMethod {
-    /// No verification method is checked off by hand. Connected sources, including Mercury and Screen Time, decide.
-    /// The one exception is a single row, not a method: see `Quest.allowsCheckOff`.
+    /// No quest is checked off by hand. Connected sources, including Mercury and Screen Time, decide.
     var allowsLocalCheckbox: Bool {
         false
     }
-}
-
-extension Quest {
-    /// Stretching is the only quest the player can check off by hand.
-    var allowsCheckOff: Bool { id == DailyStretch.questId || verification.method.allowsLocalCheckbox }
 }
 
 enum VerificationFixtures {

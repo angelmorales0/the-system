@@ -3,7 +3,8 @@ import Foundation
 /// A `Stretching [0/20min]` row on the daily quest screen, whether the bundle came from the catalog
 /// or from generation. `StretchSplit` sets the day's stretches and minutes. A spent rest day has no row.
 /// It checks itself off from timed Hevy stretches or an Apple Health flexibility workout (see `StretchTime`),
-/// or the player taps its checkbox. It is the only quest with a hand check.
+/// or when every stretch of the day is done. The player checks single stretches by hand; the row's own box has no tap.
+/// Hand checks complete the row only. AGI levels still read Hevy.
 enum DailyStretch {
     static let questId = "daily_stretching"
     static let title = "Stretching"
@@ -91,18 +92,84 @@ enum DailyStretch {
         if ensure(in: added, now: now).quests.count != added.quests.count {
             errors.append("Stretching must be added only once")
         }
-        // The hand check completes Stretching, and only Stretching.
+
+        // Hand checks: one stretch moves the row, unchecking lowers it, and the row completes only with every stretch.
         var snapshot = GameSnapshot.fresh(catalog: FallbackCatalog.bundled(), now: now)
-        if let lift = snapshot.bundle.quests.first(where: { $0.verification.method == .hevySets && $0.id != questId }) {
-            _ = snapshot.applyLocalOverride(questId: lift.id, now: now)
-            if snapshot.bundle.quests.first(where: { $0.id == lift.id })?.status != .pending {
-                errors.append("a lift must not take a hand check")
-            }
+        func row() -> Quest? { snapshot.bundle.quests.first { $0.id == questId } }
+        guard let names = row().flatMap(StretchSplit.day(of:))?.stretches.map(\.name), names.count == 2 else {
+            return errors + ["the first stretch day should have 2 stretches"]
         }
-        _ = snapshot.applyLocalOverride(questId: questId, now: now)
-        if snapshot.bundle.quests.first(where: { $0.id == questId })?.status != .completed {
-            errors.append("the hand check should complete Stretching, got \(snapshot.bundle.quests.map { "\($0.title) \($0.status)" })")
+        snapshot.toggleStretch(names[0], doneInHevy: [])
+        if row()?.progress.current != 10 || row()?.status != .pending || snapshot.stretchCompletion(doneInHevy: [], now: now) != nil {
+            errors.append("one checked stretch should read 10 of 20 minutes and keep the row open")
+        }
+        snapshot.toggleStretch(names[0], doneInHevy: [])
+        if row()?.progress.current != 0 || !snapshot.stretchesChecked.isEmpty {
+            errors.append("unchecking a stretch should lower the row, got \(String(describing: row()?.progress.current))")
+        }
+        snapshot.toggleStretch(names[0], doneInHevy: [])
+        if snapshot.stretchCompletion(doneInHevy: [names[1]], now: now) == nil {
+            errors.append("a hand check and a stretch full in Hevy should finish the row together")
+        }
+        snapshot.toggleStretch(names[1], doneInHevy: [])
+        if let result = snapshot.stretchCompletion(doneInHevy: [], now: now) {
+            _ = snapshot.apply(result, questId: questId, now: now)
+        }
+        if row()?.status != .completed || row()?.progress.current != 20 {
+            errors.append("every checked stretch should complete the row, got \(String(describing: row()?.status))")
+        }
+        let frozen = snapshot
+        snapshot.toggleStretch(names[0], doneInHevy: [])
+        if snapshot != frozen {
+            errors.append("a completed row should not take more checks")
+        }
+        if let data = try? JSONEncoder().encode(frozen), (try? JSONDecoder().decode(GameSnapshot.self, from: data))?.stretchesChecked != Set(names) {
+            errors.append("stretch checks should survive a save")
+        }
+        // A check from yesterday does not count today.
+        snapshot.stretchChecks = StretchChecks(dayKey: "2000-01-01", names: names)
+        if !snapshot.stretchesChecked.isEmpty {
+            errors.append("stretch checks should last one quest day")
         }
         return errors
+    }
+}
+
+/// One quest day of hand-checked stretches, by name.
+struct StretchChecks: Codable, Equatable {
+    var dayKey: String
+    var names: [String]
+}
+
+extension GameSnapshot {
+    private var stretchRow: Quest? { bundle.quests.first { $0.id == DailyStretch.questId } }
+
+    /// Today's hand checks.
+    var stretchesChecked: Set<String> {
+        stretchChecks?.dayKey == bundle.dayKey ? Set(stretchChecks?.names ?? []) : []
+    }
+
+    /// The row reads the minutes of the stretches that are done. It only moves while the row is open.
+    mutating func toggleStretch(_ name: String, doneInHevy: Set<String>) {
+        guard let row = stretchRow, row.status == .pending, let day = StretchSplit.day(of: row),
+              let index = bundle.quests.firstIndex(where: { $0.id == DailyStretch.questId }) else { return }
+        var names = stretchesChecked
+        if names.remove(name) == nil { names.insert(name) }
+        stretchChecks = StretchChecks(dayKey: bundle.dayKey, names: names.sorted())
+        let done = names.union(doneInHevy)
+        let minutes = day.stretches.filter { done.contains($0.name) }.reduce(0) { $0 + $1.minutes }
+        bundle.quests[index].progress.current = min(minutes, row.progress.target)
+    }
+
+    /// The result that completes the row, once every stretch of the day is done. Nil before that.
+    func stretchCompletion(doneInHevy: Set<String>, now: Date) -> VerificationResult? {
+        guard let row = stretchRow, row.status == .pending, let day = StretchSplit.day(of: row),
+              Set(day.stretches.map(\.name)).isSubset(of: stretchesChecked.union(doneInHevy)) else { return nil }
+        return .completed(evidence: Evidence.make(
+            source: "manual_override",
+            externalId: "stretches:\(bundle.dayKey)",
+            payload: "stretches|\(bundle.dayKey)|\(day.id)",
+            timestamp: now
+        ))
     }
 }

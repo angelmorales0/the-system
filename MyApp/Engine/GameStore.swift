@@ -334,6 +334,34 @@ final class GameStore: ObservableObject {
     func stretchSetsDone(_ stretch: StretchSplit.Stretch) -> Int {
         StretchSplit.setsDone(stretch, workouts: integrations.hevy.workouts)
     }
+
+    private var stretchesInHevy: Set<String> {
+        guard let day = snapshot.bundle.quests.first(where: { $0.id == DailyStretch.questId }).flatMap(StretchSplit.day(of:)) else { return [] }
+        return Set(day.stretches.filter { stretchSetsDone($0) >= $0.sets }.map(\.name))
+    }
+
+    /// Checked by hand, full in Hevy, or the whole row is complete.
+    func stretchDone(_ stretch: StretchSplit.Stretch) -> Bool {
+        snapshot.bundle.quests.first { $0.id == DailyStretch.questId }?.status == .completed
+            || snapshot.stretchesChecked.contains(stretch.name) || stretchSetsDone(stretch) >= stretch.sets
+    }
+
+    /// Checks or unchecks one stretch. A tap on the last open stretch completes the Stretching row.
+    /// A stretch that is full in Hevy stays checked, and a completed row has no undo.
+    func toggleStretch(_ stretch: StretchSplit.Stretch, now: Date = .now) {
+        guard stretchSetsDone(stretch) < stretch.sets else { return }
+        var next = snapshot
+        next.toggleStretch(stretch.name, doneInHevy: stretchesInHevy)
+        guard next != snapshot else { return }
+        snapshot = next
+        clock = now
+        if let result = next.stretchCompletion(doneInHevy: stretchesInHevy, now: now) {
+            commit(result, questId: DailyStretch.questId, now: now)
+        } else {
+            persist()
+        }
+    }
+
     var optionalQuests: [Quest] { bundle.optionalQuests }
 
     func rowLabel(for quest: Quest) -> String {
@@ -373,7 +401,7 @@ final class GameStore: ObservableObject {
             let result = ManualConfirmVerifier().evaluate(quest: quest, context: context)
             commit(result, questId: id, now: now)
         default:
-            if quest.allowsCheckOff {
+            if quest.verification.method.allowsLocalCheckbox {
                 var next = snapshot
                 let outcome = next.applyLocalOverride(questId: id, now: now)
                 snapshot = next
@@ -733,6 +761,10 @@ final class GameStore: ObservableObject {
             case .unchanged, .incomplete, .failed:
                 break
             }
+        }
+        // Hevy can finish the stretches that are left, short of the row's total minutes.
+        if let result = next.stretchCompletion(doneInHevy: stretchesInHevy, now: now) {
+            _ = next.apply(result, questId: DailyStretch.questId, now: now)
         }
         next.checkHiddenQuests(integrations: integrations, now: now)
         snapshot = next

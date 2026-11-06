@@ -27,6 +27,8 @@ struct GameSnapshot: Codable, Equatable {
     var questHistory: [QuestDayRecord] = []
     /// Today's phone and work screen minutes. The Screen Time row follows them.
     var screenTime: ScreenTimeDay?
+    /// Today's stretches the player checked by hand. The Stretching row completes when all of them are done.
+    var stretchChecks: StretchChecks?
     /// Local day that already spent its one generation attempt, including a failed one.
     var generationAttemptDayKey: String?
     /// Last accepted generated bundle for that day, before the player’s progress.
@@ -297,7 +299,7 @@ struct GameSnapshot: Codable, Equatable {
     @discardableResult
     mutating func applyLocalOverride(questId: String, now: Date) -> VerificationApply {
         guard let quest = bundle.quests.first(where: { $0.id == questId }) else { return .ignored }
-        guard quest.allowsCheckOff else { return .ignored }
+        guard quest.verification.method.allowsLocalCheckbox else { return .ignored }
         let evidence = Evidence.make(
             source: "manual_override",
             externalId: "override:\(quest.id):\(bundle.dayKey)",
@@ -545,7 +547,7 @@ extension GameSnapshot {
         case fullRecoveryDayKey, queuedFullRecoveryDayKey
         case hiddenUnlocks
         case noGymDayKey, plannerRestDayKey, plannerRestReason, restDayKeys
-        case questHistory, screenTime
+        case questHistory, screenTime, stretchChecks
         case gold, potionLog, lastGoldReward
         case hitPoints, fatigue
     }
@@ -573,6 +575,7 @@ extension GameSnapshot {
         generatedBundle = try container.decodeIfPresent(QuestBundle.self, forKey: .generatedBundle)
         questHistory = try container.decodeIfPresent([QuestDayRecord].self, forKey: .questHistory) ?? []
         screenTime = try container.decodeIfPresent(ScreenTimeDay.self, forKey: .screenTime)
+        stretchChecks = try container.decodeIfPresent(StretchChecks.self, forKey: .stretchChecks)
         gold = try container.decodeIfPresent(Int.self, forKey: .gold) ?? 0
         potionLog = try container.decodeIfPresent([PotionUse].self, forKey: .potionLog) ?? []
         lastGoldReward = try container.decodeIfPresent(GoldReward.self, forKey: .lastGoldReward)
@@ -598,6 +601,7 @@ extension GameSnapshot {
         try container.encodeIfPresent(noGymDayKey, forKey: .noGymDayKey)
         try container.encodeIfPresent(plannerRestDayKey, forKey: .plannerRestDayKey)
         try container.encodeIfPresent(plannerRestReason, forKey: .plannerRestReason)
+        try container.encodeIfPresent(stretchChecks, forKey: .stretchChecks)
         try container.encode(restDayKeys, forKey: .restDayKeys)
         try container.encode(questHistory, forKey: .questHistory)
         try container.encodeIfPresent(screenTime, forKey: .screenTime)
