@@ -84,6 +84,13 @@ final class GameStore: ObservableObject {
             // A day saved before the Stretching row, the exercise-only Training rule, or penalty rows gets them now.
             snapshot.bundle = snapshot.finished(TrainingDay.exerciseOnly(snapshot.bundle) ?? snapshot.bundle, catalog: catalog, now: .now)
         }
+        #if DEBUG
+        // Launch with `-skipSplitDay squat` to count that split day as done yesterday and plan today again.
+        // The option lasts one launch, and it does nothing once the split has moved past that day.
+        if persistence == .standard, let skip = UserDefaults.standard.string(forKey: "skipSplitDay") {
+            _ = snapshot.skipSplitDay(skip, catalog: catalog, now: .now)
+        }
+        #endif
         if persistence == .standard {
             statHistory = StatLevelHistory.load()
             statTargets = targets

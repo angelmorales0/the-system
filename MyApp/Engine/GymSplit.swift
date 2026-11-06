@@ -552,6 +552,27 @@ enum GymSplit {
             errors.append("auto should pick Deadlift Day, Arms Day, then Squat Day, and nil when no upper day has room")
         }
 
+        // A skip counts today's split day as done yesterday and moves today to the next day, one time only.
+        var skipped = GameSnapshot.fresh(catalog: catalog, now: now)
+        let skipToday = QuestDay.key(for: now)
+        let skipYesterday = QuestDay.key(byAddingDays: -1, to: skipToday)
+        let benchDone = QuestRecord(title: "Bench Press 3×3-5", kind: .daily, stat: .STR, method: .hevySets, params: [:],
+                                    target: 3, done: 3, unit: "sets", status: .completed)
+        skipped.questHistory = [
+            QuestDayRecord(dayKey: skipYesterday, mode: .fullRecovery, trainingBand: .green, noGym: false,
+                           generatedBy: "mock", missedRequired: false, quests: []),
+            QuestDayRecord(dayKey: QuestDay.key(byAddingDays: -4, to: skipToday), mode: .performanceTraining, trainingBand: .green, noGym: false,
+                           splitDay: "bench", generatedBy: "mock", missedRequired: false, quests: [benchDone]),
+        ]
+        if skipped.skipSplitDay("press", catalog: catalog, now: now) {
+            errors.append("a skip should refuse a day that is not today's split day")
+        }
+        if !skipped.skipSplitDay("squat", catalog: catalog, now: now) || today(history: skipped.questHistory, dayKey: skipToday).id != "press"
+            || skipped.generatedBundle != nil || skipped.generationAttemptDayKey != nil
+            || skipped.questHistory.first?.mode != .fullRecovery || skipped.skipSplitDay("squat", catalog: catalog, now: now) {
+            errors.append("a skip should move today from Squat Day to Press Day, keep yesterday's mode, and run once")
+        }
+
         // The offline day, the context, and the mock generator all carry the goal on Deadlift Day.
         var snapshot = GameSnapshot.fresh(catalog: catalog, now: now)
         let pressDone = QuestRecord(title: "Overhead Press 3×1-5", kind: .daily, stat: .STR, method: .hevySets, params: [:],
@@ -591,5 +612,24 @@ enum GymSplit {
             errors.append("the Hevy check should complete Hip Thrust 3×5-9 from 3 sets of \"Hip Thrust (Barbell)\"")
         }
         return errors
+    }
+}
+
+extension GameSnapshot {
+    /// Counts today's split day as done yesterday, then plans today again from the next split day.
+    /// Yesterday keeps its mode, so the rest count does not change. It refuses a day with progress, so nothing done is lost.
+    mutating func skipSplitDay(_ id: String, catalog: FallbackCatalog, now: Date) -> Bool {
+        let dayKey = QuestDay.key(for: now)
+        let yesterday = QuestDay.key(byAddingDays: -1, to: dayKey)
+        guard let day = GymSplit.day(id: id), GymSplit.today(history: questHistory, dayKey: dayKey).id == id,
+              let index = questHistory.firstIndex(where: { $0.dayKey == yesterday }),
+              !bundle.quests.contains(where: { $0.status == .completed }), runningTimers.isEmpty else { return false }
+        questHistory[index].splitDay = id
+        questHistory[index].quests.append(QuestRecord(title: "\(day.name) (skipped)", kind: .daily, stat: .STR, method: .manualConfirm, params: [:],
+                                                      target: 1, done: 1, unit: "day", status: .completed))
+        generatedBundle = nil
+        generationAttemptDayKey = nil
+        rebuildBundle(catalog: catalog, now: now)
+        return true
     }
 }
