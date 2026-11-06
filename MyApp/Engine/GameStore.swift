@@ -96,6 +96,14 @@ final class GameStore: ObservableObject {
         observeHealthUpdates()
         refreshIntegrations(now: .now)
         enforcePenalty()
+        #if DEBUG
+        // Launch with `-grantFullRecovery 2` to add tokens. The option lasts one launch, so a normal open adds nothing.
+        let grant = UserDefaults.standard.integer(forKey: "grantFullRecovery")
+        if persistence == .standard, (1...10).contains(grant) {
+            snapshot.player.fullRecoveryBank += grant
+            persist()
+        }
+        #endif
         if persistence == .standard {
             EmergencyCleanup.run()
             ScreenTimeEnforcement.syncMonitoring()
