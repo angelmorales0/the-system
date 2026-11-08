@@ -150,6 +150,14 @@ extension VerificationMethod {
     }
 }
 
+extension Quest {
+    /// The one hand check on a whole row: the day's 5K or 10K run, so a long bike ride can count in its place.
+    /// Strava and Apple Health still complete it on their own. A penalty run never takes a hand check.
+    var allowsCheckOff: Bool {
+        (kind != .penalty && TrainingDay.isRaceRun(self)) || verification.method.allowsLocalCheckbox
+    }
+}
+
 enum VerificationFixtures {
     static func check() -> [String] {
         var errors: [String] = []

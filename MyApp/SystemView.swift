@@ -243,7 +243,10 @@ struct SystemView: View {
         let ink = penalty ? QuestLight.penalty : screenTimeInk(quest) ?? QuestLight.ink.opacity(optional ? 0.7 : 1)
         // Blue once this run unlocked Beyond the Limit: [15.2/10km].
         let beyond = store.snapshot.beyondTheLimitToday?.questId == quest.id
-        return Button {
+        // The run's checkbox is its own button: a hand check for a bike day. The rest of the row still asks Strava.
+        let handCheck = quest.allowsCheckOff && quest.status == .pending
+        return HStack(spacing: 11) {
+        Button {
             store.handleQuestTap(id: quest.id)
         } label: {
             HStack(spacing: 11) {
@@ -261,12 +264,11 @@ struct SystemView: View {
                     .fixedSize(horizontal: true, vertical: false)
                     .foregroundStyle(beyond ? QuestLight.cyan : ink)
                     .shadow(color: beyond ? QuestLight.blue : .clear, radius: 6)
-                QuestCheckbox(checked: quest.status == .completed)
-                    .frame(width: 16, height: 17)
+                if !handCheck {
+                    QuestCheckbox(checked: quest.status == .completed)
+                        .frame(width: 16, height: 17)
+                }
             }
-            .font(.subheadline)
-            .foregroundStyle(ink)
-            .shadow(color: (penalty ? QuestLight.penalty : screenTimeInk(quest) ?? QuestLight.cyan).opacity(0.6), radius: 5)
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
@@ -274,6 +276,25 @@ struct SystemView: View {
         .accessibilityLabel(penalty ? "Penalty: \(quest.title)" : quest.title)
         .accessibilityValue(store.accessibilityValue(for: quest))
         .accessibilityHint(questRowHint(quest))
+        if handCheck {
+            Button {
+                store.checkOffByHand(id: quest.id)
+            } label: {
+                QuestCheckbox(checked: false)
+                    .frame(width: 16, height: 17)
+                    .frame(width: 44, height: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            // The tap area grows outward, so a tap on the label cannot check the run: a check has no undo.
+            .padding(.trailing, -28)
+            .accessibilityLabel("Check off \(quest.title) by hand")
+            .accessibilityValue("Not done")
+        }
+        }
+        .font(.subheadline)
+        .foregroundStyle(ink)
+        .shadow(color: (penalty ? QuestLight.penalty : screenTimeInk(quest) ?? QuestLight.cyan).opacity(0.6), radius: 5)
     }
 
     /// Screen Time is yellow from the 8 h 20 m cap through the grace, and red once it fails.

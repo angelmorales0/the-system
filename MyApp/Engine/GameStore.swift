@@ -403,6 +403,19 @@ final class GameStore: ObservableObject {
         }
     }
 
+    /// The run row's own checkbox: counts the run by hand, for a day with a long bike ride instead. There is no undo.
+    func checkOffByHand(id: String, now: Date = .now) {
+        guard let quest = snapshot.bundle.quests.first(where: { $0.id == id }), quest.allowsCheckOff, quest.status == .pending else { return }
+        var next = snapshot
+        let outcome = next.applyLocalOverride(questId: id, now: now)
+        next.checkHiddenQuests(integrations: integrations, now: now)
+        snapshot = next
+        clock = now
+        note(for: outcome, title: quest.title)
+        persist()
+        enforcePenalty()
+    }
+
     func handleQuestTap(id: String, now: Date = .now) {
         guard let quest = snapshot.bundle.quests.first(where: { $0.id == id }) else { return }
         // A completed quest stays completed. There is no undo.

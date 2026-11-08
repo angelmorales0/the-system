@@ -295,11 +295,11 @@ struct GameSnapshot: Codable, Equatable {
         }
     }
 
-    /// Local checkbox for adapters that are still stubs. Does not pretend to be Strava, WHOOP, or the other live sources.
+    /// Hand check for the rows that allow one (see `Quest.allowsCheckOff`). Does not pretend to be Strava, WHOOP, or the other live sources.
     @discardableResult
     mutating func applyLocalOverride(questId: String, now: Date) -> VerificationApply {
         guard let quest = bundle.quests.first(where: { $0.id == questId }) else { return .ignored }
-        guard quest.verification.method.allowsLocalCheckbox else { return .ignored }
+        guard quest.allowsCheckOff else { return .ignored }
         let evidence = Evidence.make(
             source: "manual_override",
             externalId: "override:\(quest.id):\(bundle.dayKey)",
