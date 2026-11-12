@@ -211,7 +211,9 @@ enum ScreenOverlap {
         func active(_ slot: Int) -> Bool { macActive[slot >> 3] & (1 << UInt8(slot & 7)) != 0 }
         var shared = 0
         var lastMinutes = 0
-        var windowStart = 0
+        // The phone counts from midnight, 5 hours before the quest day and the Macs' bitmap start. Phone minutes of a
+        // step can be anywhere from midnight on, so the first window starts there. Its slots before 5:00 hold no Mac minute.
+        var windowStart = -QuestDay.startHour * 60
         let steps = phoneTimes.filter { $0.key % windowMinutes == 0 }.sorted { $0.key < $1.key }
         // iOS can report many steps at once. A batch is one window, or the same Mac minute counts once per step.
         let windows = steps.indices.filter { index in
@@ -221,7 +223,7 @@ enum ScreenOverlap {
             let offset = time.timeIntervalSince(dayStart) / 60
             let windowEnd = min(slots, max(windowStart, Int(offset.rounded(.up))))
             let phone = minutes - lastMinutes
-            let mac = (windowStart..<windowEnd).filter(active).count
+            let mac = windowEnd > 0 ? (max(0, windowStart)..<windowEnd).filter(active).count : 0
             let window = windowEnd - windowStart + slackMinutes
             shared += max(0, min(phone, mac, phone + mac - window))
             lastMinutes = minutes

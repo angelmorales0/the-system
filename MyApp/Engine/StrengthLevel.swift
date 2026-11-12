@@ -150,9 +150,17 @@ enum StrengthLevel {
         workouts.flatMap { workingSets(aliases, in: $0) }
     }
 
+    /// "Pull Up (Assisted)" and "Chest Dip (Band)" take weight off the lift: Hevy logs the help as the set's weight.
+    /// They never count for a strict target, or the help would read as added weight.
+    static func isAssisted(_ title: String) -> Bool {
+        guard let open = title.lastIndex(of: "("), title.hasSuffix(")") else { return false }
+        let equipment = title[open...].lowercased()
+        return equipment.contains("assisted") || equipment.contains("band")
+    }
+
     private static func workingSets(_ aliases: [String], in workout: HevyWorkout) -> [HevySet] {
         workout.exercises
-            .filter { aliases.contains(normalizedName($0.title)) }
+            .filter { aliases.contains(normalizedName($0.title)) && !isAssisted($0.title) }
             .flatMap(\.sets)
             .filter(\.isWorking)
     }

@@ -46,7 +46,7 @@ enum WhoopClient {
             recoveryScore: score["recovery_score"]?.doubleValue.map { Int($0) },
             restingHr: score["resting_heart_rate"]?.doubleValue.map { Int($0) },
             hrv: score["hrv_rmssd_milli"]?.doubleValue,
-            sleepPerformance: firstScore(sleep)["sleep_performance_percentage"]?.doubleValue.map { Int($0) },
+            sleepPerformance: mainSleepScore(sleep)["sleep_performance_percentage"]?.doubleValue.map { Int($0) },
             dayStrain: firstScore(cycle)["strain"]?.doubleValue,
             scored: firstRecord(recovery)?["score_state"]?.stringValue == "SCORED",
             workouts: events(workouts)
@@ -88,16 +88,29 @@ enum WhoopClient {
 
     /// Every record of one collection from `start` to `end`, up to `maxPages` pages. `WhoopRecovery` reads it too.
     static func records(_ token: String, _ path: String, _ start: Date, _ end: Date) async -> [JSONValue] {
+        await recordsChecked(token, path, start, end).records
+    }
+
+    /// The same read, and whether every page answered. A list with a failed page is short, not the whole collection.
+    static func recordsChecked(_ token: String, _ path: String, _ start: Date, _ end: Date) async -> (records: [JSONValue], complete: Bool) {
         var records: [JSONValue] = []
         var next = ""
         for _ in 0..<maxPages {
             guard let url = OnDeviceHTTP.url(api + path, query(start, end, limit: pageLimit, next: next)),
-                  let payload = await OnDeviceHTTP.getJSON(url, headers: StravaClient.bearer(token)), payload.objectValue != nil else { break }
+                  let payload = await OnDeviceHTTP.getJSON(url, headers: StravaClient.bearer(token)), payload.objectValue != nil else { return (records, false) }
             records += (payload["records"]?.arrayValue ?? []).filter { $0.objectValue != nil }
             next = payload["next_token"]?.stringValue ?? ""
             if next.isEmpty { break }
         }
-        return records
+        return (records, true)
+    }
+
+    /// The score of the newest sleep that is not a nap. WHOOP lists sleeps newest first, so an afternoon nap
+    /// would stand in for the night and lower the training band.
+    static func mainSleepScore(_ payload: JSONValue?) -> JSONValue {
+        let sleeps = (payload?["records"]?.arrayValue ?? []).filter { $0.objectValue != nil && !$0["nap"].truthy }
+        guard let score = sleeps.first?["score"], score.objectValue != nil else { return .object([:]) }
+        return score
     }
 
     static func firstRecord(_ payload: JSONValue?) -> JSONValue? {

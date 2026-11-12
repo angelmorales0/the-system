@@ -112,8 +112,10 @@ struct GameSnapshot: Codable, Equatable {
             dayKey: bundle.dayKey,
             mode: bundle.mode,
             trainingBand: trainingBand,
-            // Only a Training day swaps its lifts for the added 10K.
-            noGym: noGymDayKey == bundle.dayKey && bundle.mode == .performanceTraining,
+            // The record says "no gym" for a day that held the added 10K, since later run windows take 10 km off such a day.
+            // A day whose window already asked for 20 km got no added 10K, so it gives up nothing.
+            noGym: noGymDayKey == bundle.dayKey && bundle.mode == .performanceTraining
+                && bundle.quests.contains { NoGymDay.isAdded($0, dayKey: bundle.dayKey) },
             splitDay: GymSplit.day(named: bundle.headerLine)?.id
                 ?? (liftedBeforeRest ? GymSplit.today(history: questHistory, dayKey: bundle.dayKey).id : nil),
             generatedBy: bundle.generatedBy,
@@ -232,7 +234,7 @@ struct GameSnapshot: Codable, Equatable {
     }
 
     /// A row already finished keeps its place and its status; one the rest day does not have goes before Stretching.
-    private mutating func keepFinished(_ done: [Quest]) {
+    mutating func keepFinished(_ done: [Quest]) {
         for quest in done {
             if let index = bundle.quests.firstIndex(where: { $0.id == quest.id }) {
                 bundle.quests[index] = quest

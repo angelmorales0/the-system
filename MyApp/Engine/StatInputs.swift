@@ -90,7 +90,8 @@ enum StatInputLoader {
                 } else {
                     let samples = await HealthKitBridge.heartRate(from: workout.start, to: workout.end)
                     session = ZoneTwoSession(minutes: ZoneTwo.longestMinutes(samples, maxHeartRate: maxHR), date: workout.start, source: "Apple Health")
-                    if now.timeIntervalSince(workout.end) >= zoneTwoSettleSeconds { cache.zoneTwo[workout.id] = session }
+                    // No samples is a failed or refused read, not 0 minutes: it is read again next time.
+                    if now.timeIntervalSince(workout.end) >= zoneTwoSettleSeconds, !samples.isEmpty { cache.zoneTwo[workout.id] = session }
                 }
                 if session.minutes > 0 { zoneSessions.append(session) }
             }

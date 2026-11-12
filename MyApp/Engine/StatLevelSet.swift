@@ -57,7 +57,15 @@ struct StatLevelSet: Equatable {
     ) -> StatLevelSet {
         // Potion days do not count against FOC, REC, or FIN.
         let focusDays = focusDays.filter { !excuses.focusDayKeys.contains($0.dayKey) }
-        let recoveryDays = inputs.recoveryDays.filter { !excuses.recoveryDayKeys.contains($0.dayKey) }
+        // Today's food log is not finished: a breakfast alone would fail the protein and carb rules until dinner.
+        // The day's food counts from tomorrow. Its sleep is complete, so that stays.
+        let todayKey = OnDeviceTime.dayKey(now, zone: QuestDay.timeZone)
+        let recoveryDays = inputs.recoveryDays.filter { !excuses.recoveryDayKeys.contains($0.dayKey) }.map { day -> RecoveryDay in
+            guard day.dayKey == todayKey else { return day }
+            var open = day
+            (open.caffeineMg, open.proteinG, open.fatG, open.carbsG, open.caloriesKcal, open.maintenanceKcal) = (nil, nil, nil, nil, nil, nil)
+            return open
+        }
         let financeMonths = financeMonths.map(excuses.excusing)
         let reports: [Stat: StatLevelReport] = [
             .STR: StrengthLevel.evaluate(workouts: inputs.hevyWorkouts, custom: targets.custom, now: now),

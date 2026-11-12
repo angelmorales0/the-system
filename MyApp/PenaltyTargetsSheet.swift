@@ -88,6 +88,7 @@ struct PenaltyTargetsSheet: View {
         } catch {
             accessError = "Family Controls was not granted. The penalty lock and the Penalty Zone stay off until it is."
         }
+        PenaltyEnforcement.requestNoticePermission()
         #endif
     }
 }

@@ -50,6 +50,7 @@ enum PenaltyMonitorGroup {
     static let penaltyActiveKey = "penaltyActive"
     static let startedAtKey = "penaltyStartedAt"
     static let openDayKey = "penaltyOpenDayKey"
+    static let owedDayKey = "penaltyOwedDayKey"
     static let allowedSelectionKey = "penaltyAllowedSelection"
     static let hiddenSelectionKey = "penaltyHiddenSelection"
     static let storeName = "penalty"
@@ -68,9 +69,13 @@ enum PenaltyMonitorShields {
     }
 
     /// The app writes the open quest day. If that day ended before this 5:00, the penalty starts now.
+    /// It also writes the day on which an open penalty waited (a token day or a rest day): that penalty comes back now.
     nonisolated static func lockIfDayMissed(now: Date) {
         let defaults = UserDefaults(suiteName: PenaltyMonitorGroup.suiteName) ?? .standard
-        guard let openDay = defaults.string(forKey: PenaltyMonitorGroup.openDayKey), openDay < questDayKey(for: now) else {
+        let today = questDayKey(for: now)
+        let missedDay = defaults.string(forKey: PenaltyMonitorGroup.openDayKey).flatMap { $0 < today ? $0 : nil }
+        let owedDay = defaults.string(forKey: PenaltyMonitorGroup.owedDayKey).flatMap { $0 < today ? $0 : nil }
+        guard let openDay = missedDay ?? owedDay else {
             reassert()
             return
         }
@@ -83,7 +88,9 @@ enum PenaltyMonitorShields {
         guard !alreadyActive else { return }
         let content = UNMutableNotificationContent()
         content.title = "PENALTY QUEST"
-        content.body = "Yesterday's daily quest was not completed. Every app except your allowed apps is locked until the penalty quest is cleared in The System."
+        content.body = missedDay != nil
+            ? "Yesterday's daily quest was not completed. Every app except your allowed apps is locked until the penalty quest is cleared in The System."
+            : "Your penalty waited through the rest day. Every app except your allowed apps is locked until the penalty quest is cleared in The System."
         content.sound = .default
         content.interruptionLevel = .timeSensitive
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "penalty-\(openDay)", content: content, trigger: nil))

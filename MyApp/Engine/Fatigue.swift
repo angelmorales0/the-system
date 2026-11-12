@@ -137,7 +137,9 @@ enum Fatigue {
         let speed = HitPoints.regenMultiplier(recoveryScore: todays ? recoveryScore : nil)
         next.value = Swift.max(0, next.value - lossPerDay * hours / 24 * speed)
         let stress = stressScore(hrv: todays ? hrv : nil, hrvBaseline: next.hrvBaseline, dayStrain: dayStrain)
-        next.value += stressPerHour(stress) * hours
+        // Today's reading says nothing about the days the app stayed closed: stress counts for one day at most.
+        // Without the limit, a rested player who opens the app after two days reads as worn out.
+        next.value += stressPerHour(stress) * Swift.min(hours, 24)
         next.updatedAt = Swift.max(now, next.updatedAt)
 
         // The baseline takes today's HRV only after today's stress used yesterday's baseline.

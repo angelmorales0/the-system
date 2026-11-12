@@ -19,7 +19,8 @@ enum ContextBuilder {
             player: MorningPlayer(
                 timezone: QuestDay.timeZone.identifier,
                 localDate: dayKey,
-                weekday: weekday(now),
+                // The weekday of the quest day: at 02:00 the quest day is still yesterday.
+                weekday: weekday(QuestDay.date(from: dayKey) ?? now),
                 level: levels.overallLevel,
                 maxLevel: StatLevelSet.overallMaxLevel,
                 statLevels: Dictionary(uniqueKeysWithValues: Stat.allCases.map { ($0.rawValue, levels[$0]) }),

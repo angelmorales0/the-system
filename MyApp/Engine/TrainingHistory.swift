@@ -70,11 +70,17 @@ enum TrainingHistory {
             whoop: recovery.records,
             goals: context["goals"] ?? .object([:]),
             questDays: context["recentDays"]?.arrayValue ?? [],
-            legDay: context["split"]?["today"]?["lowerBody"].truthy == true && context["constraints"]?["noGymToday"].truthy != true
+            // A gym day holds one run at most: the app keeps a day at two workouts (`TrainingDay.cappingWorkouts`),
+            // so a plan with two runs and lifts would lose a run after it passed this check.
+            legDay: context["split"]?["today"]?["exercises"]?.arrayValue?.isEmpty == false && context["constraints"]?["noGymToday"].truthy != true
         ).objectValue ?? [:]
         history["sources"] = .object(["hevy": .string(workouts.status), "strava": .string(activities.status), "whoop": .string(recovery.status)])
+        // Strava did not answer: its empty list is not "0 km in 6 days". With no window the plan keeps the default run,
+        // and the next request reads Strava again.
+        let stravaRead = activities.status == "ok"
+        if !stravaRead { history["runWindow"] = nil }
         let result = JSONValue.object(history)
-        cache[key] = (now, result)
+        if stravaRead { cache[key] = (now, result) }
         return result
     }
 
@@ -97,7 +103,8 @@ enum TrainingHistory {
             "runs": .array(runs),
             "recovery": .array(recovery),
             "week": weekSummary(runs: runs, sessions: sessions, questDays: questDays, recovery: recovery, today: today),
-            "runWindow": runWindow(runs, goalKm: goalKm, noGymDays: Set(questDays.filter { $0["noGym"].truthy }.compactMap { $0["dayKey"]?.stringValue }), legDay: legDay),
+            "runWindow": runWindow(withQuestRuns(runs, questDays: questDays, today: today), goalKm: goalKm,
+                                   noGymDays: Set(questDays.filter { $0["noGym"].truthy }.compactMap { $0["dayKey"]?.stringValue }), legDay: legDay),
             "fatigue": fatigueSummary(lifts.json, recovery: recovery),
             "limits": .object([
                 "heavyLowerMaxPer7Days": .number(Double(heavyLowerMaxPer7Days)),
@@ -176,7 +183,12 @@ enum TrainingHistory {
                 let topE1rm = top.map { e1rm($0.weightKg ?? 0, $0.reps ?? 0) }
                 let seconds = sets.reduce(0) { $0 + ($1.durationSec ?? 0) }
                 let bestSeconds = sets.map { $0.durationSec ?? 0 }.max() ?? 0
+                // Heavy and light days of one lift, and weighted and bodyweight sessions, are different work.
+                // The trend compares a session only with earlier ones of its own kind.
+                let bestReps = sets.map { $0.reps ?? 0 }.max() ?? 0
+                let kind = top.map { ($0.reps ?? 0) <= heavyRepsMax ? "heavy" : "light" } ?? (bestReps > 0 ? "reps" : "timed")
                 sessions[name, default: []].append(.object([
+                    "kind": .string(kind),
                     "date": .string(day),
                     "sets": .array(sets.map { .string(setText($0)) }),
                     "topSet": top.map { .string(setText($0)) } ?? .null,
@@ -206,6 +218,11 @@ enum TrainingHistory {
                 entry["e1rmChangeKg"] = .number(pyRound(first - oldest, 1))
             }
             for (key, value) in liftTrend(list) { entry[key] = .string(value) }
+            var byKind: [String: JSONValue] = [:]
+            for kind in Set(list.compactMap { $0["kind"]?.stringValue }) {
+                byKind[kind] = liftTrend(list.filter { $0["kind"]?.stringValue == kind })["trend"].map(JSONValue.string)
+            }
+            entry["trendByKind"] = .object(byKind)
             lifts.entries[name] = entry
         }
         return lifts
@@ -220,8 +237,12 @@ enum TrainingHistory {
     }
 
     /// `improving`, `steady`, `stalled`, `declining`, or `dropping` from the newest sessions (newest first), with advice.
+    /// Only sessions of the newest session's kind count: Squat Day's heavy 5s and Deadlift Day's light 8s are two series,
+    /// as are weighted pull-ups and a max-rep set. Mixed, every light day would read as a decline.
     static func liftTrend(_ sessions: [JSONValue]) -> [String: String] {
-        let scores = sessions.map { sessionScore($0) }.filter { $0 > 0 }
+        let kind = sessions.first?["kind"]?.stringValue
+        let series = kind == nil ? sessions : sessions.filter { $0["kind"]?.stringValue == kind }
+        let scores = series.map { sessionScore($0) }.filter { $0 > 0 }
         guard scores.count >= 3 else { return ["trend": "new", "advice": "Not enough sessions to judge. Progress normally."] }
         let newest = scores[0]
         let previousBest = max(scores[1], scores[2])
@@ -241,7 +262,9 @@ enum TrainingHistory {
     /// Whole-body fatigue: how many lifts are falling, and whether HRV is down. Says when to deload.
     static func fatigueSummary(_ lifts: JSONValue, recovery: [JSONValue]) -> JSONValue {
         let falling = (lifts.objectValue ?? [:]).filter { _, entry in
-            ["declining", "dropping"].contains(entry["trend"]?.stringValue ?? "") && (entry["daysSinceLast"]?.doubleValue ?? 99) <= 10
+            // Any series of the lift: the newest session can be the light day while the heavy days fall.
+            let trends = [entry["trend"]?.stringValue ?? ""] + (entry["trendByKind"]?.objectValue?.values.compactMap(\.stringValue) ?? [])
+            return trends.contains { ["declining", "dropping"].contains($0) } && (entry["daysSinceLast"]?.doubleValue ?? 99) <= 10
         }.keys.sorted()
         let hrv = recovery.compactMap { $0["hrv"]?.doubleValue }
         let recent = Array(hrv.prefix(7))
@@ -437,6 +460,29 @@ enum TrainingHistory {
         Array(repeating: "10K", count: km / 10) + Array(repeating: "5K", count: (km % 10) / runStepKm)
     }
 
+    /// GPS tracks round: a 10K quest accepts a run 50 m short. Twelve such runs can leave the window this short of
+    /// its goal with every run done, so a window this close to full is full.
+    static let windowToleranceKm = 0.6
+
+    /// Runs the app counted that Strava does not hold: a run checked by hand on a bike day, or one that only Apple
+    /// Health recorded. Each past quest day gets the km of its completed run rows that Strava lacks, so the window
+    /// agrees with the quests the player cleared.
+    static func withQuestRuns(_ runs: [JSONValue], questDays: [JSONValue], today: String) -> [JSONValue] {
+        var all = runs
+        for day in questDays {
+            guard let key = day["dayKey"]?.stringValue else { continue }
+            let daysAgo = OnDeviceTime.daysBetween(key, today)
+            guard (1...6).contains(daysAgo) else { continue }
+            let cleared = (day["quests"]?.arrayValue ?? []).filter {
+                $0["status"]?.stringValue == "completed" && $0["unit"]?.stringValue == "km" && $0["kind"]?.stringValue != "penalty"
+            }.reduce(0.0) { $0 + ($1["target"]?.doubleValue ?? 0) }
+            let inStrava = runs.filter { $0["counts"].truthy && $0["date"]?.stringValue == key }.reduce(0.0) { $0 + ($1["km"]?.doubleValue ?? 0) }
+            guard cleared > inStrava + windowToleranceKm else { continue }
+            all.append(.object(["date": .string(key), "daysAgo": .number(Double(daysAgo)), "km": .number(pyRound(cleared - inStrava, 2)), "counts": .string("quest")]))
+        }
+        return all
+    }
+
     /// Km of the last 6 days that count toward the window: a "No gym today" day gives up its added 10K.
     static func windowKm(_ runs: [JSONValue], noGymDays: Set<String>) -> Double {
         var total = runKm(runs, 1...6)
@@ -453,7 +499,8 @@ enum TrainingHistory {
     /// `legDay` holds today to `legDayMaxRunKm`; the km it leaves out show as `shortfallKm`.
     static func runWindow(_ runs: [JSONValue], goalKm: Int, noGymDays: Set<String> = [], legDay: Bool = false) -> JSONValue {
         let prior = windowKm(runs, noGymDays: noGymDays)
-        let needed = max(0, Double(goalKm) - prior)
+        let short = max(0, Double(goalKm) - prior)
+        let needed = short <= windowToleranceKm ? 0 : short
         let hundredths = Int(needed * 100)
         let steps = (hundredths + runStepKm * 100 - 1) / (runStepKm * 100)
         let planned = min(legDay ? legDayMaxRunKm : maxRunKmPerDay, steps * runStepKm)
@@ -528,7 +575,8 @@ enum TrainingHistory {
         guard method(quest) == "hevy_sets", let params = params(quest) else { return false }
         let exercise = params["exercise"]?.stringValue ?? ""
         let name = baseName(!exercise.isEmpty ? exercise : quest["title"]?.stringValue ?? "")
-        guard matches(heavyLowerPattern, name) else { return false }
+        // A pistol squat is bodyweight work for one leg. It is no heavy squat, whatever its reps.
+        guard matches(heavyLowerPattern, name), !name.contains("pistol") else { return false }
         let best = lifts?[name]?["bestE1rmKg"]?.doubleValue
         if let weight = params["minWeightKg"]?.doubleValue, let best, best != 0 {
             return weight >= heavyShareOfE1rm * best
@@ -556,8 +604,11 @@ enum TrainingHistory {
         let lifts = history?["lifts"]
         for quest in quests where method(quest) == "hevy_sets" {
             guard let params = params(quest), let entry = lifts?[baseName(params["exercise"]?.stringValue ?? "")], entry.truthy else { continue }
-            let trend = entry["trend"]?.stringValue ?? ""
-            let last = entry["sessions"]?.arrayValue?.first?["topSetKg"]?.doubleValue
+            // The planned row is compared with the sessions of its own kind: a heavy top set with the last heavy day.
+            let kind = (params["minReps"]?.doubleValue ?? 1) <= Double(heavyRepsMax) ? "heavy" : "light"
+            let series = (entry["sessions"]?.arrayValue ?? []).filter { $0["kind"]?.stringValue == kind }
+            let trend = entry["trendByKind"]?.objectValue.map { $0[kind]?.stringValue ?? "new" } ?? entry["trend"]?.stringValue ?? ""
+            let last = (entry["trendByKind"] == nil ? entry["sessions"]?.arrayValue?.first : series.first)?["topSetKg"]?.doubleValue
             if ["declining", "dropping"].contains(trend), let weight = params["minWeightKg"]?.doubleValue, let last, last != 0, weight > last {
                 problems.append("\(entry["exercise"]?.stringValue ?? "") is \(trend); do not add weight above the last top set")
             }

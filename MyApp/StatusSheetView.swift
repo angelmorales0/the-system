@@ -47,6 +47,18 @@ struct StatusSheetView: View {
         .sheet(isPresented: $showShop, onDismiss: { SystemSound.systemClose.play() }) {
             ShopSheet()
         }
+        // A penalty covers every page, and a new day replaces the quests a sheet was opened for. Close the sheets,
+        // so no setting, token, or potion is used above the penalty screen or on a day the player did not choose it for.
+        .onChange(of: store.openPenaltyQuest?.id) { _, penalty in
+            if penalty != nil { closeSheets() }
+        }
+        .onChange(of: store.bundle.dayKey) { _, _ in closeSheets() }
+    }
+
+    private func closeSheets() {
+        selectedStat = nil
+        showSettings = false
+        showShop = false
     }
 }
 

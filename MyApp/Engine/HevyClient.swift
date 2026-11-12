@@ -56,7 +56,8 @@ enum HevyClient {
             guard let url = page(number),
                   let payload = await OnDeviceHTTP.getJSON(url, headers: headers(key)),
                   let items = payload["workouts"]?.arrayValue else {
-                return (workouts, number > 1 ? "ok" : "request failed")
+                // A later page failed: the list is short. The stat cache must not take it for the full history.
+                return (workouts, number > 1 ? "partial" : "request failed")
             }
             let parsed = items.compactMap(workout)
             workouts += parsed.filter { $0.start >= start }

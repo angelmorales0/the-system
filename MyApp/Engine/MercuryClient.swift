@@ -151,7 +151,11 @@ enum MercuryClient {
             return (empty(dayKey, reason: "TODO: Mercury token is set, but the first sync failed. Test it in Status → Connections.", configured: true), [])
         }
         let day = snapshot(ledger: ledger, day: dayKey, settings: settings, now: now)
-        let finance = months.map { monthSummary(ledger.transactions, month: $0, settings: settings, now: now) }.map(\.financeMonth)
+        // A month that ended after the last good sync misses its last days. Leave it out: its budget row then
+        // waits for data, and a failed sync can never pass or fail a month.
+        let synced = ledger.syncedAt ?? now
+        let finance = months.filter { !monthComplete($0, now: now) || monthComplete($0, now: synced) }
+            .map { monthSummary(ledger.transactions, month: $0, settings: settings, now: now) }.map(\.financeMonth)
         return (day, finance)
     }
 

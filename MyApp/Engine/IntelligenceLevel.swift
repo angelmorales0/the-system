@@ -224,3 +224,34 @@ enum IntelligenceLevel {
         return errors
     }
 }
+
+/// The last Codeforces and Monkeytype readings that answered, kept on the device.
+/// A service that is set but did not answer (offline, an outage) would score INT as 0, lower the overall level
+/// and max HP, and save that 0 in the day's history. The level uses the last good reading until the service answers.
+enum LastGoodReadings {
+    static let codeforcesKey = "com.angelmorales.thesystem.lastGoodCodeforces.v1"
+    static let typingKey = "com.angelmorales.thesystem.lastGoodMonkeytype.v1"
+
+    static func codeforces(_ live: CodeforcesReading, save: Bool, defaults: UserDefaults = .standard) -> CodeforcesReading {
+        resolve(live, available: live.available, configured: live.configured, key: codeforcesKey, save: save, defaults: defaults)
+    }
+
+    static func typing(_ live: MonkeytypeReading, save: Bool, defaults: UserDefaults = .standard) -> MonkeytypeReading {
+        resolve(live, available: live.available, configured: live.configured, key: typingKey, save: save, defaults: defaults)
+    }
+
+    /// A good reading is saved and used. A service that is not set forgets its reading. A failed read uses the saved one.
+    private static func resolve<Reading: Codable>(_ live: Reading, available: Bool, configured: Bool, key: String, save: Bool, defaults: UserDefaults) -> Reading {
+        guard save else { return live }
+        if available {
+            if let data = try? JSONEncoder().encode(live) { defaults.set(data, forKey: key) }
+            return live
+        }
+        guard configured else {
+            defaults.removeObject(forKey: key)
+            return live
+        }
+        guard let data = defaults.data(forKey: key), let saved = try? JSONDecoder().decode(Reading.self, from: data) else { return live }
+        return saved
+    }
+}

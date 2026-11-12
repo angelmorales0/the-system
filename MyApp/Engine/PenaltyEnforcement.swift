@@ -5,6 +5,7 @@ import ActivityKit
 import DeviceActivity
 import FamilyControls
 import ManagedSettings
+import UserNotifications
 #endif
 
 /// App Group shared with the Screen Time extensions. Replace this in every extension if the portal id changes.
@@ -20,6 +21,9 @@ enum PenaltyGroup {
     static let startedAtKey = "penaltyStartedAt"
     /// The quest day whose required set is still open. The monitor locks the phone at 5:00 when this day has ended.
     static let openDayKey = "penaltyOpenDayKey"
+    /// The quest day on which an open penalty waits with no row: a token day or a rest day. The penalty comes back
+    /// the next day, so the monitor locks the phone at 5:00 after this day, also when the app stays closed.
+    static let owedDayKey = "penaltyOwedDayKey"
     static let storeName = "penalty"
     static let activityName = "penalty"
     /// Starts every day at `QuestDay.startHour`, so a missed day locks the phone even if the app stays closed.
@@ -62,7 +66,9 @@ enum PenaltyEnforcement {
     /// `openDayKey` is the quest day whose required set is still open, or nil when it is done or waived.
     /// `shieldLine` is the open penalty row with its progress, shown on every shield.
     /// `penaltyOpen` is the player's penalty flag; `penaltyVisible` adds that a penalty row is still open today.
-    static func sync(penaltyVisible: Bool, penaltyOpen: Bool, questTitle: String, shieldLine: String, dayKey: String, openDayKey: String?) {
+    /// `owedDayKey` is the quest day on which an open penalty waits with no row, or nil.
+    static func sync(penaltyVisible: Bool, penaltyOpen: Bool, questTitle: String, shieldLine: String, dayKey: String, openDayKey: String?,
+                     owedDayKey: String? = nil) {
         #if os(iOS)
         let defaults = PenaltyGroup.defaults
         defaults.set(shieldLine, forKey: PenaltyGroup.shieldLineKey)
@@ -71,6 +77,13 @@ enum PenaltyEnforcement {
         } else {
             defaults.removeObject(forKey: PenaltyGroup.openDayKey)
         }
+        if let owedDayKey {
+            defaults.set(owedDayKey, forKey: PenaltyGroup.owedDayKey)
+        } else {
+            defaults.removeObject(forKey: PenaltyGroup.owedDayKey)
+        }
+        // The 5:00 notice and the shield's "Open The System" notice need this permission. Ask when a penalty is open.
+        if penaltyOpen { requestNoticePermission() }
         scheduleDawnCheck()
         if !penaltyOpen || !penaltyVisible {
             defaults.set(false, forKey: PenaltyGroup.penaltyActiveKey)
@@ -93,7 +106,18 @@ enum PenaltyEnforcement {
             await startOrUpdateLiveActivity(questTitle: questTitle, dayKey: dayKey, startedAt: started)
         }
         #else
-        _ = (penaltyVisible, penaltyOpen, questTitle, shieldLine, dayKey, openDayKey)
+        _ = (penaltyVisible, penaltyOpen, questTitle, shieldLine, dayKey, openDayKey, owedDayKey)
+        #endif
+    }
+
+    /// Asks one time for permission to show the penalty notices. iOS shows its dialog only while it is not decided.
+    static func requestNoticePermission() {
+        #if os(iOS)
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            guard settings.authorizationStatus == .notDetermined else { return }
+            center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        }
         #endif
     }
 

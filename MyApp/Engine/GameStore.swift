@@ -36,12 +36,22 @@ final class GameStore: ObservableObject {
     private var soundsOn: Bool { soundsArmed && persistence == .standard }
     private var ticker: Timer?
     private var integrations: DayIntegrationSnapshot = .empty(dayKey: "")
+    /// The quest day `integrations` was loaded for.
+    private var integrationsDayKey = ""
+    /// The loaded workouts and readings, for the quest day on screen only. After a new day starts, the data in memory
+    /// is yesterday's until the next refresh: read through this, yesterday's run would clear today's 10K at once.
+    private var dayData: DayIntegrationSnapshot {
+        integrationsDayKey == snapshot.bundle.dayKey ? integrations : .empty(dayKey: snapshot.bundle.dayKey)
+    }
     private var refreshingIntegrations = false
     private var lastStretchRefresh = Date.distantPast
     /// The last live stat inputs, so a target change can recalculate without a new fetch. Nil until the first refresh.
     /// `inputs` holds the histories (Hevy, WHOOP, Strava, Health), loaded after the day's snapshot by `refreshStatInputs`.
     private var statInputs: (codeforces: CodeforcesReading, typing: MonkeytypeReading, financeMonths: [FinanceMonth], bodyMass: BodyMassReading?, focusDays: [FocusDay], inputs: StatInputs)?
     private var refreshingStatInputs = false
+    /// True once the stat histories (Hevy, WHOOP, Strava, Apple Health) loaded one time. Before that the levels keep
+    /// their last saved values: levels from empty histories read 0, and the lower max HP would cut the player's HP.
+    private var statHistoriesLoaded = false
 
     init(persistence: GamePersistence = .standard) {
         #if DEBUG
@@ -54,7 +64,7 @@ final class GameStore: ObservableObject {
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MonkeytypeClient.check() + MercuryClient.check()
             + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check()
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
-            + MonthlyQuests.check() + EndedDayRules.check() + WorkoutClaimRules.check() + RebuiltRowRules.check()
+            + MonthlyQuests.check() + EndedDayRules.check() + WorkoutClaimRules.check() + RebuiltRowRules.check() + PlanAndLockRules.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -70,6 +80,8 @@ final class GameStore: ObservableObject {
         self.catalog = catalog
         self.generator = QuestGenerateClient.make(catalog: catalog)
         self.persistence = persistence
+        // Previews and checks load no histories, so their levels come from the first refresh as before.
+        statHistoriesLoaded = persistence == .memory
         dayClock = DayClock.resolve(
             current: persistence == .standard ? DayClock.load() : nil,
             now: .now
@@ -293,16 +305,19 @@ final class GameStore: ObservableObject {
     }
 
     private func recomputeStatLevels(now: Date, announce: Bool = true) {
-        guard let statInputs else { return }
+        guard let statInputs, statHistoriesLoaded else { return }
         let before = statLevels
         defer {
             if announce, before != .empty, statLevels.overallLevel > before.overallLevel {
                 cue(.levelUp)
             }
         }
+        // A failed Codeforces or Monkeytype read keeps the last good reading for the level. The monthly quests
+        // still read the live one, so a failed read can never judge a month.
+        let saves = persistence == .standard
         statLevels = StatLevelSet.compute(
-            codeforces: statInputs.codeforces,
-            typing: statInputs.typing,
+            codeforces: LastGoodReadings.codeforces(statInputs.codeforces, save: saves),
+            typing: LastGoodReadings.typing(statInputs.typing, save: saves),
             financeMonths: statInputs.financeMonths,
             bodyMass: statInputs.bodyMass.map { [$0] } ?? [],
             focusDays: statInputs.focusDays,
@@ -367,7 +382,7 @@ final class GameStore: ObservableObject {
 
     /// Sets of this stretch in today's Hevy workouts.
     func stretchSetsDone(_ stretch: StretchSplit.Stretch) -> Int {
-        StretchSplit.setsDone(stretch, workouts: integrations.hevy.workouts)
+        StretchSplit.setsDone(stretch, workouts: dayData.hevy.workouts)
     }
 
     private var stretchesInHevy: Set<String> {
@@ -430,7 +445,7 @@ final class GameStore: ObservableObject {
         guard let quest = snapshot.bundle.quests.first(where: { $0.id == id }), quest.allowsCheckOff, quest.status == .pending else { return }
         var next = snapshot
         let outcome = next.applyLocalOverride(questId: id, now: now)
-        next.checkHiddenQuests(integrations: integrations, now: now)
+        next.checkHiddenQuests(integrations: dayData, now: now)
         snapshot = next
         clock = now
         note(for: outcome, title: quest.title)
@@ -466,7 +481,7 @@ final class GameStore: ObservableObject {
                     now: now,
                     timerElapsed: nil,
                     userConfirmed: false,
-                    integrations: integrations
+                    integrations: dayData
                 )
                 let result = VerifierRegistry.verifier(for: quest.verification.method).evaluate(quest: quest, context: context)
                 // A tap on a row the feeds verify shows no text: the row's own numbers say where it stands.
@@ -538,13 +553,19 @@ final class GameStore: ObservableObject {
     }
 
     private func refreshIntegrations(now: Date) {
+        // A wake in the background (Apple Health) after 5:00 finds yesterday's day here. End it first: its quests must
+        // not be checked against today's data, and its closed penalty flag must not lift the lock the monitor set at 5:00.
+        guard QuestDay.key(for: now) <= snapshot.bundle.dayKey else { return refreshForToday(now: now) }
         guard !refreshingIntegrations else { return }
         refreshingIntegrations = true
         let dayKey = QuestDay.key(for: now)
         let endedKey = snapshot.endedDay?.bundle.dayKey
+        let endedMissed = snapshot.endedDay?.missed ?? false
         Task { @MainActor [weak self] in
             // A day that ended with a quest open is read once more from its own data, before today is touched.
-            let endedData = await Self.endedDayData(endedKey)
+            // A day whose Screen Time row passed gets the Macs' last minutes.
+            let endedData = await Self.endedDayData(endedKey, workouts: endedMissed)
+            let endedMac = await Self.endedMacRead(endedKey)
             let health = await HealthKitBridge.summary(on: now)
             let bodyMass = await HealthKitBridge.latestBodyMass(days: EnduranceLevel.bodyWeightWindowDays, now: now)
             let remote = await IntegrationClient.load(dayKey: dayKey)
@@ -552,10 +573,16 @@ final class GameStore: ObservableObject {
             let macScreen = await MacScreenClient.load(dayKey: dayKey)
             guard let self else { return }
             self.refreshingIntegrations = false
+            // The day changed during the read (the app slept through 5:00 in the middle of it): this data is
+            // yesterday's. Drop it and read for the new day.
+            guard !(self.snapshot.bundle.dayKey > dayKey && QuestDay.key(for: .now) == self.snapshot.bundle.dayKey) else {
+                self.refreshIntegrations(now: .now)
+                return
+            }
             var next = self.snapshot
             var settled = LateSettle()
             if let endedData, next.endedDay?.bundle.dayKey == endedKey {
-                settled = next.settleEndedDay(integrations: endedData, catalog: self.catalog, now: now)
+                settled = next.settleEndedDay(integrations: endedData, mac: endedMac, catalog: self.catalog, now: now)
             }
             let rebuilt = next.applyWhoopReadiness(remote.whoop, catalog: self.catalog, now: now) || settled.rebuiltToday
             let phone = PhoneScreenGroup.minutes(for: next.bundle.dayKey)
@@ -584,8 +611,11 @@ final class GameStore: ObservableObject {
             next.applyFatigue(integrations: day, now: now)
             self.snapshot = next
             self.integrations = day
+            self.integrationsDayKey = dayKey
             if settled.liftedPenalty {
                 self.verificationNote = "The last quest day was completed. The penalty is lifted."
+            } else if settled.openedPenalty {
+                self.verificationNote = "The Macs' screen time put the last quest day over the limit. A penalty is open."
             }
             if rebuilt {
                 self.runningTimersRemoveMissing()
@@ -600,8 +630,18 @@ final class GameStore: ObservableObject {
     }
 
     /// The workouts of the quest day `dayKey`, which has ended. Nil when no day waits for a late read.
-    private static func endedDayData(_ dayKey: String?) async -> DayIntegrationSnapshot? {
+    /// The Macs' minutes for the quest day `dayKey`, which has ended, as the Worker holds them now.
+    private static func endedMacRead(_ dayKey: String?) async -> LateMacRead {
+        guard let dayKey, MacScreenSettings.load().baseURL != nil else { return LateMacRead() }
+        guard let reading = await MacScreenClient.load(dayKey: dayKey) else { return LateMacRead(trackerSet: true) }
+        return LateMacRead(trackerSet: true, answered: true, workMinutes: reading.minutes(for: dayKey),
+                           overlapMinutes: screenOverlap(dayKey: dayKey, macScreen: reading))
+    }
+
+    private static func endedDayData(_ dayKey: String?, workouts: Bool) async -> DayIntegrationSnapshot? {
         guard let dayKey, let inside = QuestDay.start(of: dayKey)?.addingTimeInterval(3_600) else { return nil }
+        // A day that is kept only for the Macs' minutes has every workout row done: nothing to read.
+        guard workouts else { return .empty(dayKey: dayKey) }
         async let hevy = HevyClient.snapshot(dayKey: dayKey)
         async let strava = StravaClient.snapshot(dayKey: dayKey)
         async let whoop = WhoopClient.snapshot(dayKey: dayKey)
@@ -621,6 +661,7 @@ final class GameStore: ObservableObject {
             guard var current = self.statInputs else { return }
             current.inputs = inputs
             self.statInputs = current
+            self.statHistoriesLoaded = true
             self.recomputeStatLevels(now: now)
             self.persist()
         }
@@ -636,7 +677,9 @@ final class GameStore: ObservableObject {
             questTitle: title,
             shieldLine: open.map(Self.shieldLine) ?? title,
             dayKey: snapshot.bundle.dayKey,
-            openDayKey: snapshot.missesRequiredSet ? snapshot.bundle.dayKey : nil
+            openDayKey: snapshot.missesRequiredSet ? snapshot.bundle.dayKey : nil,
+            // A penalty that waits through a token day or a rest day comes back tomorrow: the monitor locks at 5:00.
+            owedDayKey: snapshot.player.penaltyOpen && !visible ? snapshot.bundle.dayKey : nil
         )
     }
 
@@ -682,7 +725,7 @@ final class GameStore: ObservableObject {
             return
         }
         persist()
-        let context = ContextBuilder.make(snapshot: snapshot, now: now, targets: statTargets, bodyMass: statInputs?.bodyMass, levels: statLevels, integrations: integrations)
+        let context = ContextBuilder.make(snapshot: snapshot, now: now, targets: statTargets, bodyMass: statInputs?.bodyMass, levels: statLevels, integrations: dayData)
         Task { [weak self] in
             await self?.runGeneration(context: context, dayKey: dayKey)
         }
@@ -832,7 +875,7 @@ final class GameStore: ObservableObject {
                 now: now,
                 timerElapsed: nil,
                 userConfirmed: false,
-                integrations: integrations
+                integrations: dayData
             )
             let result = VerifierRegistry.verifier(for: quest.verification.method).evaluate(quest: quest, context: context)
             switch result {
@@ -846,7 +889,7 @@ final class GameStore: ObservableObject {
         if let result = next.stretchCompletion(doneInHevy: stretchesInHevy, now: now) {
             _ = next.apply(result, questId: DailyStretch.questId, now: now)
         }
-        next.checkHiddenQuests(integrations: integrations, now: now)
+        next.checkHiddenQuests(integrations: dayData, now: now)
         snapshot = next
     }
 
@@ -854,7 +897,7 @@ final class GameStore: ObservableObject {
         let title = snapshot.bundle.quests.first(where: { $0.id == questId })?.title ?? "Quest"
         var next = snapshot
         let outcome = next.apply(result, questId: questId, now: now)
-        next.checkHiddenQuests(integrations: integrations, now: now)
+        next.checkHiddenQuests(integrations: dayData, now: now)
         snapshot = next
         clock = now
         note(for: outcome, title: title)

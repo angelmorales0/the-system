@@ -134,6 +134,11 @@ final class HealthKitStore {
                 days[key, default: RecoveryDay(dayKey: key)][keyPath: keyPath] = Optional(total)
             }
         }
+        // Health holds a caffeine sample only for food that has caffeine. A day with food logged and no sample is 0 mg,
+        // not "not logged": without this, a player who takes no caffeine could never pass the 0 mg rule.
+        for key in days.keys where days[key]?.caloriesKcal != nil && days[key]?.caffeineMg == nil {
+            days[key]?.caffeineMg = 0
+        }
         // Expenditure: active plus basal energy, on days that have both (an Apple Watch). Health has no MacroFactor estimate.
         let active = await dailySums(.activeEnergyBurned, unit: .kilocalorie(), predicate: recoveryPredicate, zone: zone, preferMacroFactor: false)
         let basal = await dailySums(.basalEnergyBurned, unit: .kilocalorie(), predicate: recoveryPredicate, zone: zone, preferMacroFactor: false)

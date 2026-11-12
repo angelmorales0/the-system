@@ -62,18 +62,23 @@ enum FocusTracking {
         } else if let data = try? PropertyListEncoder().encode(selection) {
             FocusGroup.defaults.set(data, forKey: key)
         }
-        syncMonitoring()
+        syncMonitoring(restart: true)
     }
 
     /// One schedule per quest day (5:00 to 4:59) with an event at every FOC threshold. Without an "all apps"
     /// selection nothing is counted, so monitoring stops.
-    static func syncMonitoring() {
+    /// A running count is left alone at launch: a restart sets every threshold back to zero, so the day's minutes
+    /// before the launch would be lost and the day would read lower than it was. Only a new selection restarts it.
+    static func syncMonitoring(restart: Bool = false) {
         let center = DeviceActivityCenter()
         let name = DeviceActivityName(FocusGroup.activity)
-        center.stopMonitoring([name])
         let all = loadSelection(social: false)
         let social = loadSelection(social: true)
         FocusGroup.defaults.set(!isEmpty(social), forKey: FocusGroup.socialTrackedKey)
+        let wanted = isEmpty(all) ? 0 : FocusLevel.screenThresholds.count + (isEmpty(social) ? 0 : FocusLevel.socialThresholds.count)
+        if !restart, wanted > 0, center.activities.contains(name), center.events(for: name).count == wanted,
+           center.schedule(for: name)?.intervalStart.hour == QuestDay.startHour { return }
+        center.stopMonitoring([name])
         guard !isEmpty(all) else { return }
 
         var events: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:]

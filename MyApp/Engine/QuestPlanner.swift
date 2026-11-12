@@ -133,7 +133,7 @@ enum QuestPlanner {
     - Use each exercise's Hevy name from trainingHistory.lifts when the player has logged it under one of its aliases; otherwise use split.today exercise.
     - An exercise with "custom": true is the player's own goal (its target is in goals.strength and trainingHistory.strengthTargets). The app put it on this day in place of a support exercise. Treat it as a strength target: cut support exercises before it, and follow its note.
     - You may drop other accessories or a set when readiness or recovery calls for it, but keep the goals.focus exercises. Do not add exercises from other days.
-    - If splitAdvice says today's heavy lift would break the heavy-leg limits, make today a run-only day: write no lifts and headerLine "Training". The same split day comes back next time.
+    - If splitAdvice says today's heavy lift would break the heavy-leg limits, do what it says. "Make today a run-only day": write no lifts and headerLine "Training"; the same split day comes back next time. "Make every squat and deadlift row light": keep the split day and its headerLine, and write each squat and deadlift row with more than 6 reps and under 80% of its best e1RM.
 
     Rest days (the player spends them, you never pick one):
     - rest.available is false, so restToday must be false and restReason must be "". A rest day the player spends replaces your plan.
@@ -229,7 +229,35 @@ enum QuestPlanner {
         history["runWindow"] = nil
         let problems = TrainingHistory.limitProblems(probe, .object(history))
         guard !problems.isEmpty else { return "" }
-        return "Today's \(today["name"]?.stringValue ?? "None") heavy \(main["exercise"]?.stringValue ?? "None") would break the limits (\(problems.joined(separator: "; "))). Make today a run-only day."
+        let blocked = "Today's \(today["name"]?.stringValue ?? "None") heavy \(main["exercise"]?.stringValue ?? "None") would break the limits (\(problems.joined(separator: "; ")))."
+        // The run window is full too: a run-only day would be an empty day, which no plan can be. Keep the day light.
+        if let runs = context["trainingHistory"]?["runWindow"]?["runsToday"]?.arrayValue, runs.isEmpty {
+            return "\(blocked) The run window is full, so keep the split day and \(lightDayAdvice): \(lightSets) sets of \(lightReps) or more reps, under 80% of the best e1RM."
+        }
+        return "\(blocked) Make today a run-only day."
+    }
+
+    /// Marks the advice that keeps a blocked leg day and lightens its heavy lifts. `templateBundle` reads it.
+    static let lightDayAdvice = "make every squat and deadlift row light"
+    static let lightSets = 3
+    static let lightReps = 8
+
+    /// A heavy squat or deadlift row as its light version: 3 sets of 8, no load, like the split's own light squat.
+    static func lightened(_ quest: JSONValue, lifts: JSONValue?) -> JSONValue {
+        guard TrainingHistory.questIsHeavyLower(quest, lifts: lifts), var row = quest.objectValue, var verification = row["verification"]?.objectValue,
+              var params = verification["params"]?.objectValue, let name = params["exercise"]?.stringValue else { return quest }
+        params["sets"] = .number(Double(lightSets))
+        params["minReps"] = .number(Double(lightReps))
+        params["minWeightKg"] = nil
+        verification["params"] = .object(params)
+        row["verification"] = .object(verification)
+        row["title"] = .string("\(name) \(lightSets)x\(lightReps)")
+        row["difficulty"] = .string("normal")
+        if var progress = row["progress"]?.objectValue {
+            progress["target"] = .number(Double(lightSets))
+            row["progress"] = .object(progress)
+        }
+        return .object(row)
     }
 
     static func splitNames(_ exercise: JSONValue) -> Set<String> {
@@ -643,16 +671,24 @@ enum QuestPlanner {
         var header = headerFor(mode)
         let today = splitToday(context)
         let noGym = context["constraints"]?["noGymToday"]?.boolValue == true
-        let advised = context["splitAdvice"].truthy
+        let advice = context["splitAdvice"]?.stringValue ?? ""
+        let lighten = advice.contains(lightDayAdvice)
+        let advised = !advice.isEmpty && !lighten
         if mode == "performance_training", let today, !noGym, !advised {
-            rows = rows.filter { $0["stat"]?.stringValue != "STR" } + splitQuests(today, band: band, day: day, mode: mode)
+            var lifts = splitQuests(today, band: band, day: day, mode: mode)
+            if lighten { lifts = lifts.map { lightened($0, lifts: context["trainingHistory"]?["lifts"]) } }
+            rows = rows.filter { $0["stat"]?.stringValue != "STR" } + lifts
             header = today["name"]?.stringValue ?? header
         } else if mode == "performance_training", advised {
             rows = rows.filter { $0["stat"]?.stringValue != "STR" }
         }
         if mode == "performance_training", noGym { rows = noGymQuests(rows, day: day, mode: mode) }
-        let required = Array(rows.filter { $0["kind"]?.stringValue != "optional" }.prefix(8))
-        let optional = Array(rows.filter { $0["kind"]?.stringValue == "optional" }.prefix(1))
+        // The day's own limits, so a full split day with a run keeps every lift (Deadlift Day has 8 and a 10K).
+        let limits = MorningConstraints.standard
+        let maxRequired = context["constraints"]?["maxRequiredQuests"]?.intValue ?? limits.maxRequiredQuests
+        let maxOptional = context["constraints"]?["maxOptionalQuests"]?.intValue ?? limits.maxOptionalQuests
+        let required = Array(rows.filter { $0["kind"]?.stringValue != "optional" }.prefix(maxRequired))
+        let optional = Array(rows.filter { $0["kind"]?.stringValue == "optional" }.prefix(maxOptional))
         return .object([
             "schemaVersion": .number(1),
             "dayKey": .string(day),
@@ -660,7 +696,7 @@ enum QuestPlanner {
             "headerLine": .string(header),
             "narrative": .string(narrativeFor(band: band)),
             "threat": .string(threatFor(band: band)),
-            "quests": .array(Array((required + optional).prefix(9))),
+            "quests": .array(Array((required + optional).prefix(QuestSafety.maxQuests))),
             "warnings": .array([.string(defaultWarning)]),
             "generatedBy": .string("template"),
         ])

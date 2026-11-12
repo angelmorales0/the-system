@@ -6,12 +6,24 @@ import Foundation
 /// The rows are always the same: a flat 10K. Another missed day or month while it is open changes nothing.
 enum PenaltyQuests {
 
-    /// Adds the rows once, above the day's quests. Existing penalty rows keep their progress.
+    /// Adds the rows once, above the day's quests. Open penalty rows keep their progress.
+    /// A penalty that opens after the day's penalty run is a new debt (a missed month, judged later that day):
+    /// the finished row does not serve it, so it gets its own open row, with its own id.
     static func ensure(in bundle: QuestBundle, open: Bool, band: ReadinessBand, catalog: FallbackCatalog, now: Date) -> QuestBundle {
         guard open, bundle.mode != .fullRecovery, !bundle.quests.isEmpty,
-              !bundle.quests.contains(where: { $0.kind == .penalty }) else { return bundle }
-        let rows = catalog.penaltyTemplates(band: band).map { quest(from: $0, bundle: bundle, now: now) }
+              !bundle.quests.contains(where: { $0.kind == .penalty && $0.status != .completed }) else { return bundle }
         var copy = bundle
+        var rows: [Quest] = []
+        for template in catalog.penaltyTemplates(band: band) {
+            var row = quest(from: template, bundle: bundle, now: now)
+            var number = 2
+            let base = row.id
+            while (copy.quests + rows).contains(where: { $0.id == row.id }) {
+                row.id = "\(base)_\(number)"
+                number += 1
+            }
+            rows.append(row)
+        }
         copy.quests.insert(contentsOf: rows, at: 0)
         return copy
     }
