@@ -718,6 +718,13 @@ final class GameStore: ObservableObject {
         var plan = prepared
         if plan.mode == .fullRecovery { plan.quests = [] }
         var next = snapshot
+        // A plan written for "No gym today" has no lifts, and its added 10K is the app's own row.
+        if context.constraints.noGymToday {
+            plan = NoGymDay.claimingAddedRun(plan)
+            next.noGymPlanDayKey = dayKey
+        } else if next.noGymPlanDayKey == dayKey {
+            next.noGymPlanDayKey = nil
+        }
         next.generatedBundle = plan
         next.bundle = next.finished(plan, catalog: catalog, now: now)
         snapshot = next

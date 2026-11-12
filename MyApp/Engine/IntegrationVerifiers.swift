@@ -258,10 +258,11 @@ private func workoutResult(_ matches: [CanonicalWorkout], quest: Quest, context:
             externalId: "\(Evidence.workoutPrefix)\(workout.id)",
             payload: "\(source)|\(workout.id)|\(context.dayKey)|\(Int(workout.movingTimeSec))",
             timestamp: workout.end,
-            recordings: workout.members.map(\.id)
+            recordings: workout.members.map(\.id),
+            sessionStart: workout.start
         )
-        // Any recording of this session already used: the same workout under another source's id.
-        if !context.claimedKeys.contains(evidence.reuseKey), context.claimedWorkoutIds.isDisjoint(with: evidence.workoutIds) {
+        // Already used under another source's id, or seen again through one source alone: still the same workout.
+        if !context.claimedKeys.contains(evidence.reuseKey), !context.claims(workout) {
             return .completed(evidence: evidence)
         }
     }
@@ -320,7 +321,8 @@ enum DistanceRule {
             externalId: "\(Evidence.workoutPrefix)\(workout.id)",
             payload: "\(source)|\(workout.id)|\(context.dayKey)|\(Int(meters))",
             timestamp: workout.end,
-            recordings: workout.members.map(\.id)
+            recordings: workout.members.map(\.id),
+            sessionStart: workout.start
         )
         return .progress(current: min(kilometers(meters), quest.progress.target), evidence: evidence)
     }
@@ -390,6 +392,13 @@ enum WorkoutClaimRules {
         if runsDone(day) != 1 || day.player.penaltyOpen { errors.append("a run in Apple Health should clear the penalty 10K") }
         pass(&day, data(dayKey, strava: [strava], health: [health]))
         if runsDone(day) != 1 { errors.append("the same run under its Strava id should not clear a second 10K, got \(runsDone(day)) runs done") }
+        // Apple Health gives nothing on a later read (a locked phone): Strava's copy alone is still the same run.
+        var locked = GameSnapshot.fresh(catalog: catalog, now: now)
+        locked.player.penaltyOpen = true
+        locked.rebuildBundle(catalog: catalog, now: now)
+        pass(&locked, data(dayKey, strava: [], health: [health]))
+        pass(&locked, data(dayKey, strava: [strava], health: []))
+        if runsDone(locked) != 1 { errors.append("the Strava copy alone should not clear a second 10K, got \(runsDone(locked)) runs done") }
         // A second, real run still clears the day's 10K.
         let second = recording("strava", "claim-second", startsAfter: 20_000)
         pass(&day, data(dayKey, strava: [strava, second], health: [health]))

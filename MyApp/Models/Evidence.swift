@@ -10,8 +10,17 @@ struct Evidence: Codable, Hashable, Equatable {
     /// The id of every recording of the workout behind this evidence: its Strava, WHOOP, and Apple Health copies.
     /// Nil for evidence that is not a workout, and on saves from before this field.
     var recordings: [String]? = nil
+    /// When that workout started; `timestamp` is its end. Nil for evidence that is not a workout.
+    var sessionStart: Date? = nil
 
     static let workoutPrefix = "workout:"
+
+    /// The time the workout took. A later read can show the same session through another source alone, with none of
+    /// the ids this evidence holds. Its time still matches, so it cannot clear a second quest.
+    var session: DateInterval? {
+        guard let sessionStart, sessionStart <= timestamp else { return nil }
+        return DateInterval(start: sessionStart, end: timestamp)
+    }
 
     /// Same source and external id cannot clear a second quest on the same day.
     var reuseKey: String { "\(source)\u{1f}\(externalId)" }
@@ -25,13 +34,15 @@ struct Evidence: Codable, Hashable, Equatable {
         return ids
     }
 
-    static func make(source: String, externalId: String, payload: String, timestamp: Date, recordings: [String]? = nil) -> Evidence {
+    static func make(source: String, externalId: String, payload: String, timestamp: Date, recordings: [String]? = nil,
+                     sessionStart: Date? = nil) -> Evidence {
         Evidence(
             source: source,
             externalId: externalId,
             payloadHash: EvidenceHash.sha256(payload),
             timestamp: timestamp,
-            recordings: recordings
+            recordings: recordings,
+            sessionStart: sessionStart
         )
     }
 }

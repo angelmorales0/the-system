@@ -66,12 +66,14 @@ enum WorkoutDedupe {
     static func sameSession(_ lhs: WorkoutEvent, _ rhs: WorkoutEvent) -> Bool {
         let family = lhs.sportFamily
         guard family != .other, family == rhs.sportFamily else { return false }
-        guard abs(lhs.start.timeIntervalSince(rhs.start)) <= maxStartGap else { return false }
-        let leftStart = lhs.start.addingTimeInterval(-pad)
-        let leftEnd = lhs.end.addingTimeInterval(pad)
-        let rightStart = rhs.start.addingTimeInterval(-pad)
-        let rightEnd = rhs.end.addingTimeInterval(pad)
-        return leftStart <= rightEnd && rightStart <= leftEnd
+        return sameTime(lhs.start, lhs.end, rhs.start, rhs.end)
+    }
+
+    /// The time rule alone: starts at most 10 minutes apart, and the intervals overlap after 5 minutes of padding.
+    static func sameTime(_ leftStart: Date, _ leftEnd: Date, _ rightStart: Date, _ rightEnd: Date) -> Bool {
+        guard abs(leftStart.timeIntervalSince(rightStart)) <= maxStartGap else { return false }
+        return leftStart.addingTimeInterval(-pad) <= rightEnd.addingTimeInterval(pad)
+            && rightStart.addingTimeInterval(-pad) <= leftEnd.addingTimeInterval(pad)
     }
 
     static func canonical(_ events: [WorkoutEvent]) -> [CanonicalWorkout] {

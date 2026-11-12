@@ -18,6 +18,14 @@ struct VerificationContext: Equatable {
     var integrations: DayIntegrationSnapshot = .empty(dayKey: "")
     /// Workout recording ids already claimed today by a different quest (`Evidence.workoutIds`).
     var claimedWorkoutIds: Set<String> = []
+    /// The times of the workouts already claimed today by a different quest (`Evidence.session`).
+    var claimedSessions: [DateInterval] = []
+
+    /// True when another quest already used this workout: one of its recordings, or a session at the same time.
+    func claims(_ workout: CanonicalWorkout) -> Bool {
+        if claimedWorkoutIds.contains(workout.id) || workout.members.contains(where: { claimedWorkoutIds.contains($0.id) }) { return true }
+        return claimedSessions.contains { WorkoutDedupe.sameTime($0.start, $0.end, workout.start, workout.end) }
+    }
 }
 
 enum VerificationResult: Equatable {

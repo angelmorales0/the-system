@@ -5,10 +5,13 @@ import Foundation
 /// window (`TrainingHistory.noGymAddedKm`). The day stays under two 10Ks and 20 km, so a day the window already
 /// filled with two 10Ks adds none. Finished work stays. Penalty rows are not changed. The setting lasts one quest day.
 enum NoGymDay {
-    static let secondTenKSlug = "run_10k_2"
-    static let secondTenKTitle = TrainingDay.tenKTitle
+    /// The id slug of the 10K this setting adds. It is the app's own: the planner names its runs `run_10k_1`,
+    /// `run_10k_2`, and so on, so a planned run can never pass for the added one.
+    static let addedSlug = "run_10k_no_gym"
     /// The most runs a day holds: the window's runs plus the added 10K, never more than this.
     static let runCount = 2
+
+    static func addedId(_ dayKey: String) -> String { "q_\(dayKey)_\(addedSlug)" }
 
     static func cardioOnly(_ bundle: QuestBundle, now: Date) -> QuestBundle {
         guard bundle.mode == .performanceTraining else { return bundle }
@@ -17,19 +20,29 @@ enum NoGymDay {
         if !copy.quests.contains(where: { TrainingDay.isStrength($0) && $0.id != DailyStretch.questId }) {
             copy.headerLine = TrainingDay.header
         }
+        // The day already holds its added 10K: a second pass, such as the next launch, adds nothing.
+        guard !copy.quests.contains(where: { isAdded($0, dayKey: copy.dayKey) }) else { return copy }
         let runs = copy.quests.filter { isSwappable($0) && TrainingDay.isRaceRun($0) }
         let km = runs.reduce(0.0) { $0 + ($1.verification.params["minDistanceMeters"]?.doubleValue ?? 0) / 1000 }
         guard runs.count < runCount, km + Double(TrainingHistory.noGymAddedKm) <= Double(TrainingHistory.maxRunKmPerDay) else { return copy }
-        let added = tenK(from: runs.first { isTenK($0) }, index: runs.count, bundle: copy, now: now)
-        // After the day's own quests, before Stretching, optional rows, and penalty rows.
-        let insertAt = copy.quests.firstIndex { $0.id == ScreenTime.questId || $0.id == DailyStretch.questId || $0.kind != .daily } ?? copy.quests.count
-        copy.quests.insert(added, at: insertAt)
+        let added = tenK(from: runs.first { isTenK($0) }, bundle: copy, now: now)
+        copy.quests.insert(added, at: copy.workoutInsertIndex)
         return copy
     }
 
-    /// True for a row this setting added, so turning it off can take the row away again.
+    /// True for the row this setting added, so turning it off can take the row away again.
     static func isAdded(_ quest: Quest, dayKey: String) -> Bool {
-        quest.id == "q_\(dayKey)_\(secondTenKSlug)" || quest.id == "q_\(dayKey)_run_10k_1"
+        quest.id == addedId(dayKey)
+    }
+
+    /// A plan written for a no-gym day already holds the added 10K. On a day whose window needs no run, that 10K
+    /// is the plan's only run. It takes the app's id, so the swap adds no second one and "No gym" off removes it.
+    static func claimingAddedRun(_ bundle: QuestBundle) -> QuestBundle {
+        let runs = bundle.quests.indices.filter { isSwappable(bundle.quests[$0]) && TrainingDay.isRaceRun(bundle.quests[$0]) }
+        guard bundle.mode == .performanceTraining, runs.count == 1, let index = runs.first, isTenK(bundle.quests[index]) else { return bundle }
+        var copy = bundle
+        copy.quests[index].id = addedId(bundle.dayKey)
+        return copy
     }
 
     static func isTenK(_ quest: Quest) -> Bool {
@@ -41,11 +54,10 @@ enum NoGymDay {
     }
 
     /// A fresh copy of the day's 10K, or the catalog's 10K when the day has none.
-    private static func tenK(from template: Quest?, index: Int, bundle: QuestBundle, now: Date) -> Quest {
-        let slug = index == 0 ? "run_10k_1" : secondTenKSlug
-        return Quest(
-            id: "q_\(bundle.dayKey)_\(slug)",
-            title: index == 0 ? "10K Run" : secondTenKTitle,
+    private static func tenK(from template: Quest?, bundle: QuestBundle, now: Date) -> Quest {
+        Quest(
+            id: addedId(bundle.dayKey),
+            title: TrainingDay.tenKTitle,
             kind: .daily,
             stat: .END,
             verification: template?.verification ?? VerificationSpec(
@@ -60,6 +72,14 @@ enum NoGymDay {
             evidence: [],
             assignedAt: now
         )
+    }
+}
+
+extension QuestBundle {
+    /// Where a workout row goes: after the day's own workouts, before Screen Time, Stretching, and optional rows.
+    /// Penalty rows lead the list and stay first, so a run clears the penalty before it counts for the day.
+    var workoutInsertIndex: Int {
+        quests.firstIndex { $0.kind != .penalty && ($0.id == ScreenTime.questId || $0.id == DailyStretch.questId || $0.kind != .daily) } ?? quests.count
     }
 }
 
@@ -79,16 +99,21 @@ extension GameSnapshot {
             return "No gym available. Strength quests are swapped for an added 10K. It does not count toward the 50 km window."
         }
         noGymDayKey = nil
+        // A plan the planner wrote for the no-gym day has no lifts to bring back. Drop it: the split day comes back now,
+        // and the planner plans the gym day at the next refresh while nothing is done yet.
+        if noGymPlanDayKey == bundle.dayKey {
+            generatedBundle = nil
+            generationAttemptDayKey = nil
+        }
+        noGymPlanDayKey = nil
         var fresh = self
         fresh.rebuildBundle(catalog: catalog, now: now)
         let dayKey = bundle.dayKey
-        var quests = bundle.quests.filter { !(NoGymDay.isAdded($0, dayKey: dayKey) && $0.status != .completed) }
+        bundle.quests.removeAll { NoGymDay.isAdded($0, dayKey: dayKey) && $0.status != .completed }
         let lifts = fresh.bundle.quests.filter { lift in
-            lift.kind == .daily && TrainingDay.isStrength(lift) && !quests.contains { $0.id == lift.id }
+            lift.kind == .daily && TrainingDay.isStrength(lift) && !bundle.quests.contains { $0.id == lift.id }
         }
-        let insertAt = quests.firstIndex { $0.id == ScreenTime.questId || $0.id == DailyStretch.questId || $0.kind != .daily } ?? quests.count
-        quests.insert(contentsOf: lifts, at: insertAt)
-        bundle.quests = quests
+        bundle.quests.insert(contentsOf: lifts, at: bundle.workoutInsertIndex)
         // The lifts come back over the window's runs: still two workouts, unless one is already finished.
         bundle = TrainingDay.cappingWorkouts(bundle)
         bundle.headerLine = fresh.bundle.headerLine
@@ -172,6 +197,66 @@ enum NoGymDayRules {
         _ = rest.setNoGym(true, catalog: catalog, now: now)
         if rest.bundle.quests != restQuests || rest.noGymToday {
             errors.append("no gym must not change a Full Recovery day")
+        }
+
+        // A planned run named like the planner names it (`run_10k_1`) is the window's own: no gym off keeps it.
+        var planned = GameSnapshot.fresh(catalog: catalog, now: now)
+        var plan = planned.bundle
+        plan.generatedBy = "template"
+        plan.quests.removeAll { $0.id == ScreenTime.questId || $0.id == DailyStretch.questId }
+        if let index = plan.quests.firstIndex(where: { NoGymDay.isTenK($0) }) { plan.quests[index].id = "q_\(plan.dayKey)_run_10k_1" }
+        planned.generatedBundle = plan
+        planned.rebuildBundle(catalog: catalog, now: now)
+        let plannedIds = planned.bundle.quests.map(\.id)
+        _ = planned.setNoGym(true, catalog: catalog, now: now)
+        _ = planned.setNoGym(false, catalog: catalog, now: now)
+        if planned.bundle.quests.map(\.id) != plannedIds {
+            errors.append("no gym on and off should give the planned day back, with its run, got \(planned.bundle.quests.map(\.id))")
+        }
+
+        // A day whose run window is full gets the one added 10K, and the next launch adds no second one.
+        var full = GameSnapshot.fresh(catalog: catalog, now: now)
+        let ran = QuestRecord(title: "10K Run", kind: .daily, stat: .END, method: .stravaActivity, params: [:], target: 10, done: 10, unit: "km", status: .completed)
+        full.questHistory = (1...5).map { daysAgo in
+            QuestDayRecord(dayKey: QuestDay.key(byAddingDays: -daysAgo, to: full.bundle.dayKey), mode: .performanceTraining, trainingBand: .green,
+                           noGym: false, generatedBy: "fallback", missedRequired: false, quests: [ran])
+        }
+        full.rebuildBundle(catalog: catalog, now: now)
+        _ = full.setNoGym(true, catalog: catalog, now: now)
+        let swapped = full.bundle
+        full.bundle = full.finished(TrainingDay.exerciseOnly(full.bundle) ?? full.bundle, catalog: catalog, now: now)
+        if full.bundle != swapped || full.bundle.quests.filter({ NoGymDay.isTenK($0) }).count != 1 {
+            errors.append("a launch should not add a second 10K to a no-gym day, got \(full.bundle.quests.map(\.id))")
+        }
+        // A plan the planner wrote for that day holds the added 10K as its only run: the app adds no second one.
+        var written = GameSnapshot.fresh(catalog: catalog, now: now)
+        var noGymPlan = plan
+        noGymPlan.quests.removeAll { isLift($0) }
+        noGymPlan = NoGymDay.claimingAddedRun(noGymPlan)
+        written.noGymDayKey = written.bundle.dayKey
+        written.noGymPlanDayKey = written.bundle.dayKey
+        written.generatedBundle = noGymPlan
+        written.rebuildBundle(catalog: catalog, now: now)
+        if written.bundle.quests.filter({ NoGymDay.isTenK($0) }).count != 1 {
+            errors.append("a plan written for a no-gym day should keep its one 10K, got \(written.bundle.quests.map(\.id))")
+        }
+        // No gym off drops that plan, so the lifts come back.
+        _ = written.setNoGym(false, catalog: catalog, now: now)
+        if !written.bundle.quests.contains(where: { isLift($0) }) || written.generatedBundle != nil || written.bundle.headerLine != "Bench Day" {
+            errors.append("no gym off should bring the lifts back after a plan written for the no-gym day, got \(written.bundle.quests.map(\.id))")
+        }
+
+        // With a penalty open, the added 10K goes below the Penalty 10K, so the first run clears the penalty.
+        var owed = GameSnapshot.fresh(catalog: catalog, now: now)
+        owed.player.penaltyOpen = true
+        owed.rebuildBundle(catalog: catalog, now: now)
+        _ = owed.setNoGym(true, catalog: catalog, now: now)
+        if owed.bundle.quests.first?.kind != .penalty || owed.bundle.quests.filter({ $0.kind == .daily && NoGymDay.isTenK($0) }).count != 2 {
+            errors.append("the penalty row should stay first on a no-gym day, got \(owed.bundle.quests.map(\.id))")
+        }
+        _ = owed.setNoGym(false, catalog: catalog, now: now)
+        if owed.bundle.quests.first?.kind != .penalty {
+            errors.append("the penalty row should stay first after no gym off, got \(owed.bundle.quests.map(\.id))")
         }
         return errors
     }

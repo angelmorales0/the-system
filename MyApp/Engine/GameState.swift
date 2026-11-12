@@ -42,6 +42,8 @@ struct GameSnapshot: Codable, Equatable {
     var hiddenUnlocks: [HiddenQuestUnlock] = []
     /// Quest day the player marked "No gym today". Lifts become one added 10K on that day only.
     var noGymDayKey: String?
+    /// Quest day whose plan the planner wrote for "No gym today". That plan has no lifts, so "No gym" off drops it.
+    var noGymPlanDayKey: String?
     /// Quest day the planner made the week's rest day. `restDue` then locks it to Full Recovery.
     var plannerRestDayKey: String?
     /// The planner's one sentence on why that day rests. The Rest Day shows it as its narrative.
@@ -235,8 +237,7 @@ struct GameSnapshot: Codable, Equatable {
             if let index = bundle.quests.firstIndex(where: { $0.id == quest.id }) {
                 bundle.quests[index] = quest
             } else {
-                let insertAt = bundle.quests.firstIndex { $0.id == ScreenTime.questId || $0.id == DailyStretch.questId || $0.kind != .daily } ?? bundle.quests.count
-                bundle.quests.insert(quest, at: insertAt)
+                bundle.quests.insert(quest, at: bundle.workoutInsertIndex)
             }
         }
         let ids = Set(bundle.quests.map(\.id))
@@ -270,7 +271,8 @@ struct GameSnapshot: Codable, Equatable {
             timerElapsedSec: timerElapsed,
             userConfirmed: userConfirmed,
             integrations: integrations,
-            claimedWorkoutIds: others.reduce(into: Set<String>()) { $0.formUnion($1.evidence.workoutIds) }
+            claimedWorkoutIds: others.reduce(into: Set<String>()) { $0.formUnion($1.evidence.workoutIds) },
+            claimedSessions: others.compactMap(\.evidence.session)
         )
     }
 
@@ -441,9 +443,12 @@ struct GameSnapshot: Codable, Equatable {
             return "Completion has to come from a verifier."
         }
         let workoutIds = evidence.workoutIds
-        let reused = evidenceLog.contains {
-            $0.dayKey == bundle.dayKey && $0.questId != questId
-                && ($0.evidence.reuseKey == evidence.reuseKey || !$0.evidence.workoutIds.isDisjoint(with: workoutIds))
+        let session = evidence.session
+        let reused = evidenceLog.contains { use in
+            guard use.dayKey == bundle.dayKey, use.questId != questId else { return false }
+            if use.evidence.reuseKey == evidence.reuseKey || !use.evidence.workoutIds.isDisjoint(with: workoutIds) { return true }
+            guard let session, let other = use.evidence.session else { return false }
+            return WorkoutDedupe.sameTime(other.start, other.end, session.start, session.end)
         }
         if reused {
             return "That evidence was already used for another quest today."
@@ -593,7 +598,7 @@ extension GameSnapshot {
         case finance, monthlyPenaltyMonth
         case fullRecoveryDayKey, queuedFullRecoveryDayKey
         case hiddenUnlocks
-        case noGymDayKey, plannerRestDayKey, plannerRestReason, restDayKeys
+        case noGymDayKey, noGymPlanDayKey, plannerRestDayKey, plannerRestReason, restDayKeys
         case questHistory, screenTime, stretchChecks
         case gold, potionLog, lastGoldReward
         case hitPoints, fatigue, endedDay
@@ -615,6 +620,7 @@ extension GameSnapshot {
         queuedFullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .queuedFullRecoveryDayKey)
         hiddenUnlocks = try container.decodeIfPresent([HiddenQuestUnlock].self, forKey: .hiddenUnlocks) ?? []
         noGymDayKey = try container.decodeIfPresent(String.self, forKey: .noGymDayKey)
+        noGymPlanDayKey = try container.decodeIfPresent(String.self, forKey: .noGymPlanDayKey)
         plannerRestDayKey = try container.decodeIfPresent(String.self, forKey: .plannerRestDayKey)
         plannerRestReason = try container.decodeIfPresent(String.self, forKey: .plannerRestReason)
         restDayKeys = try container.decodeIfPresent([String].self, forKey: .restDayKeys) ?? []
@@ -647,6 +653,7 @@ extension GameSnapshot {
         try container.encodeIfPresent(queuedFullRecoveryDayKey, forKey: .queuedFullRecoveryDayKey)
         try container.encode(hiddenUnlocks, forKey: .hiddenUnlocks)
         try container.encodeIfPresent(noGymDayKey, forKey: .noGymDayKey)
+        try container.encodeIfPresent(noGymPlanDayKey, forKey: .noGymPlanDayKey)
         try container.encodeIfPresent(plannerRestDayKey, forKey: .plannerRestDayKey)
         try container.encodeIfPresent(plannerRestReason, forKey: .plannerRestReason)
         try container.encodeIfPresent(stretchChecks, forKey: .stretchChecks)
