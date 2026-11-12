@@ -89,7 +89,7 @@ struct StatusSettingsSheet: View {
         }
     }
 
-    /// This week's free rest days: the ones left, out of the 1 or 2 the week rolled.
+    /// This week's free rest days: the ones left, out of the 2 each week gives.
     private var restDayButton: some View {
         let day = store.snapshot.bundle.dayKey
         let left = store.snapshot.restDaysLeft(on: day)

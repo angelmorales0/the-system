@@ -1,8 +1,8 @@
 import Foundation
 
 /// A 5-day stretching rotation for the AGI goals. Vertical jump is not a stretching goal, so it has no day here.
-/// A week holds 5 or 6 stretching days: `RestDays` rolls 1 or 2 rest days, and a spent rest day has no Stretching row.
-/// So the whole rotation fits every week, and a 6-day week starts it again at the front splits.
+/// A week holds 5 to 7 stretching days: `RestDays` gives 2 rest days a week, and a spent rest day has no Stretching row.
+/// So the whole rotation fits every week, and a longer week starts it again at the front splits.
 /// Reviews of static stretching put the most gain at about 10 minutes a week per muscle, and find gains from 5.
 /// The splits get 10 minutes a side each week. Shoulders, ankles, and hip rotation get 8.
 /// Days run in order. A day moves on only after its row is done, so a missed day comes back next.

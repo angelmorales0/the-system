@@ -132,6 +132,9 @@ struct QuestDayRecord: Codable, Equatable {
     var noGym: Bool
     /// `GymSplit.Day.id` when the day was a split day. Nil for older saves and days without lifts.
     var splitDay: String? = nil
+    /// `GymSplit.Day.id` of a split day the player skipped after this day (`GameSnapshot.skipSplitDay`).
+    /// The split moves past it. It is not a day that was done, so `splitDay` and the quests stay as they were.
+    var skippedSplitDay: String? = nil
     var generatedBy: String
     /// A required quest was still open at the end of the day, so a penalty opened.
     var missedRequired: Bool

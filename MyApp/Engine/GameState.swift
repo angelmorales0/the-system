@@ -97,28 +97,34 @@ struct GameSnapshot: Codable, Equatable {
     /// Saves the day that is ending, with each quest's status, and keeps the newest 30 days.
     mutating func recordQuestDay() {
         guard !bundle.quests.isEmpty || bundle.mode == .fullRecovery else { return }
+        let quests = bundle.quests.map { quest in
+            QuestRecord(
+                title: quest.title,
+                kind: quest.kind,
+                stat: quest.stat,
+                method: quest.verification.method,
+                params: quest.verification.params,
+                target: quest.progress.target,
+                done: quest.progress.current,
+                unit: quest.progress.unit,
+                // A potion skip is not real work, so split rotation and progression ignore it.
+                status: quest.skippedWithPotion ? .expired : quest.status
+            )
+        }
+        // A token or a rest day spent after the lifts changes the header. The day still trained its split day,
+        // so the record keeps it and the split moves on.
+        let liftedBeforeRest = bundle.mode == .fullRecovery && quests.contains { $0.stat == .STR && $0.status == .completed }
         let record = QuestDayRecord(
             dayKey: bundle.dayKey,
             mode: bundle.mode,
             trainingBand: trainingBand,
-            noGym: noGymDayKey == bundle.dayKey,
-            splitDay: GymSplit.day(named: bundle.headerLine)?.id,
+            // Only a Training day swaps its lifts for the added 10K.
+            noGym: noGymDayKey == bundle.dayKey && bundle.mode == .performanceTraining,
+            splitDay: GymSplit.day(named: bundle.headerLine)?.id
+                ?? (liftedBeforeRest ? GymSplit.today(history: questHistory, dayKey: bundle.dayKey).id : nil),
             generatedBy: bundle.generatedBy,
             missedRequired: missesRequiredSet,
-            quests: bundle.quests.map { quest in
-                QuestRecord(
-                    title: quest.title,
-                    kind: quest.kind,
-                    stat: quest.stat,
-                    method: quest.verification.method,
-                    params: quest.verification.params,
-                    target: quest.progress.target,
-                    done: quest.progress.current,
-                    unit: quest.progress.unit,
-                    // A potion skip is not real work, so split rotation and progression ignore it.
-                    status: quest.skippedWithPotion ? .expired : quest.status
-                )
-            }
+            quests: quests
         )
         questHistory.removeAll { $0.dayKey == record.dayKey }
         questHistory.insert(record, at: 0)
@@ -166,37 +172,49 @@ struct GameSnapshot: Codable, Equatable {
         }
     }
 
+    /// Shown when the quest day on screen is ahead of the local date, after travel west. A rest then waits for the clock.
+    static let dayAheadMessage = "The quest day is ahead of the local date. Try again after 5:00."
+
     /// Spends one banked token. Today always becomes the Full Recovery day; finished work stays done.
+    /// A day that ended while the app stayed open is judged first, so a token never hides its miss.
     mutating func spendFullRecovery(catalog: FallbackCatalog, now: Date) -> String {
+        refreshIfNeeded(catalog: catalog, now: now)
         let today = QuestDay.key(for: now)
+        guard bundle.dayKey == today else { return Self.dayAheadMessage }
         guard player.fullRecoveryBank > 0 else { return "No Full Recovery token in the bank." }
         if signals.spendingFullRecovery || fullRecoveryDayKey == today {
             return "Full Recovery is already assigned for today."
         }
-        if bundle.dayKey == today, isRestDay {
+        if isRestDay {
             return "Today is already a rest day. The token stays in the bank."
         }
         player.withdrawRecoveryToken()
-        let done = bundle.dayKey == today ? bundle.quests.filter { $0.status == .completed } : []
+        let done = bundle.quests.filter { $0.status == .completed }
         signals.spendingFullRecovery = true
         fullRecoveryDayKey = today
         generatedBundle = nil
+        // A rest day has no lifts to swap, so "No gym today" ends here.
+        if noGymDayKey == today { noGymDayKey = nil }
         rebuildBundle(catalog: catalog, now: now)
         keepFinished(done)
         return "Full Recovery day assigned. A missed training set will not open a penalty."
     }
 
     /// Spends one of this week's rest days on today. Finished work stays done, and an unused rest day ends with its week.
+    /// A day that ended while the app stayed open is judged first, like `spendFullRecovery`.
     mutating func useRestDay(catalog: FallbackCatalog, now: Date) -> String {
+        refreshIfNeeded(catalog: catalog, now: now)
         let today = QuestDay.key(for: now)
+        guard bundle.dayKey == today else { return Self.dayAheadMessage }
         guard !player.penaltyOpen else { return "Clear the penalty first." }
-        if signals.spendingFullRecovery || fullRecoveryDayKey == today || (bundle.dayKey == today && bundle.mode == .fullRecovery) {
+        if signals.spendingFullRecovery || fullRecoveryDayKey == today || bundle.mode == .fullRecovery {
             return "Today is already a rest day."
         }
         guard restDaysLeft(on: today) > 0 else { return "No rest days left this week." }
-        let done = bundle.dayKey == today ? bundle.quests.filter { $0.status == .completed } : []
+        let done = bundle.quests.filter { $0.status == .completed }
         restDayKeys = Array((restDayKeys + [today]).suffix(RestDays.keepDays))
         generatedBundle = nil
+        if noGymDayKey == today { noGymDayKey = nil }
         rebuildBundle(catalog: catalog, now: now)
         keepFinished(done)
         return "Rest day used. \(restDaysLeft(on: today)) left this week."
@@ -348,9 +366,10 @@ struct GameSnapshot: Codable, Equatable {
         return count
     }
 
-    /// Today rests because the player spent a rest day on it. An open penalty is served first.
+    /// Today rests because the player spent a rest day on it. `useRestDay` refuses while a penalty is open.
+    /// A penalty that opens later on the rest day waits for the next day, as on a token day, so the rest day is not lost.
     func restDue(on dayKey: String) -> Bool {
-        !player.penaltyOpen && restDayKeys.contains(dayKey)
+        restDayKeys.contains(dayKey)
     }
 
     /// The player spends rest days, so the planner never makes a day rest.

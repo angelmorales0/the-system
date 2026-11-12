@@ -94,10 +94,10 @@ enum ModePicker {
     }
 }
 
-/// Free rest days. Each Monday-to-Sunday quest week rolls 1 or 2, and the player spends them on any day that week.
-/// The same week always rolls the same number, so a reload cannot reroll it. An unused rest day ends with its week.
+/// Free rest days. Each Monday-to-Sunday quest week gives 2, and the player spends them on any day that week.
+/// An unused rest day ends with its week.
 enum RestDays {
-    static let allowanceRange = 1...2
+    static let perWeek = 2
     /// Rest days kept on record, more than the longest lookup needs.
     static let keepDays = 40
 
@@ -108,15 +108,8 @@ enum RestDays {
         return QuestDay.key(byAddingDays: -((weekday + 5) % 7), to: dayKey)
     }
 
-    static func allowance(on dayKey: String) -> Int {
-        // FNV-1a: stable across launches, unlike `Hasher`. Its low bits follow the digits, so the roll reads the high bits.
-        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
-        for byte in "rest:\(weekKey(of: dayKey))".utf8 {
-            hash ^= UInt64(byte)
-            hash = hash &* 0x100_0000_01b3
-        }
-        return allowanceRange.lowerBound + Int((hash >> 40) % UInt64(allowanceRange.count))
-    }
+    /// Rest days the quest week that holds `dayKey` gives. Every week gives the same number.
+    static func allowance(on dayKey: String) -> Int { perWeek }
 }
 
 /// The weekly rest days and the run rest, played out over real quest days.
@@ -133,17 +126,13 @@ enum RestRules {
             }
         }
 
-        // Weeks run Monday to Sunday, and each one rolls 1 or 2 rest days for good.
+        // Weeks run Monday to Sunday, and every week gives 2 rest days.
         if RestDays.weekKey(of: "2026-10-05") != "2026-10-05" || RestDays.weekKey(of: "2026-10-11") != "2026-10-05" || RestDays.weekKey(of: "2026-10-12") != "2026-10-12" {
             errors.append("a quest week should run Monday to Sunday")
         }
         let weeks = (0..<52).map { QuestDay.key(byAddingDays: $0 * 7, to: "2026-10-05") }
-        let rolls = weeks.map { RestDays.allowance(on: $0) }
-        if rolls != weeks.map({ RestDays.allowance(on: QuestDay.key(byAddingDays: 6, to: $0)) }) {
-            errors.append("every day of a week should roll the same number")
-        }
-        if Set(rolls) != [1, 2] || !(15...37).contains(rolls.filter { $0 == 2 }.count) {
-            errors.append("weeks should roll a mix of 1 and 2 rest days, got \(rolls)")
+        if weeks.contains(where: { RestDays.allowance(on: $0) != 2 || RestDays.allowance(on: QuestDay.key(byAddingDays: 6, to: $0)) != 2 }) {
+            errors.append("every week should give 2 rest days")
         }
 
         // Nothing rests by itself: seven days in a row train.
@@ -184,6 +173,38 @@ enum RestRules {
         spent.refreshIfNeeded(catalog: catalog, now: day(1))
         if spent.player.penaltyOpen || spent.gold != gold || spent.bundle.mode != .performanceTraining {
             errors.append("the day after a Rest Day should train again with no penalty, got penalty \(spent.player.penaltyOpen) mode \(spent.bundle.mode)")
+        }
+
+        // A penalty that opens on a spent rest day waits for the next day, as on a token day. The rest day is not lost.
+        var late = GameSnapshot.fresh(catalog: catalog, now: dayOne)
+        _ = late.useRestDay(catalog: catalog, now: dayOne)
+        late.player.penaltyOpen = true
+        late.rebuildBundle(catalog: catalog, now: dayOne)
+        if late.bundle.mode != .fullRecovery || late.bundle.headerLine != GameSnapshot.restDayHeader || !late.isRestDay || !PenaltyQuests.rows(in: late.bundle).isEmpty {
+            errors.append("a penalty that opens on a Rest Day should wait, got \(late.bundle.headerLine) \(late.bundle.quests.map(\.title))")
+        }
+        late.refreshIfNeeded(catalog: catalog, now: day(1))
+        if late.bundle.mode != .performanceTraining || PenaltyQuests.rows(in: late.bundle).isEmpty {
+            errors.append("the penalty should return the day after the Rest Day")
+        }
+
+        // The app stayed open past the end of a missed day: a token or a rest day judges that day first.
+        for useToken in [true, false] {
+            var stale = GameSnapshot.fresh(catalog: catalog, now: dayOne)
+            let message = useToken ? stale.spendFullRecovery(catalog: catalog, now: day(1)) : stale.useRestDay(catalog: catalog, now: day(1))
+            if !stale.player.penaltyOpen || stale.questHistory.first?.dayKey != today || stale.questHistory.first?.missedRequired != true
+                || stale.bundle.dayKey != QuestDay.key(for: day(1)) {
+                errors.append("a \(useToken ? "token" : "rest day") after a missed day ended should still open its penalty, got \(message)")
+            }
+        }
+
+        // "No gym today" ends when the day becomes a rest day, and the record does not keep it.
+        var swapped = GameSnapshot.fresh(catalog: catalog, now: dayOne)
+        _ = swapped.setNoGym(true, catalog: catalog, now: dayOne)
+        _ = swapped.spendFullRecovery(catalog: catalog, now: dayOne)
+        swapped.refreshIfNeeded(catalog: catalog, now: day(1))
+        if swapped.noGymDayKey != nil || swapped.questHistory.first?.noGym != false {
+            errors.append("a Full Recovery day should end No gym today")
         }
 
         // The week's rest days run out, and the next week starts fresh with no carry-over.

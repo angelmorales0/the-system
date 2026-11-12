@@ -171,13 +171,18 @@ enum GymSplit {
     }
 
     /// The next day in the rotation after the newest past day whose lifts were started, with the player's own goals on it.
+    /// A split day the player skipped counts like a done day here, so the split moves past it.
     /// `history` is newest first. With no lifting yet, the split starts at Bench Day.
     static func today(history: [QuestDayRecord], dayKey: String, goals: [CustomStrengthGoal] = []) -> Day {
-        let done = history.first { record in
-            record.dayKey < dayKey && record.splitDay != nil && record.quests.contains { $0.stat == .STR && $0.status == .completed }
-        }
-        guard let id = done?.splitDay, let index = rotation.firstIndex(where: { $0.id == id }) else { return adding(goals, to: rotation[0]) }
+        // A skip is written on the newest past record, after that record's own day, so it comes first.
+        let last = history.lazy.filter { $0.dayKey < dayKey }.compactMap { $0.skippedSplitDay ?? doneSplitDay($0) }.first
+        guard let last, let index = rotation.firstIndex(where: { $0.id == last }) else { return adding(goals, to: rotation[0]) }
         return adding(goals, to: rotation[(index + 1) % rotation.count])
+    }
+
+    /// The split day this record trained: it has a split day and one of its lifts is done.
+    private static func doneSplitDay(_ record: QuestDayRecord) -> String? {
+        record.quests.contains { $0.stat == .STR && $0.status == .completed } ? record.splitDay : nil
     }
 
     // MARK: - Custom goals
@@ -564,13 +569,47 @@ enum GymSplit {
             QuestDayRecord(dayKey: QuestDay.key(byAddingDays: -4, to: skipToday), mode: .performanceTraining, trainingBand: .green, noGym: false,
                            splitDay: "bench", generatedBy: "mock", missedRequired: false, quests: [benchDone]),
         ]
-        if skipped.skipSplitDay("press", catalog: catalog, now: now) {
+        if skipped.skipSplitDay("press", catalog: catalog, now: now) == nil {
             errors.append("a skip should refuse a day that is not today's split day")
         }
-        if !skipped.skipSplitDay("squat", catalog: catalog, now: now) || today(history: skipped.questHistory, dayKey: skipToday).id != "press"
-            || skipped.generatedBundle != nil || skipped.generationAttemptDayKey != nil
-            || skipped.questHistory.first?.mode != .fullRecovery || skipped.skipSplitDay("squat", catalog: catalog, now: now) {
+        if skipped.skipSplitDay("squat", catalog: catalog, now: now) != nil || today(history: skipped.questHistory, dayKey: skipToday).id != "press"
+            || skipped.bundle.headerLine != "Press Day" || skipped.generatedBundle != nil || skipped.generationAttemptDayKey != nil
+            || skipped.questHistory.first?.mode != .fullRecovery || skipped.skipSplitDay("squat", catalog: catalog, now: now) == nil {
             errors.append("a skip should move today from Squat Day to Press Day, keep yesterday's mode, and run once")
+        }
+        // The skip changes no day that was done: the records keep their split days and quests, and Squat Day has no done date.
+        if skipped.questHistory.first?.splitDay != nil || skipped.questHistory.first?.quests.isEmpty != true
+            || lastDone(history: skipped.questHistory) != ["Bench Day": QuestDay.key(byAddingDays: -4, to: skipToday)] {
+            errors.append("a skip should not change a past day or count as a done day, got \(lastDone(history: skipped.questHistory))")
+        }
+        // A real Bench Day yesterday stays a Bench Day after Squat Day is skipped.
+        var afterBench = GameSnapshot.fresh(catalog: catalog, now: now)
+        afterBench.questHistory = [QuestDayRecord(dayKey: skipYesterday, mode: .performanceTraining, trainingBand: .green, noGym: false,
+                                                  splitDay: "bench", generatedBy: "mock", missedRequired: false, quests: [benchDone])]
+        if afterBench.skipSplitDay("squat", catalog: catalog, now: now) != nil || afterBench.bundle.headerLine != "Press Day"
+            || afterBench.questHistory.first?.splitDay != "bench" || afterBench.questHistory.first?.quests != [benchDone]
+            || lastDone(history: afterBench.questHistory) != ["Bench Day": skipYesterday] {
+            errors.append("a skip after a real Bench Day should keep that day as Bench Day")
+        }
+        // The app was closed yesterday: the skip goes on the newest past day. With no past day at all, it says why not.
+        var gap = GameSnapshot.fresh(catalog: catalog, now: now)
+        gap.questHistory = [QuestDayRecord(dayKey: QuestDay.key(byAddingDays: -3, to: skipToday), mode: .performanceTraining, trainingBand: .green,
+                                           noGym: false, splitDay: "bench", generatedBy: "mock", missedRequired: false, quests: [benchDone])]
+        var firstDay = GameSnapshot.fresh(catalog: catalog, now: now)
+        if gap.skipSplitDay("squat", catalog: catalog, now: now) != nil || gap.bundle.headerLine != "Press Day"
+            || firstDay.skipSplitDay("bench", catalog: catalog, now: now) == nil || firstDay.bundle.headerLine != "Bench Day" {
+            errors.append("a skip should use the newest past day, and refuse with a reason when there is none")
+        }
+        // A day that became a rest day after its lifts still moves the split on.
+        var rested = GameSnapshot.fresh(catalog: catalog, now: now)
+        for quest in rested.bundle.quests where quest.stat == .STR && quest.kind == .daily {
+            _ = rested.apply(.completed(evidence: Evidence.make(source: "manual_confirm", externalId: "rested-\(quest.id)", payload: quest.id, timestamp: now)),
+                             questId: quest.id, now: now)
+        }
+        _ = rested.spendFullRecovery(catalog: catalog, now: now)
+        rested.refreshIfNeeded(catalog: catalog, now: now.addingTimeInterval(86_400))
+        if rested.questHistory.first?.mode != .fullRecovery || rested.questHistory.first?.splitDay != "bench" || rested.bundle.headerLine != "Squat Day" {
+            errors.append("Bench Day lifts before a Full Recovery token should move the split to Squat Day, got \(rested.bundle.headerLine)")
         }
 
         // The offline day, the context, and the mock generator all carry the goal on Deadlift Day.
@@ -616,20 +655,27 @@ enum GymSplit {
 }
 
 extension GameSnapshot {
-    /// Counts today's split day as done yesterday, then plans today again from the next split day.
-    /// Yesterday keeps its mode, so the rest count does not change. It refuses a day with progress, so nothing done is lost.
-    mutating func skipSplitDay(_ id: String, catalog: FallbackCatalog, now: Date) -> Bool {
+    /// Skips today's split day: marks it as skipped on the newest past day, then plans today again from the next split day.
+    /// That past day keeps its mode, its own split day, and its quests, so the rest count and the done dates do not change.
+    /// It refuses a day with progress, so nothing done is lost. Returns why it was refused, or nil when the day was skipped.
+    mutating func skipSplitDay(_ id: String, catalog: FallbackCatalog, now: Date) -> String? {
         let dayKey = QuestDay.key(for: now)
-        let yesterday = QuestDay.key(byAddingDays: -1, to: dayKey)
-        guard let day = GymSplit.day(id: id), GymSplit.today(history: questHistory, dayKey: dayKey).id == id,
-              let index = questHistory.firstIndex(where: { $0.dayKey == yesterday }),
-              !bundle.quests.contains(where: { $0.status == .completed }), runningTimers.isEmpty else { return false }
-        questHistory[index].splitDay = id
-        questHistory[index].quests.append(QuestRecord(title: "\(day.name) (skipped)", kind: .daily, stat: .STR, method: .manualConfirm, params: [:],
-                                                      target: 1, done: 1, unit: "day", status: .completed))
+        guard let day = GymSplit.day(id: id) else {
+            return "\"\(id)\" is not a split day. Use one of: \(GymSplit.rotation.map(\.id).joined(separator: ", "))."
+        }
+        guard bundle.dayKey == dayKey else { return "The quest day on screen is not today." }
+        let planned = GymSplit.today(history: questHistory, dayKey: dayKey)
+        guard planned.id == id else { return "Today's split day is \(planned.name), not \(day.name)." }
+        guard !bundle.quests.contains(where: { $0.status == .completed }) else { return "A quest is already done today, so the day stays as it is." }
+        guard runningTimers.isEmpty else { return "A timer is running, so the day stays as it is." }
+        // Newest first, so this is the newest day that ended. `GymSplit.today` reads its skip before any done day.
+        guard let index = questHistory.firstIndex(where: { $0.dayKey < dayKey }) else {
+            return "No past quest day holds the skip yet. Skip from the second day on."
+        }
+        questHistory[index].skippedSplitDay = id
         generatedBundle = nil
         generationAttemptDayKey = nil
         rebuildBundle(catalog: catalog, now: now)
-        return true
+        return nil
     }
 }

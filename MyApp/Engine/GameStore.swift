@@ -85,10 +85,14 @@ final class GameStore: ObservableObject {
             snapshot.bundle = snapshot.finished(TrainingDay.exerciseOnly(snapshot.bundle) ?? snapshot.bundle, catalog: catalog, now: .now)
         }
         #if DEBUG
-        // Launch with `-skipSplitDay squat` to count that split day as done yesterday and plan today again.
+        // Launch with `-skipSplitDay squat` to skip that split day and plan today again from the next one.
         // The option lasts one launch, and it does nothing once the split has moved past that day.
+        // The result shows under the quest list and in the Xcode console, so a refused skip says why.
         if persistence == .standard, let skip = UserDefaults.standard.string(forKey: "skipSplitDay") {
-            _ = snapshot.skipSplitDay(skip, catalog: catalog, now: .now)
+            let refused = snapshot.skipSplitDay(skip, catalog: catalog, now: .now)
+            let result = refused.map { "Split day not skipped. \($0)" } ?? "Skipped \(GymSplit.day(id: skip)?.name ?? skip). Today is \(snapshot.bundle.headerLine)."
+            verificationNote = result
+            print("[skipSplitDay] \(result)")
         }
         #endif
         if persistence == .standard {
@@ -133,7 +137,18 @@ final class GameStore: ObservableObject {
         refreshIntegrations(now: .now)
     }
 
+    /// A new quest day started while the app stayed open. The old day ends first, with its penalty, gold, and record.
+    /// The caller then drops its action: the player chose it for the day that ended, so it must not change that day
+    /// after its end or land on the new day by surprise.
+    private func startedNewDay(now: Date) -> Bool {
+        guard QuestDay.key(for: now) > snapshot.bundle.dayKey else { return false }
+        refreshForToday(now: now)
+        verificationNote = "A new day started. Nothing was changed."
+        return true
+    }
+
     func spendFullRecovery(now: Date = .now) {
+        guard !startedNewDay(now: now) else { return }
         var next = snapshot
         let message = next.spendFullRecovery(catalog: catalog, now: now)
         let spent = next.player.fullRecoveryBank < snapshot.player.fullRecoveryBank
@@ -147,6 +162,7 @@ final class GameStore: ObservableObject {
 
     /// From Settings: spends one of this week's free rest days on today.
     func useRestDay(now: Date = .now) {
+        guard !startedNewDay(now: now) else { return }
         var next = snapshot
         let message = next.useRestDay(catalog: catalog, now: now)
         let used = next.restDayKeys.count != snapshot.restDayKeys.count
@@ -161,6 +177,7 @@ final class GameStore: ObservableObject {
 
     /// From the penalty screen: one token ends the open penalty. The cleared cue plays from the flag change.
     func clearPenaltyWithFullRecovery(now: Date = .now) {
+        guard !startedNewDay(now: now) else { return }
         var next = snapshot
         let message = next.clearPenaltyWithFullRecovery()
         let spent = next.player.fullRecoveryBank < snapshot.player.fullRecoveryBank
@@ -173,6 +190,7 @@ final class GameStore: ObservableObject {
     }
 
     func buyFullRecovery(now: Date = .now) {
+        guard !startedNewDay(now: now) else { return }
         var next = snapshot
         let message = next.buyFullRecovery()
         let bought = next.gold < snapshot.gold
@@ -184,6 +202,7 @@ final class GameStore: ObservableObject {
     }
 
     func usePotion(_ potion: Potion, now: Date = .now) {
+        guard !startedNewDay(now: now) else { return }
         var next = snapshot
         let message = next.usePotion(potion)
         let drunk = next.potionLog.count > snapshot.potionLog.count
@@ -197,6 +216,7 @@ final class GameStore: ObservableObject {
     }
 
     func setNoGym(_ on: Bool, now: Date = .now) {
+        guard !startedNewDay(now: now) else { return }
         var next = snapshot
         let message = next.setNoGym(on, catalog: catalog, now: now)
         snapshot = next
@@ -364,6 +384,7 @@ final class GameStore: ObservableObject {
     /// Checks or unchecks one stretch. A tap on the last open stretch completes the Stretching row.
     /// A stretch that is full in Hevy stays checked, and a completed row has no undo.
     func toggleStretch(_ stretch: StretchSplit.Stretch, now: Date = .now) {
+        guard !startedNewDay(now: now) else { return }
         guard stretchSetsDone(stretch) < stretch.sets else { return }
         var next = snapshot
         next.toggleStretch(stretch.name, doneInHevy: stretchesInHevy)
@@ -405,6 +426,7 @@ final class GameStore: ObservableObject {
 
     /// The run row's own checkbox: counts the run by hand, for a day with a long bike ride instead. There is no undo.
     func checkOffByHand(id: String, now: Date = .now) {
+        guard !startedNewDay(now: now) else { return }
         guard let quest = snapshot.bundle.quests.first(where: { $0.id == id }), quest.allowsCheckOff, quest.status == .pending else { return }
         var next = snapshot
         let outcome = next.applyLocalOverride(questId: id, now: now)
@@ -417,6 +439,7 @@ final class GameStore: ObservableObject {
     }
 
     func handleQuestTap(id: String, now: Date = .now) {
+        guard !startedNewDay(now: now) else { return }
         guard let quest = snapshot.bundle.quests.first(where: { $0.id == id }) else { return }
         // A completed quest stays completed. There is no undo.
         guard quest.status != .completed else { return }
@@ -480,6 +503,8 @@ final class GameStore: ObservableObject {
 
     /// Takes the newest phone count while the app stays open. The monitor writes it every minute of phone use.
     func readPhoneMinutes() {
+        // The app stayed open past 5:00: end the old day here, so it is judged on time and no tap can change it.
+        guard QuestDay.key(for: .now) <= snapshot.bundle.dayKey else { return refreshForToday() }
         var next = snapshot
         let phone = PhoneScreenGroup.minutes(for: next.bundle.dayKey)
         next.correctPhoneScreenTime(to: phone)
