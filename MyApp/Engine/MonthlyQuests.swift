@@ -344,6 +344,8 @@ extension GameSnapshot {
         monthlyPenaltyMonth = board.lastMonth
         guard verdict == .missed else { return }
         player.penaltyOpen = true
+        // This penalty is the month's. Late work on the last quest day must not lift it.
+        endedDay?.owesOtherPenalty = true
         bundle = PenaltyQuests.ensure(in: bundle, open: true, band: trainingBand, catalog: catalog, now: now)
     }
 }

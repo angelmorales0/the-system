@@ -58,6 +58,8 @@ struct GameSnapshot: Codable, Equatable {
     var hitPoints: HitPointState?
     /// Nil until the first integration refresh. Then `Fatigue` moves it on every refresh.
     var fatigue: FatigueState?
+    /// The last day that ended with a required quest open, until its own data is read once more (see `EndedDay`).
+    var endedDay: EndedDay?
 
     static func fresh(
         catalog: FallbackCatalog,
@@ -82,6 +84,7 @@ struct GameSnapshot: Codable, Equatable {
         settleScreenTime()
         awardDayGold()
         recordQuestDay()
+        keepEndedDay()
         recordMissedDayIfNeeded()
         let previousTitles = bundle.quests.map(\.title)
         if !previousTitles.isEmpty {
@@ -89,6 +92,8 @@ struct GameSnapshot: Codable, Equatable {
         }
         generationAttemptDayKey = nil
         generatedBundle = nil
+        // Evidence stops one quest from using another quest's proof on the same day. Older days are never read again.
+        evidenceLog.removeAll { $0.dayKey < bundle.dayKey }
         assignQueuedRecovery(on: key)
         rebuildBundle(catalog: catalog, now: now)
         runningTimers.removeAll()
@@ -97,20 +102,7 @@ struct GameSnapshot: Codable, Equatable {
     /// Saves the day that is ending, with each quest's status, and keeps the newest 30 days.
     mutating func recordQuestDay() {
         guard !bundle.quests.isEmpty || bundle.mode == .fullRecovery else { return }
-        let quests = bundle.quests.map { quest in
-            QuestRecord(
-                title: quest.title,
-                kind: quest.kind,
-                stat: quest.stat,
-                method: quest.verification.method,
-                params: quest.verification.params,
-                target: quest.progress.target,
-                done: quest.progress.current,
-                unit: quest.progress.unit,
-                // A potion skip is not real work, so split rotation and progression ignore it.
-                status: quest.skippedWithPotion ? .expired : quest.status
-            )
-        }
+        let quests = Self.questRecords(of: bundle)
         // A token or a rest day spent after the lifts changes the header. The day still trained its split day,
         // so the record keeps it and the split moves on.
         let liftedBeforeRest = bundle.mode == .fullRecovery && quests.contains { $0.stat == .STR && $0.status == .completed }
@@ -131,6 +123,24 @@ struct GameSnapshot: Codable, Equatable {
         questHistory = Array(questHistory.prefix(QuestDayRecord.keepDays))
     }
 
+    /// The rows of a day as its record keeps them.
+    static func questRecords(of bundle: QuestBundle) -> [QuestRecord] {
+        bundle.quests.map { quest in
+            QuestRecord(
+                title: quest.title,
+                kind: quest.kind,
+                stat: quest.stat,
+                method: quest.verification.method,
+                params: quest.verification.params,
+                target: quest.progress.target,
+                done: quest.progress.current,
+                unit: quest.progress.unit,
+                // A potion skip is not real work, so split rotation and progression ignore it.
+                status: quest.skippedWithPotion ? .expired : quest.status
+            )
+        }
+    }
+
     /// A Screen Time row that stayed under the total cap all day completes as the day ends. The phone's last count comes in first.
     /// A day with no reading at all stays pending: it opens no penalty, but it is no pass and pays no gold.
     mutating func settleScreenTime() {
@@ -141,6 +151,8 @@ struct GameSnapshot: Codable, Equatable {
         guard let index = bundle.quests.firstIndex(where: { $0.id == ScreenTime.questId && $0.status == .pending }),
               screenTimeToday.hasReading else { return }
         complete(at: index)
+        // The saved row keeps the day's real minutes, not the cap, so the planner reads the true total.
+        bundle.quests[index].progress.current = Double(screenTimeToday.totalMinutes)
     }
 
     /// Incomplete required quests escalate the penalty. A Full Recovery day does not.
@@ -151,10 +163,7 @@ struct GameSnapshot: Codable, Equatable {
 
     /// True when ending the day now would open a penalty.
     var missesRequiredSet: Bool {
-        let required = bundle.quests.filter { $0.kind != .optional }
-        // A Screen Time row still under its cap holds until the day ends; only a failed one is a miss.
-        let open = required.filter { $0.status != .completed && !($0.id == ScreenTime.questId && $0.status == .pending) }
-        let missed = !open.isEmpty
+        let missed = !bundle.openRequired.isEmpty
         let waived = bundle.mode == .fullRecovery || signals.spendingFullRecovery || fullRecoveryDayKey == bundle.dayKey
         return missed && !waived
     }
@@ -250,11 +259,8 @@ struct GameSnapshot: Codable, Equatable {
         userConfirmed: Bool,
         integrations: DayIntegrationSnapshot = .empty(dayKey: "")
     ) -> VerificationContext {
-        let claimed = Set(
-            evidenceLog
-                .filter { $0.dayKey == bundle.dayKey && $0.questId != quest.id }
-                .map(\.evidence.reuseKey)
-        )
+        let others = evidenceLog.filter { $0.dayKey == bundle.dayKey && $0.questId != quest.id }
+        let claimed = Set(others.map(\.evidence.reuseKey))
         return VerificationContext(
             now: now,
             dayKey: bundle.dayKey,
@@ -263,7 +269,8 @@ struct GameSnapshot: Codable, Equatable {
             claimedKeys: claimed,
             timerElapsedSec: timerElapsed,
             userConfirmed: userConfirmed,
-            integrations: integrations
+            integrations: integrations,
+            claimedWorkoutIds: others.reduce(into: Set<String>()) { $0.formUnion($1.evidence.workoutIds) }
         )
     }
 
@@ -433,8 +440,10 @@ struct GameSnapshot: Codable, Equatable {
         if evidence.source == "llm" || evidence.externalId.isEmpty {
             return "Completion has to come from a verifier."
         }
+        let workoutIds = evidence.workoutIds
         let reused = evidenceLog.contains {
-            $0.dayKey == bundle.dayKey && $0.questId != questId && $0.evidence.reuseKey == evidence.reuseKey
+            $0.dayKey == bundle.dayKey && $0.questId != questId
+                && ($0.evidence.reuseKey == evidence.reuseKey || !$0.evidence.workoutIds.isDisjoint(with: workoutIds))
         }
         if reused {
             return "That evidence was already used for another quest today."
@@ -520,12 +529,31 @@ struct GameSnapshot: Codable, Equatable {
         let screen = ScreenTime.ensure(in: day, now: now)
         let stretch = StretchSplit.today(history: questHistory, dayKey: day.dayKey)
         return PenaltyQuests.ensure(
-            in: restDay ? screen : DailyStretch.ensure(in: screen, now: now, day: stretch),
+            in: measured(restDay ? screen : DailyStretch.ensure(in: screen, now: now, day: stretch)),
             open: player.penaltyOpen,
             band: trainingBand,
             catalog: catalog,
             now: now
         )
+    }
+
+    /// A day that is built again gets new Screen Time and Stretching rows. They take the day's saved readings and
+    /// hand checks at once, so a count, a failure, or a checked stretch is not lost until the next reading.
+    private func measured(_ bundle: QuestBundle) -> QuestBundle {
+        var copy = bundle
+        if let day = screenTime, day.dayKey == copy.dayKey, day.hasReading,
+           let index = copy.quests.firstIndex(where: { $0.id == ScreenTime.questId && $0.status != .completed }) {
+            copy.quests[index].progress.current = Double(day.totalMinutes)
+            if day.overTotal, copy.quests[index].status == .pending { copy.quests[index].status = .failed }
+        }
+        if let checks = stretchChecks, checks.dayKey == copy.dayKey,
+           let index = copy.quests.firstIndex(where: { $0.id == DailyStretch.questId && $0.status == .pending }),
+           let day = StretchSplit.day(of: copy.quests[index]) {
+            let minutes = day.stretches.filter { checks.names.contains($0.name) }.reduce(0) { $0 + $1.minutes }
+            let row = copy.quests[index].progress
+            copy.quests[index].progress.current = max(row.current, min(minutes, row.target))
+        }
+        return copy
     }
 
     /// Marks the row done. Nothing is granted here: the levels come from the real histories,
@@ -568,7 +596,7 @@ extension GameSnapshot {
         case noGymDayKey, plannerRestDayKey, plannerRestReason, restDayKeys
         case questHistory, screenTime, stretchChecks
         case gold, potionLog, lastGoldReward
-        case hitPoints, fatigue
+        case hitPoints, fatigue, endedDay
     }
 
     init(from decoder: Decoder) throws {
@@ -600,6 +628,7 @@ extension GameSnapshot {
         lastGoldReward = try container.decodeIfPresent(GoldReward.self, forKey: .lastGoldReward)
         hitPoints = try container.decodeIfPresent(HitPointState.self, forKey: .hitPoints)
         fatigue = try container.decodeIfPresent(FatigueState.self, forKey: .fatigue)
+        endedDay = try container.decodeIfPresent(EndedDay.self, forKey: .endedDay)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -631,6 +660,7 @@ extension GameSnapshot {
         try container.encodeIfPresent(lastGoldReward, forKey: .lastGoldReward)
         try container.encodeIfPresent(hitPoints, forKey: .hitPoints)
         try container.encodeIfPresent(fatigue, forKey: .fatigue)
+        try container.encodeIfPresent(endedDay, forKey: .endedDay)
     }
 }
 
@@ -645,4 +675,38 @@ extension QuestBundle {
         warnings: [QuestBundle.defaultWarning],
         generatedBy: "fallback"
     )
+}
+
+/// A day that is built again keeps what was measured: the screen time count, its failure, and the checked stretches.
+enum RebuiltRowRules {
+    static func check() -> [String] {
+        var errors: [String] = []
+        let catalog = FallbackCatalog.bundled()
+        guard let now = QuestDay.start(of: "2026-10-05")?.addingTimeInterval(3_600) else { return ["could not build rebuild dates"] }
+        func row(_ snapshot: GameSnapshot, _ id: String) -> Quest? { snapshot.bundle.quests.first { $0.id == id } }
+
+        var day = GameSnapshot.fresh(catalog: catalog, now: now)
+        day.applyScreenTime(phoneMinutes: 120, workMinutes: 200)
+        if let stretch = row(day, DailyStretch.questId).flatMap({ StretchSplit.day(of: $0) })?.stretches.first {
+            day.toggleStretch(stretch.name, doneInHevy: [])
+        }
+        let stretched = row(day, DailyStretch.questId)?.progress.current
+        day.rebuildBundle(catalog: catalog, now: now)
+        if row(day, ScreenTime.questId)?.progress.current != 200 || row(day, DailyStretch.questId)?.progress.current != stretched || stretched == 0 {
+            errors.append("a rebuilt day should keep its screen time count and its checked stretches")
+        }
+        // A failed Screen Time row stays failed, so the day cannot pass with no new reading.
+        day.applyScreenTime(phoneMinutes: nil, workMinutes: ScreenTime.failAfterMinutes + 1)
+        day.rebuildBundle(catalog: catalog, now: now)
+        if row(day, ScreenTime.questId)?.status != .failed { errors.append("a rebuilt day should keep a failed Screen Time row") }
+
+        // The day's record keeps the real minutes of a Screen Time row that passed, not the cap.
+        var passed = GameSnapshot.fresh(catalog: catalog, now: now)
+        passed.applyScreenTime(phoneMinutes: 120, workMinutes: 200)
+        passed.refreshIfNeeded(catalog: catalog, now: now.addingTimeInterval(86_400))
+        if ContextBuilder.screenMinutesYesterday(snapshot: passed, dayKey: passed.bundle.dayKey) != 200 {
+            errors.append("the record should keep yesterday's real screen minutes")
+        }
+        return errors
+    }
 }

@@ -49,8 +49,9 @@ enum HiddenQuests {
 
     /// The workout that completed the quest. Only that workout can unlock the hidden quest.
     static func completingWorkout(for quest: Quest, in workouts: [CanonicalWorkout]) -> CanonicalWorkout? {
-        let ids = Set(quest.evidence.map(\.externalId).filter { $0.hasPrefix("workout:") }.map { String($0.dropFirst("workout:".count)) })
-        return workouts.first { ids.contains($0.id) }
+        let ids = quest.evidence.reduce(into: Set<String>()) { $0.formUnion($1.workoutIds) }
+        // A later source can change the session's id, so any of its recordings finds it.
+        return workouts.first { workout in ids.contains(workout.id) || workout.members.contains { ids.contains($0.id) } }
     }
 
     /// Distance in km against the target in km, when the workout reached 150%.

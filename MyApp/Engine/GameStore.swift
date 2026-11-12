@@ -54,7 +54,7 @@ final class GameStore: ObservableObject {
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MonkeytypeClient.check() + MercuryClient.check()
             + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check()
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
-            + MonthlyQuests.check()
+            + MonthlyQuests.check() + EndedDayRules.check() + WorkoutClaimRules.check() + RebuiltRowRules.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -541,7 +541,10 @@ final class GameStore: ObservableObject {
         guard !refreshingIntegrations else { return }
         refreshingIntegrations = true
         let dayKey = QuestDay.key(for: now)
+        let endedKey = snapshot.endedDay?.bundle.dayKey
         Task { @MainActor [weak self] in
+            // A day that ended with a quest open is read once more from its own data, before today is touched.
+            let endedData = await Self.endedDayData(endedKey)
             let health = await HealthKitBridge.summary(on: now)
             let bodyMass = await HealthKitBridge.latestBodyMass(days: EnduranceLevel.bodyWeightWindowDays, now: now)
             let remote = await IntegrationClient.load(dayKey: dayKey)
@@ -550,7 +553,11 @@ final class GameStore: ObservableObject {
             guard let self else { return }
             self.refreshingIntegrations = false
             var next = self.snapshot
-            let rebuilt = next.applyWhoopReadiness(remote.whoop, catalog: self.catalog, now: now)
+            var settled = LateSettle()
+            if let endedData, next.endedDay?.bundle.dayKey == endedKey {
+                settled = next.settleEndedDay(integrations: endedData, catalog: self.catalog, now: now)
+            }
+            let rebuilt = next.applyWhoopReadiness(remote.whoop, catalog: self.catalog, now: now) || settled.rebuiltToday
             let phone = PhoneScreenGroup.minutes(for: next.bundle.dayKey)
             next.correctPhoneScreenTime(to: phone)
             self.rearmPhoneCount()
@@ -577,6 +584,9 @@ final class GameStore: ObservableObject {
             next.applyFatigue(integrations: day, now: now)
             self.snapshot = next
             self.integrations = day
+            if settled.liftedPenalty {
+                self.verificationNote = "The last quest day was completed. The penalty is lifted."
+            }
             if rebuilt {
                 self.runningTimersRemoveMissing()
             }
@@ -587,6 +597,16 @@ final class GameStore: ObservableObject {
             self.enforcePenalty()
             self.refreshStatInputs(now: now)
         }
+    }
+
+    /// The workouts of the quest day `dayKey`, which has ended. Nil when no day waits for a late read.
+    private static func endedDayData(_ dayKey: String?) async -> DayIntegrationSnapshot? {
+        guard let dayKey, let inside = QuestDay.start(of: dayKey)?.addingTimeInterval(3_600) else { return nil }
+        async let hevy = HevyClient.snapshot(dayKey: dayKey)
+        async let strava = StravaClient.snapshot(dayKey: dayKey)
+        async let whoop = WhoopClient.snapshot(dayKey: dayKey)
+        let health = await HealthKitBridge.summary(on: inside)
+        return await DayIntegrationSnapshot.make(whoop: whoop, strava: strava, health: health, hevy: hevy)
     }
 
     /// The stat histories (Hevy, WHOOP, Strava, Apple Health) load after the day's snapshot, so a slow read never

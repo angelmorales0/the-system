@@ -255,11 +255,13 @@ private func workoutResult(_ matches: [CanonicalWorkout], quest: Quest, context:
     for workout in matches.sorted(by: { $0.movingTimeSec > $1.movingTimeSec }) {
         let evidence = Evidence.make(
             source: source,
-            externalId: "workout:\(workout.id)",
+            externalId: "\(Evidence.workoutPrefix)\(workout.id)",
             payload: "\(source)|\(workout.id)|\(context.dayKey)|\(Int(workout.movingTimeSec))",
-            timestamp: workout.end
+            timestamp: workout.end,
+            recordings: workout.members.map(\.id)
         )
-        if !context.claimedKeys.contains(evidence.reuseKey) {
+        // Any recording of this session already used: the same workout under another source's id.
+        if !context.claimedKeys.contains(evidence.reuseKey), context.claimedWorkoutIds.isDisjoint(with: evidence.workoutIds) {
             return .completed(evidence: evidence)
         }
     }
@@ -315,9 +317,10 @@ enum DistanceRule {
               let meters = workout.distanceMeters else { return .unchanged }
         let evidence = Evidence.make(
             source: source,
-            externalId: "workout:\(workout.id)",
+            externalId: "\(Evidence.workoutPrefix)\(workout.id)",
             payload: "\(source)|\(workout.id)|\(context.dayKey)|\(Int(meters))",
-            timestamp: workout.end
+            timestamp: workout.end,
+            recordings: workout.members.map(\.id)
         )
         return .progress(current: min(kilometers(meters), quest.progress.target), evidence: evidence)
     }
@@ -343,5 +346,54 @@ enum IntegrationMatch {
         let family = SportFamily.from(activity)
         if family != .other && family == workout.sportFamily { return true }
         return workout.members.contains { $0.sport.lowercased().contains(activity.lowercased()) }
+    }
+}
+
+/// One workout clears one quest, whichever source names it first.
+enum WorkoutClaimRules {
+    static func check() -> [String] {
+        var errors: [String] = []
+        let catalog = FallbackCatalog.bundled()
+        guard let now = QuestDay.start(of: "2026-10-05")?.addingTimeInterval(3_600) else { return ["could not build claim dates"] }
+        func recording(_ source: String, _ id: String, startsAfter seconds: TimeInterval) -> WorkoutEvent {
+            let start = now.addingTimeInterval(3_600 + seconds)
+            return WorkoutEvent(source: source, externalId: id, sport: source == "strava" ? "Run" : "running", start: start,
+                                end: start.addingTimeInterval(3_300), movingTimeSec: 3_300, distanceMeters: 10_030)
+        }
+        func data(_ dayKey: String, strava: [WorkoutEvent], health: [WorkoutEvent]) -> DayIntegrationSnapshot {
+            DayIntegrationSnapshot.make(
+                whoop: .disconnected(dayKey: dayKey, reason: ""),
+                strava: StravaDayReading(available: true, configured: true, reason: "", dayKey: dayKey, activities: strava),
+                health: HealthDaySummary(access: .requested, workouts: health)
+            )
+        }
+        func pass(_ snapshot: inout GameSnapshot, _ data: DayIntegrationSnapshot) {
+            for quest in snapshot.bundle.quests where quest.status != .completed {
+                let context = snapshot.verificationContext(for: quest, now: now, timerElapsed: nil, userConfirmed: false, integrations: data)
+                if case .completed(let evidence) = VerifierRegistry.verifier(for: quest.verification.method).evaluate(quest: quest, context: context) {
+                    _ = snapshot.apply(.completed(evidence: evidence), questId: quest.id, now: now)
+                }
+            }
+        }
+        func runsDone(_ snapshot: GameSnapshot) -> Int {
+            snapshot.bundle.quests.filter { TrainingDay.isRaceRun($0) && $0.status == .completed }.count
+        }
+        let health = recording("healthkit", "claim-hk", startsAfter: 0), strava = recording("strava", "claim-strava", startsAfter: 20)
+
+        // A penalty day holds a Penalty 10K and the day's 10K. Apple Health reports the one run first, Strava later.
+        // The session then takes Strava's id. It is still the same run, so it clears one row only.
+        var day = GameSnapshot.fresh(catalog: catalog, now: now)
+        day.player.penaltyOpen = true
+        day.rebuildBundle(catalog: catalog, now: now)
+        let dayKey = day.bundle.dayKey
+        pass(&day, data(dayKey, strava: [], health: [health]))
+        if runsDone(day) != 1 || day.player.penaltyOpen { errors.append("a run in Apple Health should clear the penalty 10K") }
+        pass(&day, data(dayKey, strava: [strava], health: [health]))
+        if runsDone(day) != 1 { errors.append("the same run under its Strava id should not clear a second 10K, got \(runsDone(day)) runs done") }
+        // A second, real run still clears the day's 10K.
+        let second = recording("strava", "claim-second", startsAfter: 20_000)
+        pass(&day, data(dayKey, strava: [strava, second], health: [health]))
+        if runsDone(day) != 2 { errors.append("a second run should clear the second 10K") }
+        return errors
     }
 }

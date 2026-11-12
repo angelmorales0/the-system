@@ -16,6 +16,8 @@ struct VerificationContext: Equatable {
     var timerElapsedSec: TimeInterval?
     var userConfirmed: Bool
     var integrations: DayIntegrationSnapshot = .empty(dayKey: "")
+    /// Workout recording ids already claimed today by a different quest (`Evidence.workoutIds`).
+    var claimedWorkoutIds: Set<String> = []
 }
 
 enum VerificationResult: Equatable {
