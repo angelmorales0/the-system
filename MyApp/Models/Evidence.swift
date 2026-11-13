@@ -53,6 +53,14 @@ struct EvidenceUse: Codable, Equatable {
     var evidence: Evidence
 }
 
+/// A workout that an open row showed as progress, with the amount it showed (km on a run row).
+struct ShownWorkout: Codable, Equatable {
+    var dayKey: String
+    var questId: String
+    var evidence: Evidence
+    var shown: Double
+}
+
 enum EvidenceHash {
     static func sha256(_ text: String) -> String {
         SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()

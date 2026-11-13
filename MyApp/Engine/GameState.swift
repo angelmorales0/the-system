@@ -14,9 +14,10 @@ struct GameSnapshot: Codable, Equatable {
     var signals: MorningSignals
     var bundle: QuestBundle
     var evidenceLog: [EvidenceUse] = []
-    /// The workout whose distance each open run row shows as progress. When another row uses that workout, the
-    /// row is measured again (`checkOpenRows`). Distances cannot say this: two sources measure one run differently.
-    var progressLog: [EvidenceUse] = []
+    /// Each workout that an open run row showed as progress, with its km. When another row uses one of them, the
+    /// row goes back to the longest one that is left (`checkOpenRows`). Distances alone cannot say which workout a
+    /// row shows: two sources measure one run differently, and a pass can lack a source that held an older run.
+    var progressLog: [ShownWorkout] = []
     var runningTimers: [TimerRun] = []
     /// Today's WHOOP recovery. Not copied into `player.stats.REC`.
     var readiness: ReadinessSnapshot?
@@ -301,8 +302,8 @@ struct GameSnapshot: Codable, Equatable {
     ///
     /// A row can show progress from a workout that a later row then uses: on a no-gym day the added 10K comes first,
     /// shows a 7 km run, and the day's 5K then takes that run. The run can also show in one pass, through one source,
-    /// and be used in a later pass through another. So after the pass, an open row that shows a workout another row
-    /// has used (`progressLog`) is measured again from zero, and it shows only a workout that no row has used.
+    /// and be used in a later pass through another. So after the pass, an open row that saw a workout another row
+    /// has used (`progressLog`) goes back to the longest workout it saw that no row has used, or to zero.
     /// Every other row keeps what it shows: a source that gives no workouts now takes nothing away.
     mutating func checkOpenRows(integrations: DayIntegrationSnapshot, now: Date, skipping: Set<VerificationMethod>) {
         func result(for quest: Quest) -> VerificationResult {
@@ -312,11 +313,6 @@ struct GameSnapshot: Codable, Equatable {
         // "No gym today" can go on before the day's data is read. With the data, a real 10 km run on the day's
         // run goes to the added 10K, as it does at the switch.
         giveRealRunToAddedRow(integrations: integrations)
-        let dayKey = bundle.dayKey
-        func entry(_ questId: String) -> EvidenceUse? { progressLog.first { $0.dayKey == dayKey && $0.questId == questId } }
-        // What each open row showed before this pass: a row that loses the run of this pass goes back to it.
-        let before = Dictionary(bundle.quests.filter { $0.status != .completed }.map { ($0.id, (shown: $0.progress.current, entry: entry($0.id))) },
-                                uniquingKeysWith: { first, _ in first })
         for quest in bundle.quests where quest.status != .completed && !skipping.contains(quest.verification.method) {
             let result = result(for: quest)
             switch result {
@@ -326,28 +322,20 @@ struct GameSnapshot: Codable, Equatable {
                 break
             }
         }
+        let dayKey = bundle.dayKey
         for index in bundle.quests.indices {
             let quest = bundle.quests[index]
-            guard quest.status != .completed, !skipping.contains(quest.verification.method), quest.progress.current > 0,
-                  let shown = entry(quest.id)?.evidence else { continue }
+            guard quest.status != .completed, !skipping.contains(quest.verification.method) else { continue }
             let used = evidenceLog.filter { $0.dayKey == dayKey && $0.questId != quest.id }.map(\.evidence)
-            func taken(_ mine: Evidence) -> Bool {
-                used.contains { other in
-                    if !other.workoutIds.isDisjoint(with: mine.workoutIds) { return true }
-                    guard let session = mine.session, let theirs = other.session else { return false }
-                    return WorkoutDedupe.sameTime(session.start, session.end, theirs.start, theirs.end)
-                }
-            }
-            guard taken(shown) else { continue }
-            // The run the row showed before this pass is still its own when no row used it. The data of this
-            // pass can lack it (Apple Health on a locked phone), so it is put back, not measured again.
+            let seen = progressLog.filter { $0.dayKey == dayKey && $0.questId == quest.id }
+            let left = seen.filter { mine in !used.contains { Self.sameWorkout($0, mine.evidence) } }
+            guard left.count < seen.count else { continue }
+            // Another row used a workout this row saw. The row shows the longest one that is left. The data of
+            // this pass can lack it (Apple Health on a locked phone), so it comes from the log, and the row is
+            // then measured again for a longer one.
             progressLog.removeAll { $0.dayKey == dayKey && $0.questId == quest.id }
-            if let earlier = before[quest.id], earlier.shown > 0, let kept = earlier.entry, !taken(kept.evidence) {
-                bundle.quests[index].progress.current = earlier.shown
-                progressLog.append(kept)
-            } else {
-                bundle.quests[index].progress.current = 0
-            }
+            progressLog.append(contentsOf: left)
+            bundle.quests[index].progress.current = min(left.map(\.shown).max() ?? 0, quest.progress.target)
             let again = result(for: bundle.quests[index])
             switch again {
             case .progress, .completed:
@@ -356,6 +344,13 @@ struct GameSnapshot: Codable, Equatable {
                 break
             }
         }
+    }
+
+    /// One workout, by a shared recording or by its time: a second source gives the same run another id.
+    static func sameWorkout(_ left: Evidence, _ right: Evidence) -> Bool {
+        if !left.workoutIds.isDisjoint(with: right.workoutIds) { return true }
+        guard let first = left.session, let second = right.session else { return false }
+        return WorkoutDedupe.sameTime(first.start, first.end, second.start, second.end)
     }
 
     /// Applies a verifier result. A quest completes only once.
@@ -371,11 +366,10 @@ struct GameSnapshot: Codable, Equatable {
         case .progress(let current, let evidence):
             var quest = bundle.quests[index]
             let next = min(max(current, quest.progress.current), quest.progress.target)
-            // The row shows this workout when it lifts the row. A value that is not higher than the row holds
-            // can be from another workout, and the row still shows the one it showed.
-            if !evidence.workoutIds.isEmpty, min(current, quest.progress.target) > quest.progress.current {
-                progressLog.removeAll { $0.dayKey == bundle.dayKey && $0.questId == questId }
-                progressLog.append(EvidenceUse(dayKey: bundle.dayKey, questId: questId, evidence: evidence))
+            // The row saw this workout, unused, at this length. One workout has one entry, whatever source named it.
+            if !evidence.workoutIds.isEmpty {
+                progressLog.removeAll { $0.dayKey == bundle.dayKey && $0.questId == questId && Self.sameWorkout($0.evidence, evidence) }
+                progressLog.append(ShownWorkout(dayKey: bundle.dayKey, questId: questId, evidence: evidence, shown: min(current, quest.progress.target)))
             }
             guard next != quest.progress.current else { return .ignored }
             quest.progress.current = next
@@ -700,7 +694,7 @@ extension GameSnapshot {
         signals = try container.decode(MorningSignals.self, forKey: .signals)
         bundle = try container.decode(QuestBundle.self, forKey: .bundle)
         evidenceLog = try container.decodeIfPresent([EvidenceUse].self, forKey: .evidenceLog) ?? []
-        progressLog = (try? container.decodeIfPresent([EvidenceUse].self, forKey: .progressLog)) ?? []
+        progressLog = (try? container.decodeIfPresent([ShownWorkout].self, forKey: .progressLog)) ?? []
         runningTimers = try container.decodeIfPresent([TimerRun].self, forKey: .runningTimers) ?? []
         recentQuestTitles = try container.decodeIfPresent([String].self, forKey: .recentQuestTitles) ?? []
         readiness = try container.decodeIfPresent(ReadinessSnapshot.self, forKey: .readiness)

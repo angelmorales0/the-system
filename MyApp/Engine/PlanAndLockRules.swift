@@ -305,6 +305,21 @@ enum PlanAndLockRules {
                     errors.append("a run of \(Int(meters)) m that the 5K takes in the pass that brings it should leave the unused run on the penalty row, got \(rowsText(samePass))")
                 }
             }
+            // Two runs that only Apple Health holds show on the penalty row in two passes: the first one, then a
+            // second one that is longer or of the same length. A pass with no Health data brings the Strava copy of
+            // one of them and the 5K takes it. The penalty row goes back to the other run: no row used that one.
+            for (second, takes) in [(7_000.0, 2), (5_060.0, 1), (5_060.0, 2)] {
+                var older = fiveKDay
+                let first = recorded("healthkit", "old-1", meters: 5_040, after: 3_600), later = recorded("healthkit", "old-2", meters: second, after: 14_400)
+                older.checkOpenRows(integrations: dayData(strava: [], health: [first]), now: passNow, skipping: passSkips)
+                older.checkOpenRows(integrations: dayData(strava: [], health: [first, later]), now: passNow, skipping: passSkips)
+                let copy = takes == 1 ? recorded("strava", "old-copy", meters: 5_040, after: 3_620) : recorded("strava", "old-copy", meters: second, after: 14_420)
+                for _ in 0..<2 { older.checkOpenRows(integrations: dayData(strava: [copy]), now: passNow, skipping: passSkips) }
+                let expected = takes == 1 ? DistanceRule.kilometers(second) : 5.0
+                if older.bundle.quests[index].status != .completed || older.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != expected {
+                    errors.append("a row should go back to the older run that no row used (second run \(Int(second)) m, run \(takes) taken), got \(rowsText(older))")
+                }
+            }
         } else {
             errors.append("a penalty day should hold a penalty row and the day's run")
         }
