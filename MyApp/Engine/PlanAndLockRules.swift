@@ -140,6 +140,40 @@ enum PlanAndLockRules {
             if !handFirst, let dayRun { _ = day.applyLocalOverride(questId: dayRun.id, now: morning) }
             if firstOpen(day) != nil { errors.append("one real 10K and one hand check should finish a no-gym day's runs, hand check first: \(handFirst)") }
         }
+        // A 7 km run on a no-gym day whose own run is a 5K: the 5K takes the run, and the added 10K, which is
+        // checked first, shows none of it. A second, 3 km run that no row used does show there.
+        var shortDay = noGym
+        if let index = shortDay.bundle.quests.firstIndex(where: { TrainingDay.isRaceRun($0) && !$0.isNoGymRun }) {
+            shortDay.bundle.quests[index].verification.params["minDistanceMeters"] = .number(5_000)
+            shortDay.bundle.quests[index].progress.target = 5
+            func run(_ id: String, meters: Double, after seconds: TimeInterval) -> WorkoutEvent {
+                let start = morning.addingTimeInterval(seconds)
+                return WorkoutEvent(source: "strava", externalId: id, sport: "Run", start: start, end: start.addingTimeInterval(2_400),
+                                    movingTimeSec: 2_400, distanceMeters: meters)
+            }
+            func data(_ runs: [WorkoutEvent]) -> DayIntegrationSnapshot {
+                DayIntegrationSnapshot.make(
+                    whoop: .disconnected(dayKey: shortDay.bundle.dayKey, reason: ""),
+                    strava: StravaDayReading(available: true, configured: true, reason: "", dayKey: shortDay.bundle.dayKey, activities: runs),
+                    health: HealthDaySummary(access: .requested, workouts: [])
+                )
+            }
+            func added(_ snapshot: GameSnapshot) -> Double? { snapshot.bundle.quests.first(where: \.isNoGymRun)?.progress.current }
+            let seven = run("short-7", meters: 7_000, after: 3_600), three = run("short-3", meters: 3_000, after: 14_400)
+            var one = shortDay
+            for _ in 0..<2 { one.checkOpenRows(integrations: data([seven]), now: morning.addingTimeInterval(20_000), skipping: [.manualConfirm, .timerSession]) }
+            if one.bundle.quests[index].status != .completed || added(one) != 0 {
+                errors.append("a 7 km run that the day's 5K used should be no progress for the added 10K, got \(String(describing: added(one)))")
+            }
+            var two = shortDay
+            two.checkOpenRows(integrations: data([seven, three]), now: morning.addingTimeInterval(20_000), skipping: [.manualConfirm, .timerSession])
+            if two.bundle.quests[index].status != .completed || added(two) != 3 {
+                errors.append("a 3 km run that no row used should show on the added 10K, got \(String(describing: added(two)))")
+            }
+        } else {
+            errors.append("a no-gym day should hold the day's own run")
+        }
+
         // Pull-ups: a volume day whose reps fall off, and a session of one set, join no max-effort series.
         if TrainingHistory.repsKind([10, 8, 7, 6]) != "reps volume" || TrainingHistory.repsKind([16, 9, 9]) != "reps max"
             || TrainingHistory.repsKind([14, 8]) != "reps max" || TrainingHistory.repsKind([10]) != "reps single" {

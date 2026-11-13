@@ -142,22 +142,7 @@ extension GameSnapshot {
         var past = self
         past.bundle = ended.bundle
         let hadOpenPenaltyRow = PenaltyQuests.rows(in: past.bundle).contains { $0.status != .completed }
-        for quest in ended.bundle.quests where quest.status != .completed {
-            switch quest.verification.method {
-            case .manualConfirm, .timerSession, .screenTimeLimit:
-                continue
-            default:
-                break
-            }
-            let context = past.verificationContext(for: quest, now: now, timerElapsed: nil, userConfirmed: false, integrations: integrations)
-            let result = VerifierRegistry.verifier(for: quest.verification.method).evaluate(quest: quest, context: context)
-            switch result {
-            case .progress, .completed:
-                _ = past.apply(result, questId: quest.id, now: now)
-            case .unchanged, .incomplete, .failed:
-                break
-            }
-        }
+        past.checkOpenRows(integrations: integrations, now: now, skipping: [.manualConfirm, .timerSession, .screenTimeLimit])
         if let day = past.bundle.quests.first(where: { $0.id == DailyStretch.questId }).flatMap({ StretchSplit.day(of: $0) }) {
             let inHevy = Set(day.stretches.filter { StretchSplit.setsDone($0, workouts: integrations.hevy.workouts) >= $0.sets }.map(\.name))
             if let result = past.stretchCompletion(doneInHevy: inHevy, now: now) {

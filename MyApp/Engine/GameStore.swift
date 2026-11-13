@@ -895,28 +895,7 @@ final class GameStore: ObservableObject {
     /// Foreground pass for adapters that can see evidence without a tap. Stubs return incomplete and change nothing.
     private func evaluateConnectedVerifiers(now: Date) {
         var next = snapshot
-        for quest in snapshot.bundle.quests where quest.status != .completed {
-            switch quest.verification.method {
-            case .manualConfirm, .timerSession:
-                continue
-            default:
-                break
-            }
-            let context = next.verificationContext(
-                for: quest,
-                now: now,
-                timerElapsed: nil,
-                userConfirmed: false,
-                integrations: dayData
-            )
-            let result = VerifierRegistry.verifier(for: quest.verification.method).evaluate(quest: quest, context: context)
-            switch result {
-            case .progress, .completed:
-                _ = next.apply(result, questId: quest.id, now: now)
-            case .unchanged, .incomplete, .failed:
-                break
-            }
-        }
+        next.checkOpenRows(integrations: dayData, now: now, skipping: [.manualConfirm, .timerSession])
         // Hevy can finish the stretches that are left, short of the row's total minutes.
         if let result = next.stretchCompletion(doneInHevy: stretchesInHevy, now: now) {
             _ = next.apply(result, questId: DailyStretch.questId, now: now)
