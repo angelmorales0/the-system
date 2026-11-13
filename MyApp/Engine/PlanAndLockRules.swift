@@ -116,8 +116,9 @@ enum PlanAndLockRules {
             return HevyWorkout(id: "wpull-\(daysAgo)", title: "Gym", start: start, end: start.addingTimeInterval(3_600),
                                exercises: [HevyExercise(title: "Pull Up", templateId: nil, sets: Array(repeating: HevySet(type: "normal", reps: reps, weightKg: kg, rpe: nil, durationSec: nil), count: 3))])
         }
-        let twoFall = TrainingHistory.liftSummaries([weightedPull(13, 30, 5), weightedPull(11, 10, 12), weightedPull(9, 32, 5), weightedPull(7, 10, 10),
-                                                     weightedPull(5, 28, 5), weightedPull(3, 10, 8), pull(1, [10])], today: "2026-10-22", zone: QuestDay.timeZone)
+        // The series that only declines (heavy) has the newer session, so "the newest series" would pick it.
+        let twoFall = TrainingHistory.liftSummaries([weightedPull(13, 10, 12), weightedPull(11, 30, 5), weightedPull(9, 10, 10), weightedPull(7, 32, 5),
+                                                     weightedPull(5, 10, 8), weightedPull(3, 28, 5), pull(1, [10])], today: "2026-10-22", zone: QuestDay.timeZone)
         if twoFall.json["pull up"]?["fallingSeries"]?.arrayValue?.count != 2 || twoFall.json["pull up"]?["trend"]?.stringValue != "dropping" {
             errors.append("with two falling series the lift should take the one that drops, got \(twoFall.json["pull up"]?["trend"]?.stringValue ?? "") \(twoFall.json["pull up"]?["trendByKind"]?.sortedString() ?? "")")
         }
@@ -294,6 +295,16 @@ enum PlanAndLockRules {
             if withHealth != 5 || sameLength.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != 5 {
                 errors.append("a used run of the same length should take no progress from the row that shows another run, got \(String(describing: withHealth)) then \(rowsText(sameLength))")
             }
+            // The penalty row shows a run that only Apple Health holds. A pass with no Health data brings a new Strava
+            // run that the 5K takes in that same pass: of the same length, or longer. The Health run's progress stays.
+            for meters in [5_020.0, 7_000.0] {
+                var samePass = fiveKDay
+                samePass.checkOpenRows(integrations: dayData(strava: [], health: [freeRun]), now: passNow, skipping: passSkips)
+                samePass.checkOpenRows(integrations: dayData(strava: [recorded("strava", "pass-\(Int(meters))", meters: meters, after: 3_600)]), now: passNow, skipping: passSkips)
+                if samePass.bundle.quests[index].status != .completed || samePass.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != 5 {
+                    errors.append("a run of \(Int(meters)) m that the 5K takes in the pass that brings it should leave the unused run on the penalty row, got \(rowsText(samePass))")
+                }
+            }
         } else {
             errors.append("a penalty day should hold a penalty row and the day's run")
         }
@@ -386,6 +397,14 @@ enum PlanAndLockRules {
             // After the day cue played for this day, the same move is nothing new.
             if SoundCues.sounds(from: beforeOff, to: lastRow, dayCuePlayed: true).contains(.dayClear) {
                 errors.append("a run that only moves should not play the day cue a second time")
+            }
+            // A row that is finished now and completes the day plays the day cue, also a second time that day.
+            var byHand = beforeOff
+            if let dayRun = byHand.bundle.quests.first(where: { TrainingDay.isRaceRun($0) && $0.status != .completed }) {
+                _ = byHand.applyLocalOverride(questId: dayRun.id, now: morning)
+                if SoundCues.sounds(from: beforeOff, to: byHand, dayCuePlayed: true) != [.dayClear] {
+                    errors.append("a hand check that completes the day should play the day cue, got \(SoundCues.sounds(from: beforeOff, to: byHand, dayCuePlayed: true))")
+                }
             }
             if !beforeOff.missesRequiredSet || lastRow.missesRequiredSet || !cues.contains(.dayClear) || cues.contains(.questComplete) {
                 errors.append("no gym off that completes the day should play the day cue, got \(cues) misses \(beforeOff.missesRequiredSet) -> \(lastRow.missesRequiredSet)")

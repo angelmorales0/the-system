@@ -312,6 +312,11 @@ struct GameSnapshot: Codable, Equatable {
         // "No gym today" can go on before the day's data is read. With the data, a real 10 km run on the day's
         // run goes to the added 10K, as it does at the switch.
         giveRealRunToAddedRow(integrations: integrations)
+        let dayKey = bundle.dayKey
+        func entry(_ questId: String) -> EvidenceUse? { progressLog.first { $0.dayKey == dayKey && $0.questId == questId } }
+        // What each open row showed before this pass: a row that loses the run of this pass goes back to it.
+        let before = Dictionary(bundle.quests.filter { $0.status != .completed }.map { ($0.id, (shown: $0.progress.current, entry: entry($0.id))) },
+                                uniquingKeysWith: { first, _ in first })
         for quest in bundle.quests where quest.status != .completed && !skipping.contains(quest.verification.method) {
             let result = result(for: quest)
             switch result {
@@ -321,20 +326,28 @@ struct GameSnapshot: Codable, Equatable {
                 break
             }
         }
-        let dayKey = bundle.dayKey
         for index in bundle.quests.indices {
             let quest = bundle.quests[index]
             guard quest.status != .completed, !skipping.contains(quest.verification.method), quest.progress.current > 0,
-                  let shown = progressLog.first(where: { $0.dayKey == dayKey && $0.questId == quest.id })?.evidence else { continue }
+                  let shown = entry(quest.id)?.evidence else { continue }
             let used = evidenceLog.filter { $0.dayKey == dayKey && $0.questId != quest.id }.map(\.evidence)
-            let taken = used.contains { other in
-                if !other.workoutIds.isDisjoint(with: shown.workoutIds) { return true }
-                guard let mine = shown.session, let theirs = other.session else { return false }
-                return WorkoutDedupe.sameTime(mine.start, mine.end, theirs.start, theirs.end)
+            func taken(_ mine: Evidence) -> Bool {
+                used.contains { other in
+                    if !other.workoutIds.isDisjoint(with: mine.workoutIds) { return true }
+                    guard let session = mine.session, let theirs = other.session else { return false }
+                    return WorkoutDedupe.sameTime(session.start, session.end, theirs.start, theirs.end)
+                }
             }
-            guard taken else { continue }
-            bundle.quests[index].progress.current = 0
+            guard taken(shown) else { continue }
+            // The run the row showed before this pass is still its own when no row used it. The data of this
+            // pass can lack it (Apple Health on a locked phone), so it is put back, not measured again.
             progressLog.removeAll { $0.dayKey == dayKey && $0.questId == quest.id }
+            if let earlier = before[quest.id], earlier.shown > 0, let kept = earlier.entry, !taken(kept.evidence) {
+                bundle.quests[index].progress.current = earlier.shown
+                progressLog.append(kept)
+            } else {
+                bundle.quests[index].progress.current = 0
+            }
             let again = result(for: bundle.quests[index])
             switch again {
             case .progress, .completed:
@@ -358,8 +371,9 @@ struct GameSnapshot: Codable, Equatable {
         case .progress(let current, let evidence):
             var quest = bundle.quests[index]
             let next = min(max(current, quest.progress.current), quest.progress.target)
-            // The row shows this workout now. A lower value than the row holds is from another, shorter workout.
-            if !evidence.workoutIds.isEmpty, min(current, quest.progress.target) >= quest.progress.current {
+            // The row shows this workout when it lifts the row. A value that is not higher than the row holds
+            // can be from another workout, and the row still shows the one it showed.
+            if !evidence.workoutIds.isEmpty, min(current, quest.progress.target) > quest.progress.current {
                 progressLog.removeAll { $0.dayKey == bundle.dayKey && $0.questId == questId }
                 progressLog.append(EvidenceUse(dayKey: bundle.dayKey, questId: questId, evidence: evidence))
             }
