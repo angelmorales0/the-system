@@ -212,6 +212,18 @@ enum OnDeviceTime {
         return (start, end)
     }
 
+    /// The quest day `dayKey` in `zone`: 5:00 to 5:00 the next morning, like `QuestDay.interval` and the Apple Health read.
+    /// The day's workouts come from this window, so a gym session at 1:00 counts for the quest day still on screen,
+    /// and every source puts one workout on the same day.
+    static func questDayBounds(_ dayKey: String, zone: TimeZone) -> (start: Date, end: Date)? {
+        let parts = dayKey.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        let calendar = calendar(zone)
+        guard let start = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: QuestDay.startHour)),
+              let nextDay = calendar.date(byAdding: .day, value: 1, to: start) else { return nil }
+        return (start, nextDay)
+    }
+
     /// "YYYY-MM-DD" of `date` in `zone`.
     static func dayKey(_ date: Date, zone: TimeZone) -> String {
         let parts = calendar(zone).dateComponents([.year, .month, .day], from: date)

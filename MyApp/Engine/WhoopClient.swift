@@ -25,7 +25,9 @@ enum WhoopClient {
         async let recoveryPage = collection(token, "/v2/recovery", start, end)
         async let cyclePage = collection(token, "/v2/cycle", start, end)
         async let sleepPage = collection(token, "/v2/activity/sleep", start, end)
-        async let workoutPage = collection(token, "/v2/activity/workout", start, end)
+        // Workouts follow the quest day, like Strava, Hevy, and Apple Health. Recovery, sleep, and strain stay on the calendar day.
+        let workoutDay = OnDeviceTime.questDayBounds(dayKey, zone: zone ?? QuestDay.timeZone) ?? (start, end)
+        async let workoutPage = collection(token, "/v2/activity/workout", workoutDay.start, workoutDay.end)
         let (recovery, cycle, sleep, workouts) = await (recoveryPage, cyclePage, sleepPage, workoutPage)
         if recovery == nil, cycle == nil, workouts == nil {
             base.configured = true

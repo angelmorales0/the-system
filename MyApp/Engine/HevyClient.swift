@@ -16,7 +16,7 @@ enum HevyClient {
 
     static func headers(_ key: String) -> [String: String] { ["api-key": key] }
 
-    /// One local day of Hevy workouts. `key` nil returns the TODO before any request.
+    /// One quest day (5:00 to 5:00) of Hevy workouts. `key` nil returns the TODO before any request.
     static func snapshot(dayKey: String, key: String? = SecretStore.read(.hevyApiKey), zone: TimeZone? = nil) async -> HevyDayReading {
         var base = HevyDayReading.disconnected(dayKey: dayKey, reason: "")
         guard let key else {
@@ -24,7 +24,7 @@ enum HevyClient {
             return base
         }
         base.configured = true
-        guard let (start, end) = OnDeviceTime.dayBounds(dayKey, zone: zone ?? QuestDay.timeZone) else { return base }
+        guard let (start, end) = OnDeviceTime.questDayBounds(dayKey, zone: zone ?? QuestDay.timeZone) else { return base }
         var workouts: [HevyWorkout] = []
         for number in 1...maxPages {
             guard let url = page(number),

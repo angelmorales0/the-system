@@ -140,8 +140,10 @@ final class HealthKitStore {
             days[key]?.caffeineMg = 0
         }
         // Expenditure: active plus basal energy, on days that have both (an Apple Watch). Health has no MacroFactor estimate.
-        let active = await dailySums(.activeEnergyBurned, unit: .kilocalorie(), predicate: recoveryPredicate, zone: zone, preferMacroFactor: false)
-        let basal = await dailySums(.basalEnergyBurned, unit: .kilocalorie(), predicate: recoveryPredicate, zone: zone, preferMacroFactor: false)
+        // Health's own daily totals: an Apple Watch, the iPhone, and WHOOP can each write energy for the same minutes,
+        // and a plain sum of their samples would count those minutes two or three times.
+        let active = await dailyTotals(.activeEnergyBurned, unit: .kilocalorie(), start: recoveryStart, end: now, zone: zone)
+        let basal = await dailyTotals(.basalEnergyBurned, unit: .kilocalorie(), start: recoveryStart, end: now, zone: zone)
         for (key, moving) in active {
             guard let resting = basal[key], moving > 0, resting > 0 else { continue }
             days[key, default: RecoveryDay(dayKey: key)].maintenanceKcal = moving + resting
@@ -187,6 +189,33 @@ final class HealthKitStore {
             sums[key] = counted.reduce(0) { $0 + $1.quantity.doubleValue(for: unit) }
         }
         return sums
+    }
+
+    /// One total per local day, as the Health app shows it: Health merges its sources, so time that two devices
+    /// recorded counts once.
+    private func dailyTotals(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit, start: Date, end: Date, zone: TimeZone) async -> [String: Double] {
+        guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else { return [:] }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let anchor = calendar.startOfDay(for: start)
+        return await withCheckedContinuation { continuation in
+            let query = HKStatisticsCollectionQuery(
+                quantityType: type,
+                quantitySamplePredicate: HKQuery.predicateForSamples(withStart: start, end: end, options: []),
+                options: .cumulativeSum,
+                anchorDate: anchor,
+                intervalComponents: DateComponents(day: 1)
+            )
+            query.initialResultsHandler = { _, collection, _ in
+                var totals: [String: Double] = [:]
+                collection?.enumerateStatistics(from: anchor, to: end) { statistics, _ in
+                    guard let total = statistics.sumQuantity()?.doubleValue(for: unit), total > 0 else { return }
+                    totals[OnDeviceTime.dayKey(statistics.startDate, zone: zone)] = total
+                }
+                continuation.resume(returning: totals)
+            }
+            store.execute(query)
+        }
     }
 
     private func workoutEvents(predicate: NSPredicate) async -> [WorkoutEvent] {
