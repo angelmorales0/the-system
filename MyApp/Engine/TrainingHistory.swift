@@ -241,16 +241,17 @@ enum TrainingHistory {
 
     /// A bodyweight session is one of two jobs. Pull-ups run even volume sets on one day and one max set with
     /// back-off sets on another, and the volume day's best set is no decline from the max day's.
-    /// The shape tells them apart: a best set well above the others is a max day. The set count does not:
+    /// The shape tells them apart: a best set well above the next one is a max day. The set count does not:
     /// a deload day or a session cut short changes it.
     static let maxSetShare = 1.3
 
+    /// The best set against the second best: on a max day the next set is a back-off, far under it. On a volume day
+    /// the reps can fall off set by set, but the two best sets stay close. One set alone shows no shape: it is its
+    /// own kind, so a session cut short joins neither series.
     static func repsKind(_ reps: [Int]) -> String {
-        let counted = reps.filter { $0 > 0 }.sorted()
-        guard counted.count >= 2, let best = counted.last else { return "reps max" }
-        let others = Array(counted.dropLast())
-        let median = Double(others[others.count / 2] + others[(others.count - 1) / 2]) / 2
-        return Double(best) >= maxSetShare * median ? "reps max" : "reps volume"
+        let counted = reps.filter { $0 > 0 }.sorted(by: >)
+        guard counted.count >= 2 else { return "reps single" }
+        return Double(counted[0]) >= maxSetShare * Double(counted[1]) ? "reps max" : "reps volume"
     }
 
     /// e1RM for weighted work, else reps in the best set, else seconds held.

@@ -21,12 +21,24 @@ enum NoGymDay {
             copy.headerLine = TrainingDay.header
         }
         // The day already holds its added 10K: a second pass, such as the next launch, adds nothing.
-        guard !copy.quests.contains(where: { isAdded($0, dayKey: copy.dayKey) }) else { return copy }
+        guard !copy.quests.contains(where: { isAdded($0, dayKey: copy.dayKey) }) else { return addedRunFirst(copy) }
         let runs = copy.quests.filter { isSwappable($0) && TrainingDay.isRaceRun($0) }
         let km = runs.reduce(0.0) { $0 + ($1.verification.params["minDistanceMeters"]?.doubleValue ?? 0) / 1000 }
         guard runs.count < runCount, km + Double(TrainingHistory.noGymAddedKm) <= Double(TrainingHistory.maxRunKmPerDay) else { return copy }
         let added = tenK(from: runs.first { isTenK($0) }, bundle: copy, now: now)
         copy.quests.insert(added, at: copy.workoutInsertIndex)
+        return addedRunFirst(copy)
+    }
+
+    /// Puts the added 10K before the day's own runs. Runs are checked in row order, so a real run then fills the
+    /// added 10K first, and the day's run keeps its hand check and its potion. In the other order, a real run took
+    /// the day's row and left the added one, which takes neither: the same work finished the day or not by its order.
+    /// A plan the planner wrote for the no-gym day has the added 10K last, so this runs for that plan too.
+    static func addedRunFirst(_ bundle: QuestBundle) -> QuestBundle {
+        guard let from = bundle.quests.firstIndex(where: { isAdded($0, dayKey: bundle.dayKey) }),
+              let to = bundle.quests.firstIndex(where: { isSwappable($0) && TrainingDay.isRaceRun($0) }), to < from else { return bundle }
+        var copy = bundle
+        copy.quests.insert(copy.quests.remove(at: from), at: to)
         return copy
     }
 
@@ -110,8 +122,13 @@ extension GameSnapshot {
         fresh.rebuildBundle(catalog: catalog, now: now)
         let dayKey = bundle.dayKey
         bundle.quests.removeAll { NoGymDay.isAdded($0, dayKey: dayKey) && $0.status != .completed }
+        // By id, and by exercise: a row saved under an older id scheme is still that lift, and a second copy
+        // could never complete, because its Hevy sets are already used.
+        func exercise(_ quest: Quest) -> String { StrengthLevel.normalizedName(quest.verification.params["exercise"]?.stringValue ?? quest.title) }
+        let held = Set(bundle.quests.filter { $0.verification.method == .hevySets && $0.id != DailyStretch.questId }.map(exercise))
         let lifts = fresh.bundle.quests.filter { lift in
             lift.kind == .daily && TrainingDay.isStrength(lift) && !bundle.quests.contains { $0.id == lift.id }
+                && !(lift.verification.method == .hevySets && held.contains(exercise(lift)))
         }
         bundle.quests.insert(contentsOf: lifts, at: bundle.workoutInsertIndex)
         // The lifts come back over the window's runs: still two workouts, unless one is already finished.

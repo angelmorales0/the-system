@@ -127,6 +127,25 @@ enum PlanAndLockRules {
             errors.append("the added 10K of a no-gym day should take no hand check and no run potion")
         }
 
+        // One real 10K and one hand check finish the two runs of a no-gym day in both orders: the real run fills the
+        // added 10K, which comes first, and the day's run keeps its hand check.
+        if runRows.first?.isNoGymRun != true { errors.append("the added 10K should come before the day's run") }
+        func realRun(_ id: String) -> Evidence { Evidence.make(source: "strava", externalId: "workout:strava:\(id)", payload: id, timestamp: morning) }
+        for handFirst in [true, false] {
+            var day = noGym
+            let dayRun = day.bundle.quests.first { TrainingDay.isRaceRun($0) && !$0.isNoGymRun }
+            let firstOpen = { (snapshot: GameSnapshot) in snapshot.bundle.quests.first { TrainingDay.isRaceRun($0) && $0.status != .completed } }
+            if handFirst, let dayRun { _ = day.applyLocalOverride(questId: dayRun.id, now: morning) }
+            if let row = firstOpen(day) { _ = day.apply(.completed(evidence: realRun("order")), questId: row.id, now: morning) }
+            if !handFirst, let dayRun { _ = day.applyLocalOverride(questId: dayRun.id, now: morning) }
+            if firstOpen(day) != nil { errors.append("one real 10K and one hand check should finish a no-gym day's runs, hand check first: \(handFirst)") }
+        }
+        // Pull-ups: a volume day whose reps fall off, and a session of one set, join no max-effort series.
+        if TrainingHistory.repsKind([10, 8, 7, 6]) != "reps volume" || TrainingHistory.repsKind([16, 9, 9]) != "reps max"
+            || TrainingHistory.repsKind([14, 8]) != "reps max" || TrainingHistory.repsKind([10]) != "reps single" {
+            errors.append("a bodyweight session should be a max day only when its best set is far above the next one")
+        }
+
         // A rest day keeps a finished penalty row. A new penalty that waits there is not closed by another row.
         var waits = GameSnapshot.fresh(catalog: catalog, now: morning)
         waits.player.penaltyOpen = true

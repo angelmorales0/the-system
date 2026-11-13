@@ -182,7 +182,13 @@ extension GameSnapshot {
             return "\(potion.name) is on cooldown until \(ready)."
         }
         let targets = potionTargets(potion)
-        if potion.needsQuest && targets.isEmpty { return "There is no open \(potion.stat.rawValue) quest today." }
+        if potion.needsQuest && targets.isEmpty {
+            // The only open run is the 10K that "No gym today" added: it stands for the lifts.
+            if bundle.quests.contains(where: { $0.isNoGymRun && $0.stat == potion.stat && $0.status != .completed }) {
+                return "The added 10K of a no-gym day takes no potion. It stands for the lifts."
+            }
+            return "There is no open \(potion.stat.rawValue) quest today."
+        }
         let price = potionPrice(potion)
         if gold < price { return "Not enough gold. \(potion.name) costs \(price) gold. You have \(gold)." }
         return nil
