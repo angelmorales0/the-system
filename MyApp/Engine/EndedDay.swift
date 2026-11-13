@@ -169,6 +169,8 @@ extension GameSnapshot {
         if past.bundle != asItEnded {
             let splitBefore = GymSplit.today(history: questHistory, dayKey: bundle.dayKey).id
             let stretchBefore = StretchSplit.today(history: questHistory, dayKey: bundle.dayKey).id
+            let runGoal = Double(TrainingDay.runKmPer7Days)
+            let windowFullBefore = loggedRunKm(before: bundle.dayKey) >= runGoal
             evidenceLog = past.evidenceLog
             if let index = questHistory.firstIndex(where: { $0.dayKey == dayKey }) {
                 questHistory[index].quests = Self.questRecords(of: past.bundle)
@@ -204,7 +206,10 @@ extension GameSnapshot {
             let workoutStarted = done.contains { $0.kind != .penalty && $0.id != ScreenTime.questId && $0.id != DailyStretch.questId }
             let stretchStarted = done.contains { $0.id == DailyStretch.questId } || !stretchesChecked.isEmpty
             let underway = workoutStarted || (stretchMoved && stretchStarted)
-            if splitMoved || stretchMoved, !underway, runningTimers.isEmpty, bundle.dayKey == QuestDay.key(for: now) {
+            // A run found late can fill the 50 km window (or a run that was only shown as progress can leave it):
+            // the offline plan of today then holds a run too many, or one too few.
+            let windowMoved = (loggedRunKm(before: bundle.dayKey) >= runGoal) != windowFullBefore
+            if splitMoved || stretchMoved || windowMoved, !underway, runningTimers.isEmpty, bundle.dayKey == QuestDay.key(for: now) {
                 generatedBundle = nil
                 generationAttemptDayKey = nil
                 rebuildBundle(catalog: catalog, now: now)
