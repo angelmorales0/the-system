@@ -52,9 +52,9 @@ struct CanonicalWorkout: Equatable, Identifiable {
 
 /// Same workout recorded by more than one source.
 ///
-/// Two events match when they share a sport family and their intervals overlap
-/// after each side is padded by 5 minutes, and their start times are at most
-/// 10 minutes apart. That is the ±5–10 minute window.
+/// Two events match when they share a sport family, their start times are at most
+/// 10 minutes apart, their intervals overlap after each side is padded by 5 minutes,
+/// and they share at least half of the shorter one's time.
 ///
 /// The canonical id prefers Strava (distance), then WHOOP (strain and zones),
 /// then HealthKit when it is the only recorder. One canonical id can clear
@@ -70,10 +70,15 @@ enum WorkoutDedupe {
     }
 
     /// The time rule alone: starts at most 10 minutes apart, and the intervals overlap after 5 minutes of padding.
+    /// Two recordings of one session also cover the same time: they share at least half of the shorter one.
+    /// A short run and a second run that starts as the first ends only touch. Those are two runs, and both count.
     static func sameTime(_ leftStart: Date, _ leftEnd: Date, _ rightStart: Date, _ rightEnd: Date) -> Bool {
         guard abs(leftStart.timeIntervalSince(rightStart)) <= maxStartGap else { return false }
-        return leftStart.addingTimeInterval(-pad) <= rightEnd.addingTimeInterval(pad)
-            && rightStart.addingTimeInterval(-pad) <= leftEnd.addingTimeInterval(pad)
+        guard leftStart.addingTimeInterval(-pad) <= rightEnd.addingTimeInterval(pad),
+              rightStart.addingTimeInterval(-pad) <= leftEnd.addingTimeInterval(pad) else { return false }
+        let shorter = min(leftEnd.timeIntervalSince(leftStart), rightEnd.timeIntervalSince(rightStart))
+        guard shorter > 0 else { return true }
+        return min(leftEnd, rightEnd).timeIntervalSince(max(leftStart, rightStart)) >= shorter / 2
     }
 
     static func canonical(_ events: [WorkoutEvent]) -> [CanonicalWorkout] {

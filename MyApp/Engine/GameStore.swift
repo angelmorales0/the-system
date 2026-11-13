@@ -496,6 +496,14 @@ final class GameStore: ObservableObject {
                 note(for: outcome, title: quest.title)
                 persist()
                 enforcePenalty()
+            } else if DistanceRule.minimumMeters(quest) != nil {
+                // The runs of the day add together for a run row. The pass does that sum, so a tap runs the pass.
+                evaluateConnectedVerifiers(now: now)
+                clock = now
+                let after = snapshot.bundle.quests.first { $0.id == id }
+                if after?.status != .completed, after?.progress.current == quest.progress.current { cue(.questFail) }
+                persist()
+                enforcePenalty()
             } else {
                 let context = snapshot.verificationContext(
                     for: quest,

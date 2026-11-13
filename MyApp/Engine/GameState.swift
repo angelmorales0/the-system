@@ -14,9 +14,9 @@ struct GameSnapshot: Codable, Equatable {
     var signals: MorningSignals
     var bundle: QuestBundle
     var evidenceLog: [EvidenceUse] = []
-    /// Each workout that an open run row showed as progress, with its km. When another row uses one of them, the
-    /// row goes back to the longest one that is left (`checkOpenRows`). Distances alone cannot say which workout a
-    /// row shows: two sources measure one run differently, and a pass can lack a source that held an older run.
+    /// Each workout that an open run row can count, with its meters: the runs of a quest day add together for a
+    /// run row, and one run counts for one row. The log outlives a pass, because a pass can lack a source that
+    /// held a run (Apple Health on a locked phone), and two sources name and measure one run differently.
     var progressLog: [ShownWorkout] = []
     var runningTimers: [TimerRun] = []
     /// Today's WHOOP recovery. Not copied into `player.stats.REC`.
@@ -300,32 +300,43 @@ struct GameSnapshot: Codable, Equatable {
 
     /// The evidence checks on each open row of the bundle, in row order. Rows that use a method in `skipping` stay.
     ///
-    /// A row can show progress from a workout that a later row then uses: on a no-gym day the added 10K comes first,
-    /// shows a 7 km run, and the day's 5K then takes that run. The run can also show in one pass, through one source,
-    /// and be used in a later pass through another. So after the pass, an open row that saw a workout another row
-    /// has used (`progressLog`) goes back to the longest workout it saw that no row has used, or to zero.
-    /// Every other row keeps what it shows: a source that gives no workouts now takes nothing away.
+    /// Run rows add the runs of the quest day: a 10K is done by one run of 10 km, or by a 5 km run and a second
+    /// 5 km run. One run counts for one row. Each open run row notes the runs it can count (`progressLog`), shows
+    /// their sum, and is finished when the sum reaches its distance. Rows are measured in row order, so the first
+    /// row takes the runs it needs, and a row after it then counts only what is left: after the pass, a row that
+    /// noted a run another row has used gives it up. A source that gives no workouts in this pass takes nothing
+    /// away, because the notes stay.
     mutating func checkOpenRows(integrations: DayIntegrationSnapshot, now: Date, skipping: Set<VerificationMethod>) {
-        /// Measures one open row and applies the result. The verifier names only the longest unused workout.
-        /// The shorter unused ones are asked for too, one by one, so the log holds each workout the row can fall
-        /// back to when another row takes the longest.
         func measure(_ quest: Quest) {
             var context = verificationContext(for: quest, now: now, timerElapsed: nil, userConfirmed: false, integrations: integrations)
             let verifier = VerifierRegistry.verifier(for: quest.verification.method)
             var result = verifier.evaluate(quest: quest, context: context)
+            guard DistanceRule.minimumMeters(quest) != nil else {
+                switch result {
+                case .progress, .completed:
+                    _ = apply(result, questId: quest.id, now: now)
+                case .unchanged, .incomplete, .failed:
+                    break
+                }
+                return
+            }
+            // One run that reaches the distance finishes the row alone, and the shorter runs stay free.
             if case .completed = result {
                 _ = apply(result, questId: quest.id, now: now)
                 return
             }
-            // One round for each workout of the day at most.
+            // The verifier names the longest unused run. The others are asked for one by one, with each found
+            // run set aside: one round for each workout of the day at most.
             for _ in 0...integrations.workouts.count {
-                guard case .progress(_, let evidence) = result else { return }
-                _ = apply(result, questId: quest.id, now: now)
-                guard !evidence.workoutIds.isEmpty else { return }
-                context.claimedWorkoutIds.formUnion(evidence.workoutIds)
+                guard case .progress(let shown, let evidence) = result, !evidence.workoutIds.isEmpty else { break }
+                let ids = evidence.workoutIds
+                let workout = integrations.workouts.first { ids.contains($0.id) || $0.members.contains { ids.contains($0.id) } }
+                noteRun(evidence, meters: workout?.distanceMeters ?? shown * 1000, questId: quest.id)
+                context.claimedWorkoutIds.formUnion(ids)
                 if let session = evidence.session { context.claimedSessions.append(session) }
                 result = verifier.evaluate(quest: quest, context: context)
             }
+            settleRunRow(quest.id)
         }
         // "No gym today" can go on before the day's data is read. With the data, a real 10 km run on the day's
         // run goes to the added 10K, as it does at the switch.
@@ -333,21 +344,66 @@ struct GameSnapshot: Codable, Equatable {
         for quest in bundle.quests where quest.status != .completed && !skipping.contains(quest.verification.method) {
             measure(quest)
         }
-        let dayKey = bundle.dayKey
-        for index in bundle.quests.indices {
-            let quest = bundle.quests[index]
-            guard quest.status != .completed, !skipping.contains(quest.verification.method) else { continue }
-            let used = evidenceLog.filter { $0.dayKey == dayKey && $0.questId != quest.id }.map(\.evidence)
-            let mine = { (entry: ShownWorkout) in entry.dayKey == dayKey && entry.questId == quest.id }
-            let taken = { (entry: ShownWorkout) in used.contains { Self.sameWorkout($0, entry.evidence) } }
-            guard progressLog.contains(where: { mine($0) && taken($0) }) else { continue }
-            // Another row used a workout this row saw. The row shows the longest one that is left. The data of
-            // this pass can lack it (Apple Health on a locked phone), so it comes from the log, and the row is
-            // then measured again for a longer one.
-            progressLog.removeAll { mine($0) && taken($0) }
-            bundle.quests[index].progress.current = min(progressLog.filter(mine).map(\.shown).max() ?? 0, quest.progress.target)
-            measure(bundle.quests[index])
+        // A row measured early can hold the note of a run that a later row used.
+        for quest in bundle.quests where quest.status != .completed && !skipping.contains(quest.verification.method) {
+            settleRunRow(quest.id)
         }
+    }
+
+    /// Notes a run that an open run row can count. One workout has one note, whatever source named it, and it is
+    /// as long as its longest reading. The note is changed in place: the same data gives the same log.
+    mutating func noteRun(_ evidence: Evidence, meters: Double, questId: String) {
+        let dayKey = bundle.dayKey
+        let same = { (other: ShownWorkout) in other.dayKey == dayKey && other.questId == questId && Self.sameWorkout(other.evidence, evidence) }
+        if let at = progressLog.firstIndex(where: same) {
+            progressLog[at] = ShownWorkout(dayKey: dayKey, questId: questId, evidence: evidence, meters: max(meters, progressLog[at].meters))
+            progressLog.indices.reversed().filter { $0 > at && same(progressLog[$0]) }.forEach { progressLog.remove(at: $0) }
+        } else {
+            progressLog.append(ShownWorkout(dayKey: dayKey, questId: questId, evidence: evidence, meters: meters))
+        }
+    }
+
+    /// Gives up the notes of runs that other rows used, then shows the sum of the runs that are left. When the sum
+    /// reaches the row's distance, the row is finished with the longest runs it needs, and the rest stay free.
+    /// A row with no note keeps what it shows.
+    mutating func settleRunRow(_ questId: String) {
+        guard let index = bundle.quests.firstIndex(where: { $0.id == questId }), bundle.quests[index].status != .completed,
+              let minimum = DistanceRule.minimumMeters(bundle.quests[index]) else { return }
+        let dayKey = bundle.dayKey
+        let used = evidenceLog.filter { $0.dayKey == dayKey && $0.questId != questId }.map(\.evidence)
+        let mine = { (entry: ShownWorkout) in entry.dayKey == dayKey && entry.questId == questId }
+        let before = progressLog.count
+        progressLog.removeAll { entry in mine(entry) && used.contains { Self.sameWorkout($0, entry.evidence) } }
+        let free = progressLog.filter(mine).sorted { ($0.meters, $0.evidence.externalId) > ($1.meters, $1.evidence.externalId) }
+        guard !free.isEmpty || progressLog.count < before else { return }
+        let total = free.reduce(0) { $0 + $1.meters }
+        if total + DistanceRule.toleranceMeters >= minimum {
+            var picked: [Evidence] = []
+            var sum = 0.0
+            for entry in free where sum + DistanceRule.toleranceMeters < minimum {
+                picked.append(entry.evidence)
+                sum += entry.meters
+            }
+            if finish(index, with: picked) { return }
+        }
+        bundle.quests[index].progress.current = min(DistanceRule.kilometers(total), bundle.quests[index].progress.target)
+    }
+
+    /// Finishes a row with several workouts. Each one is used, so no other row can count it.
+    private mutating func finish(_ index: Int, with evidences: [Evidence]) -> Bool {
+        let questId = bundle.quests[index].id
+        guard !evidences.isEmpty, evidences.allSatisfy({ rejection(for: $0, questId: questId) == nil }) else { return false }
+        for evidence in evidences {
+            if !bundle.quests[index].evidence.contains(where: { $0.payloadHash == evidence.payloadHash }) {
+                bundle.quests[index].evidence.append(evidence)
+            }
+            if !evidenceLog.contains(where: { $0.dayKey == bundle.dayKey && $0.questId == questId && $0.evidence.reuseKey == evidence.reuseKey }) {
+                evidenceLog.append(EvidenceUse(dayKey: bundle.dayKey, questId: questId, evidence: evidence))
+            }
+        }
+        progressLog.removeAll { $0.dayKey == bundle.dayKey && $0.questId == questId }
+        complete(at: index)
+        return true
     }
 
     /// One workout, by a shared recording or by its time: a second source gives the same run another id.
@@ -370,18 +426,9 @@ struct GameSnapshot: Codable, Equatable {
         case .progress(let current, let evidence):
             var quest = bundle.quests[index]
             let next = min(max(current, quest.progress.current), quest.progress.target)
-            // The row saw this workout, unused, at this length. One workout has one entry, whatever source named it.
-            if !evidence.workoutIds.isEmpty {
-                let entry = ShownWorkout(dayKey: bundle.dayKey, questId: questId, evidence: evidence, shown: min(current, quest.progress.target))
-                let same = { (other: ShownWorkout) in other.dayKey == entry.dayKey && other.questId == questId && Self.sameWorkout(other.evidence, evidence) }
-                // In place: the same data gives the same log, in the same order.
-                if let at = progressLog.firstIndex(where: same) {
-                    // Two sources measure one run differently. The run is as long as the longest reading of it.
-                    progressLog[at] = ShownWorkout(dayKey: entry.dayKey, questId: questId, evidence: evidence, shown: max(entry.shown, progressLog[at].shown))
-                    progressLog.indices.reversed().filter { $0 > at && same(progressLog[$0]) }.forEach { progressLog.remove(at: $0) }
-                } else {
-                    progressLog.append(entry)
-                }
+            // A run row counts this workout (`checkOpenRows` adds the runs of the day).
+            if !evidence.workoutIds.isEmpty, DistanceRule.minimumMeters(quest) != nil {
+                noteRun(evidence, meters: current * 1000, questId: questId)
             }
             guard next != quest.progress.current else { return .ignored }
             quest.progress.current = next

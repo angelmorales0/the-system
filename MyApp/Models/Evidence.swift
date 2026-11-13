@@ -53,12 +53,12 @@ struct EvidenceUse: Codable, Equatable {
     var evidence: Evidence
 }
 
-/// A workout that an open row showed as progress, with the amount it showed (km on a run row).
+/// A workout that an open run row can count: no row has used it. `meters` is its longest reading.
 struct ShownWorkout: Codable, Equatable {
     var dayKey: String
     var questId: String
     var evidence: Evidence
-    var shown: Double
+    var meters: Double
 }
 
 enum EvidenceHash {

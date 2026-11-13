@@ -187,7 +187,7 @@ enum PlanAndLockRules {
             if firstOpen(day) != nil { errors.append("one real 10K and one hand check should finish a no-gym day's runs, hand check first: \(handFirst)") }
         }
         // A 7 km run on a no-gym day whose own run is a 5K: the 5K takes the run, and the added 10K, which is
-        // checked first, shows none of it. A second, 3 km run that no row used does show there.
+        // checked first, shows none of it.
         var shortDay = noGym
         if let index = shortDay.bundle.quests.firstIndex(where: { TrainingDay.isRaceRun($0) && !$0.isNoGymRun }) {
             shortDay.bundle.quests[index].verification.params["minDistanceMeters"] = .number(5_000)
@@ -211,10 +211,12 @@ enum PlanAndLockRules {
             if one.bundle.quests[index].status != .completed || added(one) != 0 {
                 errors.append("a 7 km run that the day's 5K used should be no progress for the added 10K, got \(String(describing: added(one)))")
             }
+            // The runs of the day add together: 7 km and 3 km finish the added 10K, which is checked first.
+            // The day's 5K is open then, with its hand check.
             var two = shortDay
-            two.checkOpenRows(integrations: data([seven, three]), now: morning.addingTimeInterval(20_000), skipping: [.manualConfirm, .timerSession])
-            if two.bundle.quests[index].status != .completed || added(two) != 3 {
-                errors.append("a 3 km run that no row used should show on the added 10K, got \(String(describing: added(two)))")
+            for _ in 0..<2 { two.checkOpenRows(integrations: data([seven, three]), now: morning.addingTimeInterval(20_000), skipping: [.manualConfirm, .timerSession]) }
+            if two.bundle.quests.first(where: \.isNoGymRun)?.status != .completed || two.bundle.quests[index].status == .completed || two.bundle.quests[index].progress.current != 0 {
+                errors.append("7 km and 3 km should finish the added 10K and leave the day's 5K open, got \(two.bundle.quests.filter { $0.progress.unit == "km" }.map { "\($0.id) \($0.progress.current) \($0.status.rawValue)" })")
             }
         } else {
             errors.append("a no-gym day should hold the day's own run")
@@ -239,106 +241,113 @@ enum PlanAndLockRules {
         }
         let passSkips: Set<VerificationMethod> = [.manualConfirm, .timerSession]
 
-        // A penalty day with a 5K: the 7 km run shows through Apple Health first, on the Penalty 10K. Strava has it
-        // in a later pass and the 5K takes it. The penalty row then shows none of it, as in one pass.
+        // A penalty day: [Penalty 10K, the day's run]. The penalty row takes a run from any source, the day's run
+        // takes Strava's. `fiveKDay` has a 5K as the day's run.
         var owes = GameSnapshot.fresh(catalog: catalog, now: morning)
         owes.player.penaltyOpen = true
         owes.rebuildBundle(catalog: catalog, now: morning)
         if let index = owes.bundle.quests.firstIndex(where: { $0.kind == .daily && TrainingDay.isRaceRun($0) }),
            let penalty = PenaltyQuests.rows(in: owes.bundle).first {
-            var twoPass = owes
-            twoPass.bundle.quests[index].verification.params["minDistanceMeters"] = .number(5_000)
-            twoPass.bundle.quests[index].progress.target = 5
-            let inHealth = recorded("healthkit", "late-hk", meters: 7_000, after: 3_600), inStrava = recorded("strava", "late-strava", meters: 7_000, after: 3_620)
-            twoPass.checkOpenRows(integrations: dayData(strava: [], health: [inHealth]), now: passNow, skipping: passSkips)
-            let first = twoPass.bundle.quests.first { $0.id == penalty.id }?.progress.current
-            twoPass.checkOpenRows(integrations: dayData(strava: [inStrava], health: [inHealth]), now: passNow, skipping: passSkips)
-            if first != 7 || twoPass.bundle.quests[index].status != .completed || twoPass.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != 0 {
-                errors.append("a run that a row used in a later pass should leave the row that showed it, got \(String(describing: first)) then \(rowsText(twoPass))")
+            var fiveKDay = owes
+            fiveKDay.bundle.quests[index].verification.params["minDistanceMeters"] = .number(5_000)
+            fiveKDay.bundle.quests[index].progress.target = 5
+            func shows(_ snapshot: GameSnapshot) -> Double? { snapshot.bundle.quests.first { $0.id == penalty.id }?.progress.current }
+            func done(_ snapshot: GameSnapshot, _ id: String) -> Bool { snapshot.bundle.quests.first { $0.id == id }?.status == .completed }
+            let dayId = owes.bundle.quests[index].id
+            /// Runs each pass two times. The second time must change nothing: rows and the notes of runs.
+            func passes(_ snapshot: inout GameSnapshot, _ label: String, _ steps: [DayIntegrationSnapshot]) {
+                for step in steps {
+                    snapshot.checkOpenRows(integrations: step, now: passNow, skipping: passSkips)
+                    let once = snapshot
+                    snapshot.checkOpenRows(integrations: step, now: passNow, skipping: passSkips)
+                    if snapshot.bundle != once.bundle || snapshot.progressLog != once.progressLog || snapshot.evidenceLog != once.evidenceLog {
+                        errors.append("a second pass with the same data should change nothing (\(label)), got \(rowsText(once)) then \(rowsText(snapshot))")
+                    }
+                }
             }
-            // A 10 km run clears the penalty. The 7 km run that no row used shows on the day's 10K.
+
+            // The runs of the day add together. Two 5 km runs finish the Penalty 10K, and the day's 10K gets none
+            // of them: one run counts for one row.
+            var split = owes
+            passes(&split, "two 5 km", [dayData(strava: [recorded("strava", "split-a", meters: 5_020, after: 3_600), recorded("strava", "split-b", meters: 5_000, after: 14_400)])])
+            if split.player.penaltyOpen || !done(split, penalty.id) || done(split, dayId) || split.bundle.quests[index].progress.current != 0 {
+                errors.append("two 5 km runs should finish the Penalty 10K and leave the day's 10K at 0, got \(rowsText(split))")
+            }
+            // 5 km and 4.9 km are 9.9 km: under the 10 km less the 50 m of tolerance. Both open rows show 9.9.
+            var under = owes
+            passes(&under, "9.9 km", [dayData(strava: [recorded("strava", "under-a", meters: 5_000, after: 3_600), recorded("strava", "under-b", meters: 4_900, after: 14_400)])])
+            if done(under, penalty.id) || shows(under) != 9.9 || under.bundle.quests[index].progress.current != 9.9 {
+                errors.append("5 km and 4.9 km should show 9.9 km on both open 10K rows, got \(rowsText(under))")
+            }
+            // A third run of 6 km: the penalty row takes the 6 km and the 5 km (11 km), and the 4.9 km stays for the day's 10K.
+            passes(&under, "third run", [dayData(strava: [recorded("strava", "under-a", meters: 5_000, after: 3_600), recorded("strava", "under-b", meters: 4_900, after: 14_400),
+                                                          recorded("strava", "under-c", meters: 6_000, after: 25_200)])])
+            if !done(under, penalty.id) || done(under, dayId) || under.bundle.quests[index].progress.current != 4.9 {
+                errors.append("the penalty row should take the longest runs it needs and leave the rest, got \(rowsText(under))")
+            }
+            // One run of 10 km finishes the row alone. The 7 km run stays for the day's 10K.
             var both = owes
-            both.checkOpenRows(integrations: dayData(strava: [recorded("strava", "pen-10", meters: 10_020, after: 3_600), recorded("strava", "pen-7", meters: 7_000, after: 14_400)]),
-                               now: passNow, skipping: passSkips)
-            if both.player.penaltyOpen || both.bundle.quests[index].progress.current != 7 || both.bundle.quests[index].status == .completed {
-                errors.append("a shorter run that no row used should show on the day's 10K after the penalty took the long one, got \(rowsText(both))")
+            passes(&both, "10 and 7", [dayData(strava: [recorded("strava", "pen-10", meters: 10_020, after: 3_600), recorded("strava", "pen-7", meters: 7_000, after: 14_400)])])
+            if both.player.penaltyOpen || both.bundle.quests[index].progress.current != 7 || done(both, dayId) {
+                errors.append("a 10 km run should finish the penalty alone and leave the 7 km run for the day's 10K, got \(rowsText(both))")
             }
-            // Apple Health gives no workouts in a later pass (the phone is locked), and Strava holds another run
-            // that the 5K takes. The 7 km on the penalty row is from a run that no row used: it stays.
-            var locked = owes
-            locked.bundle.quests[index].verification.params["minDistanceMeters"] = .number(5_000)
-            locked.bundle.quests[index].progress.target = 5
-            locked.checkOpenRows(integrations: dayData(strava: [], health: [recorded("healthkit", "kept-hk", meters: 7_000, after: 3_600)]), now: passNow, skipping: passSkips)
-            locked.checkOpenRows(integrations: dayData(strava: [recorded("strava", "kept-strava", meters: 5_200, after: 14_400)]), now: passNow, skipping: passSkips)
-            if locked.bundle.quests[index].status != .completed || locked.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != 7 {
+            // Two recordings of one run, in Strava and in Apple Health, are one run: 5 km, not 10.
+            var copies = owes
+            passes(&copies, "two sources", [dayData(strava: [recorded("strava", "copy-s", meters: 5_020, after: 3_620)], health: [recorded("healthkit", "copy-h", meters: 5_000, after: 3_600)])])
+            if done(copies, penalty.id) || shows(copies) != 5 {
+                errors.append("one run in two sources should count one time, got \(rowsText(copies))")
+            }
+            // A short run, and a second run that starts as the first one ends, are two runs: 1 km and 9 km finish the row.
+            var restart = owes
+            let falseStart = WorkoutEvent(source: "strava", externalId: "restart-a", sport: "Run", start: morning.addingTimeInterval(3_600),
+                                          end: morning.addingTimeInterval(4_080), movingTimeSec: 480, distanceMeters: 1_000)
+            let realRun = WorkoutEvent(source: "strava", externalId: "restart-b", sport: "Run", start: morning.addingTimeInterval(4_140),
+                                       end: morning.addingTimeInterval(7_200), movingTimeSec: 3_000, distanceMeters: 9_000)
+            passes(&restart, "restart", [dayData(strava: [falseStart, realRun])])
+            if !done(restart, penalty.id) {
+                errors.append("a short run and a run that starts as it ends should both count, got \(rowsText(restart))")
+            }
+
+            // One run shows through Apple Health first (7.04 km), then through Strava alone (6.98 km). It is one run
+            // by its time, so the penalty row gives it up when the 5K takes it.
+            var twoSources = fiveKDay
+            passes(&twoSources, "health then strava", [dayData(strava: [], health: [recorded("healthkit", "src-hk", meters: 7_040, after: 3_600)])])
+            let first = shows(twoSources)
+            passes(&twoSources, "health then strava", [dayData(strava: [recorded("strava", "src-strava", meters: 6_980, after: 3_620)])])
+            if first != 7 || !done(twoSources, dayId) || shows(twoSources) != 0 {
+                errors.append("one run that two sources measure differently should leave the row that showed it, got \(String(describing: first)) then \(rowsText(twoSources))")
+            }
+            // Apple Health alone holds a 3 km run. A pass with no Health data (a locked phone) brings a 5.2 km Strava
+            // run that the 5K takes. The penalty row keeps the 3 km: a source that gives no workouts takes nothing away.
+            var locked = fiveKDay
+            passes(&locked, "locked phone", [dayData(strava: [], health: [recorded("healthkit", "kept-hk", meters: 3_000, after: 3_600)]),
+                                             dayData(strava: [recorded("strava", "kept-strava", meters: 5_200, after: 14_400)])])
+            if !done(locked, dayId) || shows(locked) != 3 {
                 errors.append("a pass whose source gives no workouts should take no progress away, got \(rowsText(locked))")
             }
-            // The two sources measure one run differently: Apple Health 7.04 km first, then Strava alone 6.98 km.
-            // It is one run by its time, so the penalty row gives it up when the 5K takes it.
-            var twoSources = owes
-            twoSources.bundle.quests[index].verification.params["minDistanceMeters"] = .number(5_000)
-            twoSources.bundle.quests[index].progress.target = 5
-            let fiveKDay = twoSources
-            twoSources.checkOpenRows(integrations: dayData(strava: [], health: [recorded("healthkit", "src-hk", meters: 7_040, after: 3_600)]), now: passNow, skipping: passSkips)
-            twoSources.checkOpenRows(integrations: dayData(strava: [recorded("strava", "src-strava", meters: 6_980, after: 3_620)]), now: passNow, skipping: passSkips)
-            if twoSources.bundle.quests[index].status != .completed || twoSources.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != 0 {
-                errors.append("one run that two sources measure differently should leave the row that showed it, got \(rowsText(twoSources))")
+            // The Health run and a later Strava run add up across passes, also when the pass lacks Health: 5.04 km
+            // and 5.02 km finish the penalty.
+            var across = fiveKDay
+            passes(&across, "across passes", [dayData(strava: [], health: [recorded("healthkit", "sum-hk", meters: 5_040, after: 3_600)]),
+                                              dayData(strava: [recorded("strava", "sum-strava", meters: 5_020, after: 14_400)])])
+            if across.player.penaltyOpen || done(across, dayId) {
+                errors.append("a Health run and a later Strava run should add up for the penalty, got \(rowsText(across))")
             }
-            // Two runs of the same length: Strava's finished the 5K, and Apple Health's alone shows on the penalty row.
-            // A pass with no Health data holds only the used run. The other run's progress stays.
-            var sameLength = fiveKDay
-            let usedRun = recorded("strava", "same-a", meters: 5_020, after: 3_600), freeRun = recorded("healthkit", "same-b", meters: 5_040, after: 14_400)
-            sameLength.checkOpenRows(integrations: dayData(strava: [usedRun]), now: passNow, skipping: passSkips)
-            sameLength.checkOpenRows(integrations: dayData(strava: [usedRun], health: [freeRun]), now: passNow, skipping: passSkips)
-            let withHealth = sameLength.bundle.quests.first { $0.id == penalty.id }?.progress.current
-            sameLength.checkOpenRows(integrations: dayData(strava: [usedRun]), now: passNow, skipping: passSkips)
-            if withHealth != 5 || sameLength.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != 5 {
-                errors.append("a used run of the same length should take no progress from the row that shows another run, got \(String(describing: withHealth)) then \(rowsText(sameLength))")
-            }
-            // The penalty row shows a run that only Apple Health holds. A pass with no Health data brings a new Strava
-            // run that the 5K takes in that same pass: of the same length, or longer. The Health run's progress stays.
-            for meters in [5_020.0, 7_000.0] {
-                var samePass = fiveKDay
-                samePass.checkOpenRows(integrations: dayData(strava: [], health: [freeRun]), now: passNow, skipping: passSkips)
-                samePass.checkOpenRows(integrations: dayData(strava: [recorded("strava", "pass-\(Int(meters))", meters: meters, after: 3_600)]), now: passNow, skipping: passSkips)
-                if samePass.bundle.quests[index].status != .completed || samePass.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != 5 {
-                    errors.append("a run of \(Int(meters)) m that the 5K takes in the pass that brings it should leave the unused run on the penalty row, got \(rowsText(samePass))")
-                }
-            }
-            // Two runs that only Apple Health holds show on the penalty row in two passes: the first one, then a
-            // second one that is longer or of the same length. A pass with no Health data brings the Strava copy of
-            // one of them and the 5K takes it. The penalty row goes back to the other run: no row used that one.
-            for (second, takes) in [(7_000.0, 2), (5_060.0, 1), (5_060.0, 2), (5_020.0, 1), (5_020.0, 2)] {
-                var older = fiveKDay
-                let first = recorded("healthkit", "old-1", meters: 5_040, after: 3_600), later = recorded("healthkit", "old-2", meters: second, after: 14_400)
-                older.checkOpenRows(integrations: dayData(strava: [], health: [first]), now: passNow, skipping: passSkips)
-                older.checkOpenRows(integrations: dayData(strava: [], health: [first, later]), now: passNow, skipping: passSkips)
-                let copy = takes == 1 ? recorded("strava", "old-copy", meters: 5_040, after: 3_620) : recorded("strava", "old-copy", meters: second, after: 14_420)
-                for _ in 0..<2 { older.checkOpenRows(integrations: dayData(strava: [copy]), now: passNow, skipping: passSkips) }
-                let expected = takes == 1 ? DistanceRule.kilometers(second) : 5.0
-                if older.bundle.quests[index].status != .completed || older.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != expected {
-                    errors.append("a row should go back to the older run that no row used (second run \(Int(second)) m, run \(takes) taken), got \(rowsText(older))")
-                }
-            }
-            // Two unused runs arrive in one pass, 7 km and 6 km. The row shows the 7 km. When the 5K takes that one
-            // in a pass with no Health data, the row shows the 6 km: it was never the longest, but the app read it.
+            // Two runs from Apple Health in one pass, 5.5 km and 3 km: the row shows 8.5. A pass with no Health data
+            // gives the Strava copy of the 5.5 km to the 5K. The row shows the 3 km, which no row used.
             var together = fiveKDay
-            together.checkOpenRows(integrations: dayData(strava: [], health: [recorded("healthkit", "pair-7", meters: 7_000, after: 3_600), recorded("healthkit", "pair-6", meters: 6_000, after: 14_400)]),
-                                   now: passNow, skipping: passSkips)
-            for _ in 0..<2 { together.checkOpenRows(integrations: dayData(strava: [recorded("strava", "pair-copy", meters: 7_000, after: 3_620)]), now: passNow, skipping: passSkips) }
-            let logOnce = together.progressLog
-            together.checkOpenRows(integrations: dayData(strava: [recorded("strava", "pair-copy", meters: 7_000, after: 3_620)]), now: passNow, skipping: passSkips)
-            if together.bundle.quests[index].status != .completed || together.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != 6 || together.progressLog != logOnce {
-                errors.append("a shorter unused run of the same pass should be what the row falls back to, got \(rowsText(together))")
+            passes(&together, "pair", [dayData(strava: [], health: [recorded("healthkit", "pair-5", meters: 5_500, after: 3_600), recorded("healthkit", "pair-3", meters: 3_000, after: 14_400)])])
+            let pair = shows(together)
+            passes(&together, "pair", [dayData(strava: [recorded("strava", "pair-copy", meters: 5_500, after: 3_620)])])
+            if pair != 8.5 || !done(together, dayId) || shows(together) != 3 {
+                errors.append("a row should keep the run that no row used when another row takes one, got \(String(describing: pair)) then \(rowsText(together))")
             }
-            // One run reads 5.02 km in Apple Health and 4.96 km in Strava. The row showed it as 5.0 km. A pass with
-            // Strava alone, in which the 5K takes another run, leaves the row at 5.0: the run is as long as its
-            // longest reading.
-            var readings = fiveKDay
-            readings.checkOpenRows(integrations: dayData(strava: [], health: [recorded("healthkit", "read-hk", meters: 5_020, after: 3_600)]), now: passNow, skipping: passSkips)
-            let stravaOnly = dayData(strava: [recorded("strava", "read-other", meters: 5_040, after: 14_400), recorded("strava", "read-strava", meters: 4_960, after: 3_620)])
-            for _ in 0..<2 { readings.checkOpenRows(integrations: stravaOnly, now: passNow, skipping: passSkips) }
-            if readings.bundle.quests[index].status != .completed || readings.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != 5 {
+            // One run reads 5.02 km in Apple Health and 4.96 km in Strava. A pass with Strava alone adds a 2 km run.
+            // The run is as long as its longest reading: 5.02 + 2 = 7.0 km, not 6.9.
+            var readings = owes
+            passes(&readings, "readings", [dayData(strava: [], health: [recorded("healthkit", "read-hk", meters: 5_020, after: 3_600)]),
+                                           dayData(strava: [recorded("strava", "read-other", meters: 2_000, after: 14_400), recorded("strava", "read-strava", meters: 4_960, after: 3_620)])])
+            if shows(readings) != 7 || readings.bundle.quests[index].progress.current != 6.9 {
                 errors.append("a run keeps its longest reading when another source measures it shorter, got \(rowsText(readings))")
             }
         } else {
