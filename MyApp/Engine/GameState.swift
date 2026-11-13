@@ -306,43 +306,47 @@ struct GameSnapshot: Codable, Equatable {
     /// has used (`progressLog`) goes back to the longest workout it saw that no row has used, or to zero.
     /// Every other row keeps what it shows: a source that gives no workouts now takes nothing away.
     mutating func checkOpenRows(integrations: DayIntegrationSnapshot, now: Date, skipping: Set<VerificationMethod>) {
-        func result(for quest: Quest) -> VerificationResult {
-            let context = verificationContext(for: quest, now: now, timerElapsed: nil, userConfirmed: false, integrations: integrations)
-            return VerifierRegistry.verifier(for: quest.verification.method).evaluate(quest: quest, context: context)
+        /// Measures one open row and applies the result. The verifier names only the longest unused workout.
+        /// The shorter unused ones are asked for too, one by one, so the log holds each workout the row can fall
+        /// back to when another row takes the longest.
+        func measure(_ quest: Quest) {
+            var context = verificationContext(for: quest, now: now, timerElapsed: nil, userConfirmed: false, integrations: integrations)
+            let verifier = VerifierRegistry.verifier(for: quest.verification.method)
+            var result = verifier.evaluate(quest: quest, context: context)
+            if case .completed = result {
+                _ = apply(result, questId: quest.id, now: now)
+                return
+            }
+            // One round for each workout of the day at most.
+            for _ in 0...integrations.workouts.count {
+                guard case .progress(_, let evidence) = result else { return }
+                _ = apply(result, questId: quest.id, now: now)
+                guard !evidence.workoutIds.isEmpty else { return }
+                context.claimedWorkoutIds.formUnion(evidence.workoutIds)
+                if let session = evidence.session { context.claimedSessions.append(session) }
+                result = verifier.evaluate(quest: quest, context: context)
+            }
         }
         // "No gym today" can go on before the day's data is read. With the data, a real 10 km run on the day's
         // run goes to the added 10K, as it does at the switch.
         giveRealRunToAddedRow(integrations: integrations)
         for quest in bundle.quests where quest.status != .completed && !skipping.contains(quest.verification.method) {
-            let result = result(for: quest)
-            switch result {
-            case .progress, .completed:
-                _ = apply(result, questId: quest.id, now: now)
-            case .unchanged, .incomplete, .failed:
-                break
-            }
+            measure(quest)
         }
         let dayKey = bundle.dayKey
         for index in bundle.quests.indices {
             let quest = bundle.quests[index]
             guard quest.status != .completed, !skipping.contains(quest.verification.method) else { continue }
             let used = evidenceLog.filter { $0.dayKey == dayKey && $0.questId != quest.id }.map(\.evidence)
-            let seen = progressLog.filter { $0.dayKey == dayKey && $0.questId == quest.id }
-            let left = seen.filter { mine in !used.contains { Self.sameWorkout($0, mine.evidence) } }
-            guard left.count < seen.count else { continue }
+            let mine = { (entry: ShownWorkout) in entry.dayKey == dayKey && entry.questId == quest.id }
+            let taken = { (entry: ShownWorkout) in used.contains { Self.sameWorkout($0, entry.evidence) } }
+            guard progressLog.contains(where: { mine($0) && taken($0) }) else { continue }
             // Another row used a workout this row saw. The row shows the longest one that is left. The data of
             // this pass can lack it (Apple Health on a locked phone), so it comes from the log, and the row is
             // then measured again for a longer one.
-            progressLog.removeAll { $0.dayKey == dayKey && $0.questId == quest.id }
-            progressLog.append(contentsOf: left)
-            bundle.quests[index].progress.current = min(left.map(\.shown).max() ?? 0, quest.progress.target)
-            let again = result(for: bundle.quests[index])
-            switch again {
-            case .progress, .completed:
-                _ = apply(again, questId: quest.id, now: now)
-            case .unchanged, .incomplete, .failed:
-                break
-            }
+            progressLog.removeAll { mine($0) && taken($0) }
+            bundle.quests[index].progress.current = min(progressLog.filter(mine).map(\.shown).max() ?? 0, quest.progress.target)
+            measure(bundle.quests[index])
         }
     }
 
@@ -368,8 +372,16 @@ struct GameSnapshot: Codable, Equatable {
             let next = min(max(current, quest.progress.current), quest.progress.target)
             // The row saw this workout, unused, at this length. One workout has one entry, whatever source named it.
             if !evidence.workoutIds.isEmpty {
-                progressLog.removeAll { $0.dayKey == bundle.dayKey && $0.questId == questId && Self.sameWorkout($0.evidence, evidence) }
-                progressLog.append(ShownWorkout(dayKey: bundle.dayKey, questId: questId, evidence: evidence, shown: min(current, quest.progress.target)))
+                let entry = ShownWorkout(dayKey: bundle.dayKey, questId: questId, evidence: evidence, shown: min(current, quest.progress.target))
+                let same = { (other: ShownWorkout) in other.dayKey == entry.dayKey && other.questId == questId && Self.sameWorkout(other.evidence, evidence) }
+                // In place: the same data gives the same log, in the same order.
+                if let at = progressLog.firstIndex(where: same) {
+                    // Two sources measure one run differently. The run is as long as the longest reading of it.
+                    progressLog[at] = ShownWorkout(dayKey: entry.dayKey, questId: questId, evidence: evidence, shown: max(entry.shown, progressLog[at].shown))
+                    progressLog.indices.reversed().filter { $0 > at && same(progressLog[$0]) }.forEach { progressLog.remove(at: $0) }
+                } else {
+                    progressLog.append(entry)
+                }
             }
             guard next != quest.progress.current else { return .ignored }
             quest.progress.current = next

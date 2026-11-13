@@ -308,7 +308,7 @@ enum PlanAndLockRules {
             // Two runs that only Apple Health holds show on the penalty row in two passes: the first one, then a
             // second one that is longer or of the same length. A pass with no Health data brings the Strava copy of
             // one of them and the 5K takes it. The penalty row goes back to the other run: no row used that one.
-            for (second, takes) in [(7_000.0, 2), (5_060.0, 1), (5_060.0, 2)] {
+            for (second, takes) in [(7_000.0, 2), (5_060.0, 1), (5_060.0, 2), (5_020.0, 1), (5_020.0, 2)] {
                 var older = fiveKDay
                 let first = recorded("healthkit", "old-1", meters: 5_040, after: 3_600), later = recorded("healthkit", "old-2", meters: second, after: 14_400)
                 older.checkOpenRows(integrations: dayData(strava: [], health: [first]), now: passNow, skipping: passSkips)
@@ -319,6 +319,27 @@ enum PlanAndLockRules {
                 if older.bundle.quests[index].status != .completed || older.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != expected {
                     errors.append("a row should go back to the older run that no row used (second run \(Int(second)) m, run \(takes) taken), got \(rowsText(older))")
                 }
+            }
+            // Two unused runs arrive in one pass, 7 km and 6 km. The row shows the 7 km. When the 5K takes that one
+            // in a pass with no Health data, the row shows the 6 km: it was never the longest, but the app read it.
+            var together = fiveKDay
+            together.checkOpenRows(integrations: dayData(strava: [], health: [recorded("healthkit", "pair-7", meters: 7_000, after: 3_600), recorded("healthkit", "pair-6", meters: 6_000, after: 14_400)]),
+                                   now: passNow, skipping: passSkips)
+            for _ in 0..<2 { together.checkOpenRows(integrations: dayData(strava: [recorded("strava", "pair-copy", meters: 7_000, after: 3_620)]), now: passNow, skipping: passSkips) }
+            let logOnce = together.progressLog
+            together.checkOpenRows(integrations: dayData(strava: [recorded("strava", "pair-copy", meters: 7_000, after: 3_620)]), now: passNow, skipping: passSkips)
+            if together.bundle.quests[index].status != .completed || together.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != 6 || together.progressLog != logOnce {
+                errors.append("a shorter unused run of the same pass should be what the row falls back to, got \(rowsText(together))")
+            }
+            // One run reads 5.02 km in Apple Health and 4.96 km in Strava. The row showed it as 5.0 km. A pass with
+            // Strava alone, in which the 5K takes another run, leaves the row at 5.0: the run is as long as its
+            // longest reading.
+            var readings = fiveKDay
+            readings.checkOpenRows(integrations: dayData(strava: [], health: [recorded("healthkit", "read-hk", meters: 5_020, after: 3_600)]), now: passNow, skipping: passSkips)
+            let stravaOnly = dayData(strava: [recorded("strava", "read-other", meters: 5_040, after: 14_400), recorded("strava", "read-strava", meters: 4_960, after: 3_620)])
+            for _ in 0..<2 { readings.checkOpenRows(integrations: stravaOnly, now: passNow, skipping: passSkips) }
+            if readings.bundle.quests[index].status != .completed || readings.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != 5 {
+                errors.append("a run keeps its longest reading when another source measures it shorter, got \(rowsText(readings))")
             }
         } else {
             errors.append("a penalty day should hold a penalty row and the day's run")
