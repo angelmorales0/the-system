@@ -57,9 +57,18 @@ enum HiddenQuests {
         return workouts.first { workout in ids.contains(workout.id) || workout.members.contains { ids.contains($0.id) } }
     }
 
+    /// A row that holds a run moved from a longer row ("No gym today" off) names that row's distance here.
+    static let baseParam = "beyondBaseMeters"
+
+    /// The distance the run is measured against: the row's own, or the longer row's that the run finished first.
+    static func baseMeters(_ quest: Quest) -> Double {
+        max(DistanceRule.minimumMeters(quest) ?? 0, quest.verification.params[baseParam]?.doubleValue ?? 0)
+    }
+
     /// Distance in km against the target in km, when the workout reached 150%.
     static func beyondTheLimit(quest: Quest, workout: CanonicalWorkout) -> (achieved: Double, required: Double)? {
-        guard let minimum = DistanceRule.minimumMeters(quest), minimum > 0, let meters = workout.distanceMeters else { return nil }
+        let minimum = baseMeters(quest)
+        guard DistanceRule.minimumMeters(quest) != nil, minimum > 0, let meters = workout.distanceMeters else { return nil }
         guard meters + DistanceRule.toleranceMeters >= minimum * factor else { return nil }
         return (DistanceRule.kilometers(meters), minimum / 1000)
     }

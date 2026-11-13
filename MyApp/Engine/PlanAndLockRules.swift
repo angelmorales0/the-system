@@ -103,6 +103,13 @@ enum PlanAndLockRules {
                                                        today: "2026-10-22", zone: QuestDay.timeZone)
         let cutShort = TrainingHistory.liftSummaries([pull(21, [16, 9, 9]), pull(18, [14, 8, 8]), pull(15, [12, 7, 7]), pull(14, [8, 8, 8, 8]), pull(1, [12])],
                                                      today: "2026-10-22", zone: QuestDay.timeZone)
+        // Volume days that fall inside the fatigue window, then two one-set days: the lift keeps the falling trend
+        // and its advice. The one-set days do not hide it.
+        let hidden = TrainingHistory.liftSummaries([pull(12, [12, 12, 12]), pull(9, [10, 10, 10]), pull(6, [8, 8, 8]), pull(3, [14]), pull(1, [10])],
+                                                   today: "2026-10-22", zone: QuestDay.timeZone)
+        if hidden.json["pull up"]?["trend"]?.stringValue != "dropping" || hidden.json["pull up"]?["advice"]?.stringValue?.contains("Deload") != true {
+            errors.append("a series that falls now should give the lift its trend when the newest session is left out, got \(hidden.json["pull up"]?["trend"]?.stringValue ?? "")")
+        }
         for (name, history) in [("usual", endedBlock), ("left out", cutShort)] {
             if TrainingHistory.fatigueSummary(history.json, recovery: [])["decliningLifts"]?.arrayValue?.isEmpty != true
                 || ["declining", "dropping"].contains(history.json["pull up"]?["trend"]?.stringValue ?? "") {
@@ -244,6 +251,16 @@ enum PlanAndLockRules {
             if both.player.penaltyOpen || both.bundle.quests[index].progress.current != 7 || both.bundle.quests[index].status == .completed {
                 errors.append("a shorter run that no row used should show on the day's 10K after the penalty took the long one, got \(rowsText(both))")
             }
+            // Apple Health gives no workouts in a later pass (the phone is locked), and Strava holds another run
+            // that the 5K takes. The 7 km on the penalty row is from a run that no row used: it stays.
+            var locked = owes
+            locked.bundle.quests[index].verification.params["minDistanceMeters"] = .number(5_000)
+            locked.bundle.quests[index].progress.target = 5
+            locked.checkOpenRows(integrations: dayData(strava: [], health: [recorded("healthkit", "kept-hk", meters: 7_000, after: 3_600)]), now: passNow, skipping: passSkips)
+            locked.checkOpenRows(integrations: dayData(strava: [recorded("strava", "kept-strava", meters: 5_200, after: 14_400)]), now: passNow, skipping: passSkips)
+            if locked.bundle.quests[index].status != .completed || locked.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != 7 {
+                errors.append("a pass whose source gives no workouts should take no progress away, got \(rowsText(locked))")
+            }
         } else {
             errors.append("a penalty day should hold a penalty row and the day's run")
         }
@@ -282,8 +299,62 @@ enum PlanAndLockRules {
                 }
                 if SoundCues.sounds(from: on, to: day).contains(.questComplete) { errors.append("no gym off should play no quest cue for a run that was done before") }
             }
+            // A 9.96 km run counts as 10 km. With no data at the switch nothing shows that, so the next pass with
+            // the data moves the run. Off gives the 5K back with the distance it showed, 9.9 km.
+            let near = dayData(strava: [recorded("strava", "five-near", meters: 9_960, after: 3_600)])
+            var late = fiveK
+            late.checkOpenRows(integrations: near, now: passNow, skipping: passSkips)
+            _ = late.checkHiddenQuests(integrations: near, now: passNow)
+            let nearDay = late
+            _ = late.setNoGym(true, catalog: catalog, now: passNow)
+            let atSwitch = status(late, addedId)
+            late.checkOpenRows(integrations: near, now: passNow, skipping: passSkips)
+            if atSwitch == .completed || status(late, addedId) != .completed || status(late, dayId) == .completed {
+                errors.append("a 9.96 km run on a 5K should go to the added 10K in the first pass that has the data, got \(rowsText(late))")
+            }
+            _ = late.setNoGym(false, catalog: catalog, now: passNow, integrations: near)
+            if late.bundle.quests[index].progress.current != nearDay.bundle.quests[index].progress.current || status(late, dayId) != .completed {
+                errors.append("no gym off should give the 5K its own distance back, got \(rowsText(late)) expected \(rowsText(nearDay))")
+            }
+            // A 12 km run on the added 10K is under that row's 15 km. Off moves it to the 5K: it is still measured
+            // against 10 km, so the switch pays no Beyond the Limit gold. On a gym day the same run on the 5K earns it.
+            let twelve = dayData(strava: [recorded("strava", "five-12", meters: 12_000, after: 3_600)])
+            var paid = fiveK
+            _ = paid.setNoGym(true, catalog: catalog, now: passNow, integrations: twelve)
+            paid.checkOpenRows(integrations: twelve, now: passNow, skipping: passSkips)
+            _ = paid.checkHiddenQuests(integrations: twelve, now: passNow)
+            let goldOn = paid.gold
+            _ = paid.setNoGym(false, catalog: catalog, now: passNow, integrations: twelve)
+            paid.checkOpenRows(integrations: twelve, now: passNow, skipping: passSkips)
+            _ = paid.checkHiddenQuests(integrations: twelve, now: passNow)
+            var direct = fiveK
+            direct.checkOpenRows(integrations: twelve, now: passNow, skipping: passSkips)
+            _ = direct.checkHiddenQuests(integrations: twelve, now: passNow)
+            if status(paid, dayId) != .completed || paid.beyondTheLimitToday != nil || paid.gold != goldOn || direct.beyondTheLimitToday == nil {
+                errors.append("no gym off should pay no Beyond the Limit gold for a 12 km run done on the added 10K, got \(rowsText(paid)) gold \(goldOn) -> \(paid.gold)")
+            }
         } else {
             errors.append("a fresh day should hold a run")
+        }
+
+        // The run is the last open row. "No gym today" on, a real 10K on the added row, then off: the run is the
+        // day's run and the day is complete. That plays the day cue, and no quest cue.
+        var lastRow = GameSnapshot.fresh(catalog: catalog, now: morning)
+        let proof = { (id: String) in Evidence.make(source: "plan_check", externalId: "plan:\(id)", payload: id, timestamp: morning) }
+        for quest in lastRow.bundle.quests where !TrainingDay.isRaceRun(quest) {
+            lastRow.apply(.completed(evidence: proof(quest.id)), questId: quest.id, now: morning)
+        }
+        _ = lastRow.setNoGym(true, catalog: catalog, now: morning)
+        if let addedRow = lastRow.bundle.quests.first(where: \.isNoGymRun) {
+            lastRow.apply(.completed(evidence: realRun("last-row")), questId: addedRow.id, now: morning)
+            let beforeOff = lastRow
+            _ = lastRow.setNoGym(false, catalog: catalog, now: morning)
+            let cues = SoundCues.sounds(from: beforeOff, to: lastRow)
+            if !beforeOff.missesRequiredSet || lastRow.missesRequiredSet || !cues.contains(.dayClear) || cues.contains(.questComplete) {
+                errors.append("no gym off that completes the day should play the day cue, got \(cues) misses \(beforeOff.missesRequiredSet) -> \(lastRow.missesRequiredSet)")
+            }
+        } else {
+            errors.append("a day with its lifts done should still get the added 10K")
         }
 
         // Pull-ups: a volume day whose reps fall off, and a session of one set, join no max-effort series.

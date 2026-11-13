@@ -133,7 +133,7 @@ extension GameSnapshot {
             generationAttemptDayKey = nil
         }
         noGymPlanDayKey = nil
-        giveAddedRunToDayRun()
+        giveAddedRunToDayRun(integrations: integrations)
         var fresh = self
         fresh.rebuildBundle(catalog: catalog, now: now)
         let dayKey = bundle.dayKey
@@ -158,7 +158,8 @@ extension GameSnapshot {
     /// there the run fills the added 10K, which is checked first. Without this, the day asked for a second real 10K.
     /// A hand check or a potion is no real run, so such a row stays as it is. A 10K row was finished by 10 km.
     /// A 5K row can hold a shorter run, so the row or the day's data must show that its run reached 10 km.
-    private mutating func giveRealRunToAddedRow(integrations: DayIntegrationSnapshot?) {
+    /// The switch can come before the day's data, so each pass that has the data does this too (`checkOpenRows`).
+    mutating func giveRealRunToAddedRow(integrations: DayIntegrationSnapshot?) {
         let addedId = NoGymDay.addedId(bundle.dayKey)
         guard let added = bundle.quests.firstIndex(where: { $0.id == addedId && $0.status != .completed }),
               let ran = bundle.quests.firstIndex(where: { quest in
@@ -166,30 +167,40 @@ extension GameSnapshot {
                         !quest.skippedWithPotion, !quest.evidence.isEmpty, quest.evidence.allSatisfy({ !$0.workoutIds.isEmpty }) else { return false }
                   return NoGymDay.isTenK(quest) || quest.progress.current >= 10 || NoGymDay.reachedTenK(quest.evidence, in: integrations)
               }) else { return }
-        moveFinish(from: ran, to: added)
+        moveFinish(from: ran, to: added, integrations: integrations)
     }
 
     /// The other direction, when the setting goes off: a real 10K on the added row is the day's run while that run
     /// is open. The day is then the gym day it was, with its run done, and the record of the day holds no added 10K.
-    private mutating func giveAddedRunToDayRun() {
+    private mutating func giveAddedRunToDayRun(integrations: DayIntegrationSnapshot?) {
         let addedId = NoGymDay.addedId(bundle.dayKey)
         guard let ran = bundle.quests.firstIndex(where: { $0.id == addedId && $0.status == .completed }),
               let open = bundle.quests.firstIndex(where: {
                   $0.kind == .daily && $0.id != addedId && TrainingDay.isRaceRun($0) && $0.status != .completed
               }) else { return }
-        moveFinish(from: ran, to: open)
+        moveFinish(from: ran, to: open, integrations: integrations)
         bundle.quests.remove(at: ran)
     }
 
     /// One row gives its finish to another: the evidence, the uses of that evidence, and the hidden quest the run
     /// unlocked go with it. The first row is open again, so the same run cannot fill it a second time.
-    private mutating func moveFinish(from: Int, to: Int) {
+    private mutating func moveFinish(from: Int, to: Int, integrations: DayIntegrationSnapshot?) {
         let oldId = bundle.quests[from].id, newId = bundle.quests[to].id, dayKey = bundle.dayKey
+        let target = bundle.quests[to].progress.target
         bundle.quests[to].status = .completed
-        // A finished run row can show its real distance, such as 15.2 km. It goes with the finish.
-        bundle.quests[to].progress.current = max(bundle.quests[to].progress.target, bundle.quests[from].progress.current)
+        // A finished run row can show its real distance, such as 15.2 km. It goes with the finish. The day's data
+        // gives it exactly: a 9.96 km run reads 10 on a 10K and 9.9 on a 5K.
+        bundle.quests[to].progress.current = max(target, bundle.quests[from].progress.current)
         bundle.quests[to].evidence = bundle.quests[from].evidence
         bundle.quests[to].skippedWithPotion = false
+        if let meters = HiddenQuests.completingWorkout(for: bundle.quests[to], in: integrations?.workouts ?? [])?.distanceMeters {
+            bundle.quests[to].progress.current = max(target, DistanceRule.kilometers(meters))
+        }
+        // Beyond the Limit measures a run against the row it finished. A run that finished a 10K stays measured
+        // against 10 km on a 5K row: the move pays for no run that did not earn it where it was done.
+        let fromBase = HiddenQuests.baseMeters(bundle.quests[from]), toMinimum = DistanceRule.minimumMeters(bundle.quests[to]) ?? 0
+        bundle.quests[to].verification.params[HiddenQuests.baseParam] = fromBase > toMinimum ? .number(fromBase) : nil
+        bundle.quests[from].verification.params[HiddenQuests.baseParam] = nil
         bundle.quests[from].status = .pending
         bundle.quests[from].progress.current = 0
         bundle.quests[from].evidence = []

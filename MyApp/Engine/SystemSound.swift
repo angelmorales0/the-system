@@ -121,14 +121,19 @@ enum SoundCues {
             // its evidence was on a finished row before.
             let finishedBefore = Set(old.bundle.quests.filter { $0.status == .completed }.flatMap { $0.evidence.map(\.payloadHash) })
             var completed = false
+            var finished = false
             var failed = false
             for quest in new.bundle.quests {
                 let was = before[quest.id]
                 let moved = !quest.evidence.isEmpty && quest.evidence.allSatisfy { finishedBefore.contains($0.payloadHash) }
-                if quest.status == .completed, was != .completed, !quest.skippedWithPotion, !moved { completed = true }
+                if quest.status == .completed, was != .completed, !quest.skippedWithPotion {
+                    finished = true
+                    if !moved { completed = true }
+                }
                 if quest.status == .failed, was != .failed { failed = true }
             }
-            if completed, old.missesRequiredSet, !new.missesRequiredSet {
+            // A moved run is no new quest, but it can be what makes the day complete: that cue still plays.
+            if finished, old.missesRequiredSet, !new.missesRequiredSet {
                 cues.append(.dayClear)
             } else if completed {
                 cues.append(.questComplete)

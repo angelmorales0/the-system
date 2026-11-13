@@ -297,32 +297,37 @@ struct GameSnapshot: Codable, Equatable {
     ///
     /// A row can show progress from a workout that a later row then uses: on a no-gym day the added 10K comes first,
     /// shows a 7 km run, and the day's 5K then takes that run. The run can also show in one pass, through one source,
-    /// and be used in a later pass. So after a pass in which a workout finished a row, each open distance row is
-    /// measured again from zero, and it shows only a workout that no row has used. A row whose source cannot be
-    /// read now keeps what it showed.
+    /// and be used in a later pass. So after the pass, an open distance row that shows the distance of a workout
+    /// another row has used is measured again from zero, and it shows only a workout that no row has used.
+    /// Every other row keeps what it shows: a source that gives no workouts now takes nothing away.
     mutating func checkOpenRows(integrations: DayIntegrationSnapshot, now: Date, skipping: Set<VerificationMethod>) {
-        func result(for quest: Quest) -> VerificationResult {
-            let context = verificationContext(for: quest, now: now, timerElapsed: nil, userConfirmed: false, integrations: integrations)
-            return VerifierRegistry.verifier(for: quest.verification.method).evaluate(quest: quest, context: context)
+        func context(for quest: Quest) -> VerificationContext {
+            verificationContext(for: quest, now: now, timerElapsed: nil, userConfirmed: false, integrations: integrations)
         }
-        var workoutUsed = false
+        func result(for quest: Quest) -> VerificationResult {
+            VerifierRegistry.verifier(for: quest.verification.method).evaluate(quest: quest, context: context(for: quest))
+        }
+        // "No gym today" can go on before the day's data is read. With the data, a real 10 km run on the day's
+        // run goes to the added 10K, as it does at the switch.
+        giveRealRunToAddedRow(integrations: integrations)
         for quest in bundle.quests where quest.status != .completed && !skipping.contains(quest.verification.method) {
             let result = result(for: quest)
             switch result {
-            case .progress:
+            case .progress, .completed:
                 _ = apply(result, questId: quest.id, now: now)
-            case .completed(let evidence):
-                if apply(result, questId: quest.id, now: now) == .completed, !evidence.workoutIds.isEmpty { workoutUsed = true }
             case .unchanged, .incomplete, .failed:
                 break
             }
         }
-        guard workoutUsed else { return }
         for index in bundle.quests.indices {
             let quest = bundle.quests[index]
             guard quest.status != .completed, !skipping.contains(quest.verification.method),
                   DistanceRule.minimumMeters(quest) != nil, quest.progress.current > 0 else { continue }
-            let shown = quest.progress.current
+            let shown = quest.progress.current, claims = context(for: quest)
+            let usedElsewhere = integrations.workouts.contains { workout in
+                claims.claims(workout) && min(DistanceRule.kilometers(workout.distanceMeters ?? 0), quest.progress.target) == shown
+            }
+            guard usedElsewhere else { continue }
             bundle.quests[index].progress.current = 0
             let again = result(for: bundle.quests[index])
             switch again {

@@ -227,10 +227,6 @@ enum TrainingHistory {
             let singles = list.filter { $0["kind"]?.stringValue == "reps single" }
             let leftOut = !singles.isEmpty && singles.count < list.count - singles.count
             let judged = leftOut ? list.filter { $0["kind"]?.stringValue != "reps single" } : list
-            // The trend of the lift is the trend of its newest session's series. A newest session that is left out
-            // has none, and an older series must not pass for today's.
-            let newestLeftOut = leftOut && list.first?["kind"]?.stringValue == "reps single"
-            for (key, value) in liftTrend(newestLeftOut ? [] : judged) { entry[key] = .string(value) }
             var byKind: [String: JSONValue] = [:]
             for kind in Set(judged.compactMap { $0["kind"]?.stringValue }) {
                 byKind[kind] = liftTrend(judged.filter { $0["kind"]?.stringValue == kind })["trend"].map(JSONValue.string)
@@ -238,11 +234,20 @@ enum TrainingHistory {
             entry["trendByKind"] = .object(byKind)
             // The series that fall now: their newest session is inside the fatigue window. An old heavy block that
             // ended in a decline is no fatigue today.
-            entry["fallingSeries"] = .array(byKind.keys.sorted().filter { kind in
+            let falling = byKind.keys.sorted().filter { kind in
                 guard ["declining", "dropping"].contains(byKind[kind]?.stringValue ?? "") else { return false }
                 let newest = list.first { $0["kind"]?.stringValue == kind }?["date"]?.stringValue ?? today
                 return OnDeviceTime.daysBetween(newest, today) <= fatigueWindowDays
-            }.map(JSONValue.string))
+            }
+            entry["fallingSeries"] = .array(falling.map(JSONValue.string))
+            // The trend of the lift is the trend of its newest session's series. A newest session that is left out
+            // has none. The lift then takes the trend and the advice of a series that falls now, and has no trend
+            // when none does: an older series that ended must not pass for today's.
+            var series = judged
+            if leftOut, list.first?["kind"]?.stringValue == "reps single" {
+                series = falling.first.map { kind in judged.filter { $0["kind"]?.stringValue == kind } } ?? []
+            }
+            for (key, value) in liftTrend(series) { entry[key] = .string(value) }
             lifts.entries[name] = entry
         }
         return lifts
