@@ -295,44 +295,42 @@ struct GameSnapshot: Codable, Equatable {
 
     /// The evidence checks on each open row of the bundle, in row order. Rows that use a method in `skipping` stay.
     ///
-    /// A row can show progress from a workout that a later row then uses in the same pass: on a no-gym day the
-    /// added 10K comes first, shows a 7 km run, and the day's 5K then takes that run. The first row gets its old
-    /// progress back and is checked again, so it shows only a workout that no row has used.
+    /// A row can show progress from a workout that a later row then uses: on a no-gym day the added 10K comes first,
+    /// shows a 7 km run, and the day's 5K then takes that run. The run can also show in one pass, through one source,
+    /// and be used in a later pass. So after a pass in which a workout finished a row, each open distance row is
+    /// measured again from zero, and it shows only a workout that no row has used. A row whose source cannot be
+    /// read now keeps what it showed.
     mutating func checkOpenRows(integrations: DayIntegrationSnapshot, now: Date, skipping: Set<VerificationMethod>) {
         func result(for quest: Quest) -> VerificationResult {
             let context = verificationContext(for: quest, now: now, timerElapsed: nil, userConfirmed: false, integrations: integrations)
             return VerifierRegistry.verifier(for: quest.verification.method).evaluate(quest: quest, context: context)
         }
-        var shown: [(questId: String, before: Double, evidence: Evidence)] = []
-        var completedOne = false
+        var workoutUsed = false
         for quest in bundle.quests where quest.status != .completed && !skipping.contains(quest.verification.method) {
             let result = result(for: quest)
             switch result {
-            case .progress(_, let evidence):
-                if apply(result, questId: quest.id, now: now) == .updated, !evidence.workoutIds.isEmpty {
-                    shown.append((quest.id, quest.progress.current, evidence))
-                }
-            case .completed:
-                if apply(result, questId: quest.id, now: now) == .completed { completedOne = true }
+            case .progress:
+                _ = apply(result, questId: quest.id, now: now)
+            case .completed(let evidence):
+                if apply(result, questId: quest.id, now: now) == .completed, !evidence.workoutIds.isEmpty { workoutUsed = true }
             case .unchanged, .incomplete, .failed:
                 break
             }
         }
-        guard completedOne else { return }
-        for entry in shown {
-            guard let index = bundle.quests.firstIndex(where: { $0.id == entry.questId }), bundle.quests[index].status != .completed else { continue }
-            let used = evidenceLog.filter { $0.dayKey == bundle.dayKey && $0.questId != entry.questId }
-            let taken = used.contains { !$0.evidence.workoutIds.isDisjoint(with: entry.evidence.workoutIds) }
-                || entry.evidence.session.map { mine in
-                    used.compactMap(\.evidence.session).contains { WorkoutDedupe.sameTime($0.start, $0.end, mine.start, mine.end) }
-                } ?? false
-            guard taken else { continue }
-            bundle.quests[index].progress.current = entry.before
+        guard workoutUsed else { return }
+        for index in bundle.quests.indices {
+            let quest = bundle.quests[index]
+            guard quest.status != .completed, !skipping.contains(quest.verification.method),
+                  DistanceRule.minimumMeters(quest) != nil, quest.progress.current > 0 else { continue }
+            let shown = quest.progress.current
+            bundle.quests[index].progress.current = 0
             let again = result(for: bundle.quests[index])
             switch again {
             case .progress, .completed:
-                _ = apply(again, questId: entry.questId, now: now)
-            case .unchanged, .incomplete, .failed:
+                _ = apply(again, questId: quest.id, now: now)
+            case .incomplete:
+                bundle.quests[index].progress.current = shown
+            case .unchanged, .failed:
                 break
             }
         }

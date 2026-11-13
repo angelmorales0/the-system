@@ -221,12 +221,16 @@ enum TrainingHistory {
             if values.count >= 2, let first = values.first, let oldest = values.last {
                 entry["e1rmChangeKg"] = .number(pyRound(first - oldest, 1))
             }
-            // One set alone shows no shape. Next to max days or volume days it is a session cut short, or a test:
-            // such sessions are not alike, so they make no series and get no trend. A lift that is always one set
-            // keeps its series.
-            let kinds = Set(list.compactMap { $0["kind"]?.stringValue })
-            let judged = kinds.contains("reps max") || kinds.contains("reps volume") ? list.filter { $0["kind"]?.stringValue != "reps single" } : list
-            for (key, value) in liftTrend(judged) { entry[key] = .string(value) }
+            // One set alone shows no shape. Among sessions of more sets it is a session cut short, or a test: such
+            // sessions are not alike, so they make no series and get no trend. When one set is the usual work of
+            // the lift (as many one-set sessions as others, or more), they are a series like any other.
+            let singles = list.filter { $0["kind"]?.stringValue == "reps single" }
+            let leftOut = !singles.isEmpty && singles.count < list.count - singles.count
+            let judged = leftOut ? list.filter { $0["kind"]?.stringValue != "reps single" } : list
+            // The trend of the lift is the trend of its newest session's series. A newest session that is left out
+            // has none, and an older series must not pass for today's.
+            let newestLeftOut = leftOut && list.first?["kind"]?.stringValue == "reps single"
+            for (key, value) in liftTrend(newestLeftOut ? [] : judged) { entry[key] = .string(value) }
             var byKind: [String: JSONValue] = [:]
             for kind in Set(judged.compactMap { $0["kind"]?.stringValue }) {
                 byKind[kind] = liftTrend(judged.filter { $0["kind"]?.stringValue == kind })["trend"].map(JSONValue.string)
@@ -252,8 +256,8 @@ enum TrainingHistory {
 
     /// The best set against the second best: on a max day the next set is a back-off, far under it. On a volume day
     /// the reps can fall off set by set, but the two best sets stay close. One set alone shows no shape: it is its
-    /// own kind, so a session cut short joins neither series. `liftSummaries` judges that kind only for a lift
-    /// that has no max days and no volume days.
+    /// own kind, so a session cut short joins neither series. `liftSummaries` judges that kind only when one set
+    /// is the usual work of the lift.
     static func repsKind(_ reps: [Int]) -> String {
         let counted = reps.filter { $0 > 0 }.sorted(by: >)
         guard counted.count >= 2 else { return "reps single" }
@@ -295,7 +299,9 @@ enum TrainingHistory {
     static func fatigueSummary(_ lifts: JSONValue, recovery: [JSONValue]) -> JSONValue {
         let falling = (lifts.objectValue ?? [:]).filter { _, entry in
             // Any series of the lift that is in use: the newest session can be the light day while the heavy days fall.
-            if entry["fallingSeries"]?.arrayValue?.isEmpty == false { return true }
+            // The series carry their own dates. An entry that has them is judged by them alone: its trend can be the
+            // trend of a series that ended before the lift's newest session.
+            if let series = entry["fallingSeries"]?.arrayValue { return !series.isEmpty }
             return ["declining", "dropping"].contains(entry["trend"]?.stringValue ?? "") && (entry["daysSinceLast"]?.doubleValue ?? 99) <= Double(fatigueWindowDays)
         }.keys.sorted()
         let hrv = recovery.compactMap { $0["hrv"]?.doubleValue }

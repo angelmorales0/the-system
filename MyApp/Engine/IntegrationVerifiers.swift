@@ -21,8 +21,10 @@ struct HealthKitWorkoutVerifier: Verifier {
             workout.members.contains { $0.source == "healthkit" } && IntegrationMatch.matchesActivity(workout, activity: activity)
         }
         let matches = candidates.filter { $0.movingTimeSec + 0.001 >= minimum && DistanceRule.meets($0, minDistance) }
-        if matches.isEmpty, minDistance != nil {
-            return DistanceRule.progress(candidates, quest: quest, context: context, source: "healthkit")
+        // Every run long enough is used by another row: a shorter run that no row used still shows as progress.
+        if minDistance != nil, matches.allSatisfy({ context.claims($0) }) {
+            let shown = DistanceRule.progress(candidates, quest: quest, context: context, source: "healthkit")
+            if shown != .unchanged || matches.isEmpty { return shown }
         }
         return workoutResult(matches, quest: quest, context: context, source: "healthkit")
     }
@@ -70,8 +72,10 @@ struct StravaActivityVerifier: Verifier {
         }
         let matches = candidates.filter { $0.movingTimeSec + 0.001 >= minimum && DistanceRule.meets($0, minDistance) }
         let source = candidates.contains { $0.members.contains { $0.source == "strava" } } || candidates.isEmpty ? "strava" : "healthkit"
-        if matches.isEmpty, minDistance != nil {
-            return DistanceRule.progress(candidates, quest: quest, context: context, source: source)
+        // Every run long enough is used by another row: a shorter run that no row used still shows as progress.
+        if minDistance != nil, matches.allSatisfy({ context.claims($0) }) {
+            let shown = DistanceRule.progress(candidates, quest: quest, context: context, source: source)
+            if shown != .unchanged || matches.isEmpty { return shown }
         }
         return workoutResult(matches, quest: quest, context: context, source: source)
     }

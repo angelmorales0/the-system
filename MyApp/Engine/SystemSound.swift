@@ -117,11 +117,15 @@ enum SoundCues {
         // A new day replaces the quests. Its own cue plays from `refreshForToday`.
         if old.bundle.dayKey == new.bundle.dayKey {
             let before = Dictionary(old.bundle.quests.map { ($0.id, $0.status) }, uniquingKeysWith: { first, _ in first })
+            // "No gym today" can move a finished run to another row. That row is done, but nothing was completed now:
+            // its evidence was on a finished row before.
+            let finishedBefore = Set(old.bundle.quests.filter { $0.status == .completed }.flatMap { $0.evidence.map(\.payloadHash) })
             var completed = false
             var failed = false
             for quest in new.bundle.quests {
                 let was = before[quest.id]
-                if quest.status == .completed, was != .completed, !quest.skippedWithPotion { completed = true }
+                let moved = !quest.evidence.isEmpty && quest.evidence.allSatisfy { finishedBefore.contains($0.payloadHash) }
+                if quest.status == .completed, was != .completed, !quest.skippedWithPotion, !moved { completed = true }
                 if quest.status == .failed, was != .failed { failed = true }
             }
             if completed, old.missesRequiredSet, !new.missesRequiredSet {

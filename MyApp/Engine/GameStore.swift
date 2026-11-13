@@ -243,7 +243,7 @@ final class GameStore: ObservableObject {
     func setNoGym(_ on: Bool, now: Date = .now) {
         guard !startedNewDay(now: now) else { return }
         var next = snapshot
-        let message = next.setNoGym(on, catalog: catalog, now: now)
+        let message = next.setNoGym(on, catalog: catalog, now: now, integrations: dayData)
         snapshot = next
         verificationNote = message
         clock = now

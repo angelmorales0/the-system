@@ -57,6 +57,19 @@ enum NoGymDay {
         return copy
     }
 
+    /// True when the day's data holds a run of 10 km that this evidence stands for.
+    static func reachedTenK(_ evidence: [Evidence], in data: DayIntegrationSnapshot?) -> Bool {
+        guard let data else { return false }
+        return data.workouts.contains { workout in
+            guard workout.sportFamily == .run, DistanceRule.meets(workout, TrainingDay.tenKMeters) else { return false }
+            let ids = Set(workout.members.map(\.id) + [workout.id])
+            return evidence.contains { use in
+                !use.workoutIds.isDisjoint(with: ids)
+                    || use.session.map { WorkoutDedupe.sameTime($0.start, $0.end, workout.start, workout.end) } ?? false
+            }
+        }
+    }
+
     static func isTenK(_ quest: Quest) -> Bool {
         TrainingDay.isRaceRun(quest) && quest.verification.params["minDistanceMeters"]?.doubleValue == TrainingDay.tenKMeters
     }
@@ -101,14 +114,15 @@ extension GameSnapshot {
     }
 
     /// Turns "No gym today" on or off for the current quest day.
-    mutating func setNoGym(_ on: Bool, catalog: FallbackCatalog, now: Date) -> String {
+    /// `integrations` is the day's data, when it is read: it shows how far the run on a 5K row went.
+    mutating func setNoGym(_ on: Bool, catalog: FallbackCatalog, now: Date, integrations: DayIntegrationSnapshot? = nil) -> String {
         guard bundle.mode == .performanceTraining else {
             return "Today is a Full Recovery day. There is no training to change."
         }
         if on {
             noGymDayKey = bundle.dayKey
             bundle = finished(bundle, catalog: catalog, now: now)
-            giveRealRunToAddedRow()
+            giveRealRunToAddedRow(integrations: integrations)
             return "No gym available. Strength quests are swapped for an added 10K. It does not count toward the 50 km window."
         }
         noGymDayKey = nil
@@ -139,41 +153,51 @@ extension GameSnapshot {
         return "Gym day again. Strength quests are back."
     }
 
-    /// A real 10K that the day's run took before the setting went on fills the added 10K, and the day's run is open
-    /// again with its hand check. That is the day the same work gives when the setting goes on first: there the run
-    /// fills the added 10K, which is checked first. Without this, the day asked for a second real 10K.
-    /// A hand check or a potion is no real run, so such a row stays as it is.
-    private mutating func giveRealRunToAddedRow() {
-        let dayKey = bundle.dayKey, addedId = NoGymDay.addedId(dayKey)
+    /// A real run of 10 km that the day's run took before the setting went on fills the added 10K, and the day's
+    /// run is open again with its hand check. That is the day the same work gives when the setting goes on first:
+    /// there the run fills the added 10K, which is checked first. Without this, the day asked for a second real 10K.
+    /// A hand check or a potion is no real run, so such a row stays as it is. A 10K row was finished by 10 km.
+    /// A 5K row can hold a shorter run, so the row or the day's data must show that its run reached 10 km.
+    private mutating func giveRealRunToAddedRow(integrations: DayIntegrationSnapshot?) {
+        let addedId = NoGymDay.addedId(bundle.dayKey)
         guard let added = bundle.quests.firstIndex(where: { $0.id == addedId && $0.status != .completed }),
               let ran = bundle.quests.firstIndex(where: { quest in
-                  quest.kind == .daily && quest.id != addedId && NoGymDay.isTenK(quest) && quest.status == .completed
-                      && !quest.skippedWithPotion && !quest.evidence.isEmpty && quest.evidence.allSatisfy { !$0.workoutIds.isEmpty }
+                  guard quest.kind == .daily, quest.id != addedId, TrainingDay.isRaceRun(quest), quest.status == .completed,
+                        !quest.skippedWithPotion, !quest.evidence.isEmpty, quest.evidence.allSatisfy({ !$0.workoutIds.isEmpty }) else { return false }
+                  return NoGymDay.isTenK(quest) || quest.progress.current >= 10 || NoGymDay.reachedTenK(quest.evidence, in: integrations)
               }) else { return }
-        let dayId = bundle.quests[ran].id
-        bundle.quests[added].id = dayId
-        bundle.quests[ran].id = addedId
-        moveEvidenceUses(from: dayId, to: addedId)
-        bundle = NoGymDay.addedRunFirst(bundle)
+        moveFinish(from: ran, to: added)
     }
 
     /// The other direction, when the setting goes off: a real 10K on the added row is the day's run while that run
     /// is open. The day is then the gym day it was, with its run done, and the record of the day holds no added 10K.
     private mutating func giveAddedRunToDayRun() {
-        let dayKey = bundle.dayKey, addedId = NoGymDay.addedId(dayKey)
+        let addedId = NoGymDay.addedId(bundle.dayKey)
         guard let ran = bundle.quests.firstIndex(where: { $0.id == addedId && $0.status == .completed }),
-              let open = bundle.quests.firstIndex(where: { $0.kind == .daily && $0.id != addedId && NoGymDay.isTenK($0) && $0.status != .completed }) else { return }
-        let dayId = bundle.quests[open].id
-        bundle.quests[ran].id = dayId
-        bundle.quests.remove(at: open)
-        moveEvidenceUses(from: addedId, to: dayId)
+              let open = bundle.quests.firstIndex(where: {
+                  $0.kind == .daily && $0.id != addedId && TrainingDay.isRaceRun($0) && $0.status != .completed
+              }) else { return }
+        moveFinish(from: ran, to: open)
+        bundle.quests.remove(at: ran)
     }
 
-    /// The evidence a row used goes with the row when it takes another id, so the same run cannot fill the row that
-    /// now has the old id.
-    private mutating func moveEvidenceUses(from oldId: String, to newId: String) {
-        for index in evidenceLog.indices where evidenceLog[index].dayKey == bundle.dayKey && evidenceLog[index].questId == oldId {
+    /// One row gives its finish to another: the evidence, the uses of that evidence, and the hidden quest the run
+    /// unlocked go with it. The first row is open again, so the same run cannot fill it a second time.
+    private mutating func moveFinish(from: Int, to: Int) {
+        let oldId = bundle.quests[from].id, newId = bundle.quests[to].id, dayKey = bundle.dayKey
+        bundle.quests[to].status = .completed
+        // A finished run row can show its real distance, such as 15.2 km. It goes with the finish.
+        bundle.quests[to].progress.current = max(bundle.quests[to].progress.target, bundle.quests[from].progress.current)
+        bundle.quests[to].evidence = bundle.quests[from].evidence
+        bundle.quests[to].skippedWithPotion = false
+        bundle.quests[from].status = .pending
+        bundle.quests[from].progress.current = 0
+        bundle.quests[from].evidence = []
+        for index in evidenceLog.indices where evidenceLog[index].dayKey == dayKey && evidenceLog[index].questId == oldId {
             evidenceLog[index].questId = newId
+        }
+        for index in hiddenUnlocks.indices where hiddenUnlocks[index].dayKey == dayKey && hiddenUnlocks[index].questId == oldId {
+            hiddenUnlocks[index].questId = newId
         }
     }
 }
