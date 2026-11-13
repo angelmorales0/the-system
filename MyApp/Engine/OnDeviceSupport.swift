@@ -225,8 +225,12 @@ enum OnDeviceTime {
     }
 
     /// The quest day that holds `date` in `zone`: before 5:00 it is still the day before.
+    /// The same rule as `QuestDay.key`: the local hour decides, so the two agree on the days the clocks change.
     static func questDayKey(_ date: Date, zone: TimeZone) -> String {
-        dayKey(date.addingTimeInterval(-Double(QuestDay.startHour) * 3_600), zone: zone)
+        let calendar = calendar(zone)
+        guard calendar.component(.hour, from: date) < QuestDay.startHour,
+              let dayBefore = calendar.date(byAdding: .day, value: -1, to: date) else { return dayKey(date, zone: zone) }
+        return dayKey(dayBefore, zone: zone)
     }
 
     /// "YYYY-MM-DD" of `date` in `zone`.

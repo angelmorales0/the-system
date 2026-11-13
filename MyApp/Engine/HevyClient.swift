@@ -156,13 +156,28 @@ enum HevyClient {
         if workout(.object(["title": .string("no start")])) != nil {
             errors.append("a Hevy workout without a start time should be skipped")
         }
-        if let (start, end) = OnDeviceTime.dayBounds("2026-10-02", zone: OnDeviceTime.losAngeles),
-           let inside = OnDeviceTime.parse("2026-10-02T14:00:00Z"), let after = OnDeviceTime.parse("2026-10-03T07:30:00Z") {
-            if !(inside >= start && inside < end) || (after >= start && after < end) {
-                errors.append("the Hevy day filter should follow local midnight")
+        // The day filter follows the quest day, 5:00 to 5:00: 00:30 on Oct 3 is still Oct 2, and 05:30 on Oct 3 is not.
+        if let (start, end) = OnDeviceTime.questDayBounds("2026-10-02", zone: OnDeviceTime.losAngeles),
+           let inside = OnDeviceTime.parse("2026-10-02T14:00:00Z"), let night = OnDeviceTime.parse("2026-10-03T07:30:00Z"),
+           let early = OnDeviceTime.parse("2026-10-02T11:30:00Z"), let after = OnDeviceTime.parse("2026-10-03T12:30:00Z") {
+            if !(inside >= start && inside < end) || !(night >= start && night < end) || (early >= start) || (after < end) {
+                errors.append("the Hevy day filter should follow the quest day, 5:00 to 5:00")
             }
         } else {
             errors.append("day bounds should parse")
+        }
+        // The history's quest day key and the app's agree at every hour, also on the days the clocks change.
+        if QuestDay.timeZone.identifier == OnDeviceTime.losAngeles.identifier {
+            for day in ["2026-10-05", "2026-11-01", "2027-03-14"] {
+                guard let midnight = OnDeviceTime.dayBounds(day, zone: OnDeviceTime.losAngeles)?.start else { continue }
+                for quarter in 0..<100 {
+                    let moment = midnight.addingTimeInterval(Double(quarter) * 900)
+                    if OnDeviceTime.questDayKey(moment, zone: OnDeviceTime.losAngeles) != QuestDay.key(for: moment) {
+                        errors.append("the quest day of \(OnDeviceTime.utcString(moment)) should be the same in the history and in the app")
+                        break
+                    }
+                }
+            }
         }
         if let (start, _) = OnDeviceTime.dayBounds("2026-10-02", zone: TimeZone(identifier: "America/New_York") ?? .current),
            OnDeviceTime.utcString(start) != "2026-10-02T04:00:00Z" {

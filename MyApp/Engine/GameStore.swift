@@ -586,7 +586,7 @@ final class GameStore: ObservableObject {
             var settled = LateSettle()
             if let endedData, next.endedDay?.bundle.dayKey == endedKey {
                 // A locked phone hides Apple Health: a read made then cannot say that Health holds no late work.
-                let healthRead = endedData.health.access != .notRequested && Self.protectedDataAvailable
+                let healthRead = Self.protectedDataAvailable
                 settled = next.settleEndedDay(integrations: endedData, mac: endedMac, healthRead: healthRead, catalog: self.catalog, now: now)
             }
             let rebuilt = next.applyWhoopReadiness(remote.whoop, catalog: self.catalog, now: now) || settled.rebuiltToday

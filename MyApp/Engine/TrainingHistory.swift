@@ -57,7 +57,8 @@ enum TrainingHistory {
         let zone = TimeZone(identifier: tz) ?? OnDeviceTime.losAngeles
         guard let today = OnDeviceTime.dayBounds(day, zone: zone)?.start,
               let start = OnDeviceTime.dayBounds(OnDeviceTime.addDays(day, -historyDays), zone: zone)?.start,
-              let end = OnDeviceTime.dayBounds(day, zone: zone)?.end else {
+              // To the end of the quest day, 5:00: a plan made after midnight still sees that night's runs.
+              let end = OnDeviceTime.questDayBounds(day, zone: zone)?.end else {
             return .object(["sources": .object(["error": .string("bad day")])])
         }
         _ = today
@@ -189,9 +190,7 @@ enum TrainingHistory {
                 // Heavy and light days of one lift, and weighted and bodyweight sessions, are different work.
                 // The trend compares a session only with earlier ones of its own kind.
                 let bestReps = sets.map { $0.reps ?? 0 }.max() ?? 0
-                // Bodyweight sessions with another set count are another job: pull-ups run 4 volume sets on one day and
-                // a max set with 2 back-off sets on another, and the best set of the volume day is no decline.
-                let kind = top.map { ($0.reps ?? 0) <= heavyRepsMax ? "heavy" : "light" } ?? (bestReps > 0 ? "reps x\(sets.count)" : "timed")
+                let kind = top.map { ($0.reps ?? 0) <= heavyRepsMax ? "heavy" : "light" } ?? (bestReps > 0 ? repsKind(sets.map { $0.reps ?? 0 }) : "timed")
                 sessions[name, default: []].append(.object([
                     "kind": .string(kind),
                     "date": .string(day),
@@ -238,6 +237,20 @@ enum TrainingHistory {
             lifts.entries[name] = entry
         }
         return lifts
+    }
+
+    /// A bodyweight session is one of two jobs. Pull-ups run even volume sets on one day and one max set with
+    /// back-off sets on another, and the volume day's best set is no decline from the max day's.
+    /// The shape tells them apart: a best set well above the others is a max day. The set count does not:
+    /// a deload day or a session cut short changes it.
+    static let maxSetShare = 1.3
+
+    static func repsKind(_ reps: [Int]) -> String {
+        let counted = reps.filter { $0 > 0 }.sorted()
+        guard counted.count >= 2, let best = counted.last else { return "reps max" }
+        let others = Array(counted.dropLast())
+        let median = Double(others[others.count / 2] + others[(others.count - 1) / 2]) / 2
+        return Double(best) >= maxSetShare * median ? "reps max" : "reps volume"
     }
 
     /// e1RM for weighted work, else reps in the best set, else seconds held.

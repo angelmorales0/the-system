@@ -242,6 +242,21 @@ enum QuestPlanner {
     static let lightSets = 3
     static let lightReps = 8
 
+    /// On a no-gym day with room for it, the plan holds the added 10K, and that row carries the app's id.
+    /// The id is how the app knows the run: the day's record then says "no gym", so later windows take its 10 km off,
+    /// and "No gym" off removes the row. A plan that names it `run_10k_2` would count those 10 km toward the window.
+    static func addedRunProblems(_ bundle: JSONValue, _ context: JSONValue) -> [String] {
+        guard context["constraints"]?["noGymToday"]?.boolValue == true, bundle["mode"]?.stringValue == "performance_training",
+              let planned = context["trainingHistory"]?["runWindow"]?["plannedKmToday"]?.intValue,
+              let day = context["player"]?["localDate"]?.stringValue else { return [] }
+        let addedId = NoGymDay.addedId(day)
+        let added = (bundle["quests"]?.arrayValue ?? []).filter { $0["id"]?.stringValue == addedId }
+        if planned + TrainingHistory.noGymAddedKm <= TrainingHistory.maxRunKmPerDay {
+            return added.count == 1 && TrainingHistory.isTenK(added[0]) ? [] : ["on a no-gym day the added 10K Run must have the id \(addedId)"]
+        }
+        return added.isEmpty ? [] : ["today holds no added 10K, so no quest may have the id \(addedId)"]
+    }
+
     static func deloadDay(_ context: JSONValue) -> Bool {
         context["trainingHistory"]?["fatigue"]?["deloadRecommended"]?.boolValue == true
     }
@@ -580,6 +595,7 @@ enum QuestPlanner {
             texts += (TrainingHistory.params(quest)?.objectValue ?? [:]).values.compactMap(\.stringValue)
         }
         problems += TrainingHistory.limitProblems(bundle, context["trainingHistory"], noGym: context["constraints"]?["noGymToday"]?.boolValue == true)
+        problems += addedRunProblems(bundle, context)
         problems += splitProblems(bundle, context)
         problems += unloggedWeightProblems(bundle, context)
         let haystack = texts.joined(separator: "\n").lowercased()

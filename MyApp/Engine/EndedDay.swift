@@ -13,7 +13,7 @@ import Foundation
 /// the day is a miss, its gold is taken back, and the penalty opens.
 struct EndedDay: Codable, Equatable {
     var bundle: QuestBundle
-    /// The open penalty has a cause other than this day's miss: it was open before, or a missed month opened it.
+    /// The open penalty has a cause other than this day's miss: it was open before the day ended.
     var owesOtherPenalty: Bool
     /// Reads so far. A service can be down, so the day is read again, at most `maxReads` times.
     var reads = 0
@@ -216,12 +216,14 @@ extension GameSnapshot {
         }
 
         ended.bundle = past.bundle
-        ended.reads += 1
         // A service that is set but did not answer may still hold the missing work.
-        let everySourceRead = (!integrations.strava.configured || integrations.strava.available)
+        let everyServiceRead = (!integrations.strava.configured || integrations.strava.available)
             && (!integrations.hevy.configured || integrations.hevy.available)
             && (!integrations.whoop.configured || integrations.whoop.available)
-            && healthRead
+        let everySourceRead = everyServiceRead && healthRead
+        // A read that only lacked Apple Health (a locked phone) is no real read: it does not use up the limit,
+        // so the day still gets one read with Health open.
+        if healthRead || !everyServiceRead { ended.reads += 1 }
         let waitsForWork = stillMissed && !everySourceRead
         let waitsForMacs = mac.trackerSet && !mac.answered
         endedDay = (waitsForWork || waitsForMacs) && ended.reads < EndedDay.maxReads ? ended : nil
@@ -361,7 +363,10 @@ enum EndedDayRules {
         finish(&month) { $0.kind != .penalty && !TrainingDay.isRaceRun($0) && $0.id != ScreenTime.questId }
         month.refreshIfNeeded(catalog: catalog, now: dayTwo)
         _ = month.settleEndedDay(integrations: data(stravaUp: false), catalog: catalog, now: dayTwo)
-        month.endedDay?.monthPenalty = true
+        let failedMonth = MonthlyQuestRow(id: MonthlyQuests.budgetId, title: "Monthly budget", progress: "[$1,300/$1,000]", status: .failed, share: 1)
+        month.applyMonthlyPenalty(board: MonthlyBoard(monthName: "October", rows: [], lastMonth: "2026-09", lastMonthName: "September", lastRows: [failedMonth]),
+                                  catalog: catalog, now: dayTwo)
+        if month.endedDay?.monthPenalty != true { errors.append("a missed month should mark the day that still waits") }
         let secondRun = WorkoutEvent(source: "strava", externalId: "late-run-2", sport: "Run", start: dayOne.addingTimeInterval(30_000),
                                      end: dayOne.addingTimeInterval(33_300), movingTimeSec: 3_300, distanceMeters: 10_020)
         let afterMonth = month.settleEndedDay(integrations: data(strava: [run, secondRun]), catalog: catalog, now: dayTwo)

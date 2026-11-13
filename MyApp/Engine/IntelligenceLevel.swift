@@ -261,7 +261,9 @@ enum LastGoodReadings {
             defaults.removeObject(forKey: key + ".account")
             return live
         }
-        guard defaults.string(forKey: key + ".account") == owner, let data = defaults.data(forKey: key),
+        // A reading saved before the account was kept has no owner on record. It is used, as it was then.
+        let savedOwner = defaults.string(forKey: key + ".account")
+        guard savedOwner == nil || savedOwner == owner, let data = defaults.data(forKey: key),
               let saved = try? JSONDecoder().decode(Reading.self, from: data) else { return live }
         return saved
     }
