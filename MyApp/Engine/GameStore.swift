@@ -129,6 +129,16 @@ final class GameStore: ObservableObject {
             snapshot.player.fullRecoveryBank += grant
             persist()
         }
+        // Launch with `-clearPenalty 1` to end an open penalty without spending a token: the flag closes, the open
+        // penalty rows go, and the lock lifts. The option lasts one launch; a later miss opens a penalty as usual.
+        if persistence == .standard, UserDefaults.standard.bool(forKey: "clearPenalty"), snapshot.player.penaltyOpen {
+            snapshot.player.penaltyOpen = false
+            snapshot.bundle.quests.removeAll { $0.kind == .penalty && $0.status != .completed }
+            verificationNote = "Penalty cleared from the launch option. No token was spent."
+            print("[clearPenalty] Penalty cleared. Tokens: \(snapshot.player.fullRecoveryBank)")
+            persist()
+            enforcePenalty()
+        }
         #endif
         if persistence == .standard {
             EmergencyCleanup.run()
