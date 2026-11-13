@@ -159,7 +159,9 @@ extension GameSnapshot {
     /// Base price, then +50% for each use of the same potion in the last 30 days.
     func potionPrice(_ potion: Potion) -> Int {
         let base = Double(potion.basePrice)
-        let repeats = uses(of: potion, sinceDaysAgo: Potion.repeatWindowDays).count
+        // One day more than the window: a use exactly 30 days ago still counts. The longest cooldown is 30 days too,
+        // so without it the first day a potion is free again would never be a repeat.
+        let repeats = uses(of: potion, sinceDaysAgo: Potion.repeatWindowDays + 1).count
         let price = base * pow(1.5, Double(repeats))
         return Int((price / 10).rounded()) * 10
     }
@@ -167,7 +169,8 @@ extension GameSnapshot {
     /// Open daily quests the potion would clear today.
     func potionTargets(_ potion: Potion) -> [Quest] {
         guard bundle.mode != .fullRecovery else { return [] }
-        return bundle.quests.filter { $0.kind == .daily && $0.stat == potion.stat && $0.status != .completed }
+        // The 10K that "No gym today" added stands for the lifts. The run potion skips the day's run, not that one.
+        return bundle.quests.filter { $0.kind == .daily && $0.stat == potion.stat && $0.status != .completed && !$0.isNoGymRun }
     }
 
     /// Why the potion cannot be used now, or nil when it can.

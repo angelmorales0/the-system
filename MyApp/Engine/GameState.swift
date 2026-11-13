@@ -275,7 +275,9 @@ struct GameSnapshot: Codable, Equatable {
             userConfirmed: userConfirmed,
             integrations: integrations,
             claimedWorkoutIds: others.reduce(into: Set<String>()) { $0.formUnion($1.evidence.workoutIds) },
-            claimedSessions: others.compactMap(\.evidence.session)
+            claimedSessions: others.compactMap(\.evidence.session),
+            otherExercises: Set(bundle.quests.filter { $0.id != quest.id && $0.verification.method == .hevySets && $0.id != DailyStretch.questId }
+                .map { StrengthLevel.normalizedName($0.verification.params["exercise"]?.stringValue ?? $0.title) })
         )
     }
 
@@ -408,7 +410,10 @@ struct GameSnapshot: Codable, Equatable {
     func loggedRunKm(before dayKey: String) -> Double {
         let keys = Set((1..<ModePicker.restEveryDays).map { QuestDay.key(byAddingDays: -$0, to: dayKey) })
         return questHistory.filter { keys.contains($0.dayKey) }.reduce(0) { total, day in
-            let km = day.quests.filter { $0.unit == "km" }.reduce(0) { $0 + $1.done }
+            // Finished run rows count in full. Open rows all show the same unfinished run, so it counts one time.
+            let runs = day.quests.filter { $0.unit == "km" }
+            let km = runs.filter { $0.status == .completed }.reduce(0) { $0 + $1.done }
+                + (runs.filter { $0.status != .completed }.map(\.done).max() ?? 0)
             return total + (day.noGym ? max(0, km - Double(TrainingHistory.noGymAddedKm)) : km)
         }
     }
@@ -419,9 +424,16 @@ struct GameSnapshot: Codable, Equatable {
         return ModePicker.trainingBand(readiness: today?.band ?? .green, sleepPerformance: today?.sleepPerformance)
     }
 
+    /// Where a save that could not be read is kept, so a new game does not write over the only copy.
+    static let unreadableKey = storageKey + ".unreadable"
+
     static func loadFromUserDefaults() -> GameSnapshot? {
         guard let data = UserDefaults.standard.data(forKey: storageKey) else { return nil }
-        return try? decoded(data)
+        if let snapshot = try? decoded(data) { return snapshot }
+        // The save exists but does not decode. The caller starts a new game and saves it under the same key,
+        // so keep these bytes: tokens, gold, and history can then be recovered by hand.
+        UserDefaults.standard.set(data, forKey: unreadableKey)
+        return nil
     }
 
     func saveToUserDefaults() {
@@ -572,7 +584,9 @@ struct GameSnapshot: Codable, Equatable {
         quest.status = .completed
         quest.progress.current = quest.progress.target
         bundle.quests[index] = quest
-        liftPenaltyIfCleared()
+        // Only the penalty run closes a penalty. On a rest day the bundle can hold just an old finished penalty row
+        // while a new penalty waits; another row that completes must not close that one.
+        if quest.kind == .penalty { liftPenaltyIfCleared() }
     }
 
     /// Every penalty row is done. The penalty closes.
@@ -621,7 +635,7 @@ extension GameSnapshot {
         monthlyPenaltyMonth = try container.decodeIfPresent(String.self, forKey: .monthlyPenaltyMonth)
         fullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .fullRecoveryDayKey)
         queuedFullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .queuedFullRecoveryDayKey)
-        hiddenUnlocks = try container.decodeIfPresent([HiddenQuestUnlock].self, forKey: .hiddenUnlocks) ?? []
+        hiddenUnlocks = try container.decodeIfPresent(LossyArray<HiddenQuestUnlock>.self, forKey: .hiddenUnlocks)?.elements ?? []
         noGymDayKey = try container.decodeIfPresent(String.self, forKey: .noGymDayKey)
         noGymPlanDayKey = try container.decodeIfPresent(String.self, forKey: .noGymPlanDayKey)
         plannerRestDayKey = try container.decodeIfPresent(String.self, forKey: .plannerRestDayKey)
@@ -629,11 +643,11 @@ extension GameSnapshot {
         restDayKeys = try container.decodeIfPresent([String].self, forKey: .restDayKeys) ?? []
         generationAttemptDayKey = try container.decodeIfPresent(String.self, forKey: .generationAttemptDayKey)
         generatedBundle = try container.decodeIfPresent(QuestBundle.self, forKey: .generatedBundle)
-        questHistory = try container.decodeIfPresent([QuestDayRecord].self, forKey: .questHistory) ?? []
+        questHistory = try container.decodeIfPresent(LossyArray<QuestDayRecord>.self, forKey: .questHistory)?.elements ?? []
         screenTime = try container.decodeIfPresent(ScreenTimeDay.self, forKey: .screenTime)
         stretchChecks = try container.decodeIfPresent(StretchChecks.self, forKey: .stretchChecks)
         gold = try container.decodeIfPresent(Int.self, forKey: .gold) ?? 0
-        potionLog = try container.decodeIfPresent([PotionUse].self, forKey: .potionLog) ?? []
+        potionLog = try container.decodeIfPresent(LossyArray<PotionUse>.self, forKey: .potionLog)?.elements ?? []
         lastGoldReward = try container.decodeIfPresent(GoldReward.self, forKey: .lastGoldReward)
         hitPoints = try container.decodeIfPresent(HitPointState.self, forKey: .hitPoints)
         fatigue = try container.decodeIfPresent(FatigueState.self, forKey: .fatigue)
@@ -718,5 +732,23 @@ enum RebuiltRowRules {
             errors.append("the record should keep yesterday's real screen minutes")
         }
         return errors
+    }
+}
+
+/// An array that drops the elements it cannot decode. One history row from a newer or an older build (a quest kind,
+/// a stat, or a potion that no longer exists) then costs that row, not the whole save.
+struct LossyArray<Element: Decodable>: Decodable {
+    var elements: [Element] = []
+
+    init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        while !container.isAtEnd {
+            if let element = try? container.decode(Element.self) {
+                elements.append(element)
+            } else if (try? container.decode(JSONValue.self)) == nil {
+                // The element cannot even be passed over: stop here and keep what was read.
+                break
+            }
+        }
     }
 }

@@ -118,6 +118,75 @@ enum PlanAndLockRules {
             errors.append("the template should keep every Deadlift Day lift next to its 10K, got \(deadPlan)")
         }
 
+        // "No gym today": the added 10K stands for the lifts, so it takes no hand check and the run potion leaves it.
+        var noGym = GameSnapshot.fresh(catalog: catalog, now: morning)
+        _ = noGym.setNoGym(true, catalog: catalog, now: morning)
+        let runRows = noGym.bundle.quests.filter { TrainingDay.isRaceRun($0) }
+        if runRows.filter(\.allowsCheckOff).count != 1 || runRows.first(where: \.isNoGymRun)?.allowsCheckOff != false
+            || noGym.potionTargets(.secondWind).contains(where: \.isNoGymRun) || noGym.potionTargets(.secondWind).count != 1 {
+            errors.append("the added 10K of a no-gym day should take no hand check and no run potion")
+        }
+
+        // A rest day keeps a finished penalty row. A new penalty that waits there is not closed by another row.
+        var waits = GameSnapshot.fresh(catalog: catalog, now: morning)
+        waits.player.penaltyOpen = true
+        waits.rebuildBundle(catalog: catalog, now: morning)
+        if let row = PenaltyQuests.rows(in: waits.bundle).first {
+            waits.apply(.completed(evidence: Evidence.make(source: "plan_check", externalId: "plan:served", payload: "served", timestamp: morning)), questId: row.id, now: morning)
+        }
+        _ = waits.spendFullRecovery(catalog: catalog, now: morning)
+        waits.player.penaltyOpen = true
+        if let stretch = waits.bundle.quests.first(where: { $0.id == DailyStretch.questId }) {
+            waits.apply(.completed(evidence: Evidence.make(source: "plan_check", externalId: "plan:stretch", payload: "stretch", timestamp: morning)), questId: stretch.id, now: morning)
+        }
+        waits.refreshIfNeeded(catalog: catalog, now: morning.addingTimeInterval(86_400))
+        if !waits.player.penaltyOpen || PenaltyQuests.rows(in: waits.bundle).filter({ $0.status != .completed }).count != 1 {
+            errors.append("a penalty that waits on a rest day should come back the next day, whatever row completes there")
+        }
+
+        // The Hevy check and the custom goals use one name rule, and a stand-in with its own row counts there only.
+        func hevyData(_ title: String, sets: Int) -> DayIntegrationSnapshot {
+            var data = DayIntegrationSnapshot.empty(dayKey: "2026-10-22")
+            let done = Array(repeating: HevySet(type: "normal", reps: 10, weightKg: 40, rpe: nil, durationSec: nil), count: sets)
+            data.hevy = HevyDayReading(available: true, configured: true, reason: "", dayKey: "2026-10-22",
+                                       workouts: [HevyWorkout(id: "plan-hevy", title: "Gym", start: morning, end: morning.addingTimeInterval(3_600),
+                                                              exercises: [HevyExercise(title: title, templateId: nil, sets: done)])])
+            return data
+        }
+        func lift(_ exercise: String, sets: Int) -> Quest {
+            Quest(id: "q_2026-10-22_\(exercise.lowercased())", title: exercise, kind: .daily, stat: .STR,
+                  verification: VerificationSpec(method: .hevySets, params: ["exercise": .string(exercise), "sets": .number(Double(sets)), "minReps": .number(8)]),
+                  deadline: morning, difficulty: .normal, mode: .performanceTraining, progress: QuestProgress(current: 0, target: Double(sets), unit: "sets"), status: .pending)
+        }
+        func completes(_ quest: Quest, _ data: DayIntegrationSnapshot, others: Set<String> = []) -> Bool {
+            let context = VerificationContext(now: morning, dayKey: "2026-10-22", assignedAt: morning, manualConfirmsToday: 0, claimedKeys: [],
+                                              timerElapsedSec: nil, userConfirmed: false, integrations: data, otherExercises: others)
+            if case .completed = HevySetsVerifier().evaluate(quest: quest, context: context) { return true }
+            return false
+        }
+        if !completes(lift("Hip-Thrust", sets: 3), hevyData("Hip Thrust (Barbell)", sets: 3)) {
+            errors.append("a goal typed as Hip-Thrust should complete from Hevy's Hip Thrust (Barbell)")
+        }
+        if !completes(lift("Bicep Curl", sets: 4), hevyData("Hammer Curl (Dumbbell)", sets: 4))
+            || completes(lift("Bicep Curl", sets: 4), hevyData("Hammer Curl (Dumbbell)", sets: 4), others: ["hammer curl"]) {
+            errors.append("a stand-in should count for the lift, but not when it has its own row today")
+        }
+
+        // The repeat price holds on the first day a 30-day potion is free again.
+        var shop = GameSnapshot.fresh(catalog: catalog, now: morning)
+        shop.gold = 1_000_000
+        _ = shop.usePotion(.gildedIndulgence)
+        shop.bundle.dayKey = QuestDay.key(byAddingDays: Potion.repeatWindowDays, to: shop.bundle.dayKey)
+        if shop.potionBlocker(.gildedIndulgence) != nil || shop.potionPrice(.gildedIndulgence) != Potion.gildedIndulgence.basePrice * 3 / 2 {
+            errors.append("a second Gilded Indulgence on the first free day should cost 150%, got \(shop.potionPrice(.gildedIndulgence))")
+        }
+
+        // One history row that cannot be read costs that row, not the save.
+        let savedUses = Data(#"[{"dayKey":"2026-10-01","potion":"ironblood"},{"dayKey":"2026-10-02","potion":"a potion that was removed"},{"dayKey":"2026-10-03","potion":"nightfall"}]"#.utf8)
+        if (try? JSONDecoder().decode(LossyArray<PotionUse>.self, from: savedUses))?.elements.map(\.dayKey) != ["2026-10-01", "2026-10-03"] {
+            errors.append("a list should drop only the elements it cannot read")
+        }
+
         // The strict STR targets take no assisted set, and a nap is not the night's sleep.
         if !StrengthLevel.isAssisted("Pull Up (Assisted)") || !StrengthLevel.isAssisted("Chest Dip (Band)") || StrengthLevel.isAssisted("Pull Up (Weighted)") {
             errors.append("assisted and band sets should not count for a strict STR target")

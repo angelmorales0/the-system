@@ -313,7 +313,8 @@ enum GymSplit {
         }
         let slug = exercise.exercise.lowercased().replacingOccurrences(of: " ", with: "_")
         return Quest(
-            id: "q_\(dayKey)_\(slug)\(exercise.role == .light ? "_light" : "")",
+            // A goal's row has its own ending: a goal named "Squat Light" would else share the light squat's id.
+            id: "q_\(dayKey)_\(slug)\(exercise.role == .light ? "_light" : "")\(exercise.custom ? "_goal" : "")",
             title: title,
             kind: exercise.optional ? .optional : .daily,
             stat: .STR,

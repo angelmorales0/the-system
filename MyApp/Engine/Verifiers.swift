@@ -20,6 +20,9 @@ struct VerificationContext: Equatable {
     var claimedWorkoutIds: Set<String> = []
     /// The times of the workouts already claimed today by a different quest (`Evidence.session`).
     var claimedSessions: [DateInterval] = []
+    /// The exercises of the day's other Hevy rows, as `StrengthLevel.normalizedName` gives them.
+    /// A stand-in lift that has its own row counts for that row, not for the lift it can stand in for.
+    var otherExercises: Set<String> = []
 
     /// True when another quest already used this workout: one of its recordings, or a session at the same time.
     func claims(_ workout: CanonicalWorkout) -> Bool {
@@ -163,9 +166,14 @@ extension VerificationMethod {
 extension Quest {
     /// The one hand check on a whole row: the day's 5K or 10K run, so a long bike ride can count in its place.
     /// Strava and Apple Health still complete it on their own. A penalty run never takes a hand check.
+    /// The 10K that "No gym today" adds stands for the lifts, so it takes none either: with it, two hand checks
+    /// would clear a whole training day with no workout done.
     var allowsCheckOff: Bool {
-        (kind != .penalty && TrainingDay.isRaceRun(self)) || verification.method.allowsLocalCheckbox
+        (kind != .penalty && !isNoGymRun && TrainingDay.isRaceRun(self)) || verification.method.allowsLocalCheckbox
     }
+
+    /// The 10K that "No gym today" added (`NoGymDay.addedId`).
+    var isNoGymRun: Bool { id.hasSuffix("_" + NoGymDay.addedSlug) }
 }
 
 enum VerificationFixtures {

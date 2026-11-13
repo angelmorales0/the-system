@@ -27,7 +27,10 @@ struct HiddenQuestUnlock: Codable, Equatable, Identifiable {
     /// Whole percent over the target: 15 km on a 10 km quest is 50.
     var percentOver: Int {
         guard required > 0 else { return 0 }
-        return Int(((achieved / required - 1) * 100).rounded(.down))
+        // In whole tenths of a km, so 16.4 on 10 is 64 and not 63 from the rounding of the division.
+        // An unlock is never under the quest's own 50%: the 50 m GPS tolerance lets 14.95 km in.
+        let over = (Int((achieved * 10).rounded()) - Int((required * 10).rounded())) * 100 / max(1, Int((required * 10).rounded()))
+        return max(over, Int(((HiddenQuests.factor - 1) * 100).rounded()))
     }
 }
 

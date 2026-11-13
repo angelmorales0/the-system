@@ -769,6 +769,7 @@ enum QuestPlanner {
             if deload { sets = min(sets, deloadSets(item["sets"]?.intValue.flatMap { $0 == 0 ? nil : $0 } ?? 3)) }
             let name = item["exercise"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? "Lift"
             let slug = name.lowercased().replacingOccurrences(of: " ", with: "_") + (item["role"]?.stringValue == "light" ? "_light" : "")
+                + (item["custom"]?.boolValue == true ? "_goal" : "")
             if let seconds = item["secondsPerSet"]?.doubleValue, seconds > 0 {
                 let params: [String: JSONValue] = ["exercise": .string(name), "sets": .number(Double(sets)), "minDurationSec": .number(seconds * Double(sets))]
                 return quest(day, slug, "\(name) \(sets)x\(Int(seconds))s", "daily", "STR", "hevy_sets", params, "normal", seconds * Double(sets) / 60, "min", mode)

@@ -97,7 +97,8 @@ struct HevySetsVerifier: Verifier {
         }
         let params = quest.verification.params
         let templateId = params["templateId"]?.stringValue
-        let exercise = Self.baseName(params["exercise"]?.stringValue ?? quest.title)
+        // The same name rule as the STR level and the custom goals: "Hip-Thrust" and "Hip  Thrust" are "hip thrust".
+        let exercise = StrengthLevel.normalizedName(params["exercise"]?.stringValue ?? quest.title)
         let minReps = params["minReps"]?.doubleValue ?? 1
         let minWeight = params["minWeightKg"]?.doubleValue
         let minDuration = params["minDurationSec"]?.doubleValue
@@ -108,11 +109,15 @@ struct HevySetsVerifier: Verifier {
         for workout in reading.workouts {
             let matching = workout.exercises.filter { entry in
                 if let templateId { return entry.templateId == templateId }
-                return Self.baseName(entry.title) == exercise
+                return StrengthLevel.normalizedName(entry.title) == exercise
             }
             // A gym without the bar or the rig: the stand-in counts for the quest. Its weight is a cable stack,
             // not comparable to a barbell or added weight, so only its reps are checked.
-            let standIns = workout.exercises.filter { !matching.contains($0) && Self.isStandIn(Self.baseName($0.title), for: exercise) }
+            // A stand-in that has its own row today (a custom goal such as Hammer Curl) counts for that row only.
+            let standIns = workout.exercises.filter { entry in
+                let name = StrengthLevel.normalizedName(entry.title)
+                return !matching.contains(entry) && !context.otherExercises.contains(name) && Self.isStandIn(name, for: exercise)
+            }
             func working(_ set: HevySet) -> Bool {
                 guard set.isWorking else { return false }
                 if minDuration != nil { return (set.durationSec ?? 0) > 0 }
@@ -314,7 +319,7 @@ enum DistanceRule {
 
     /// The longest matching workout that has not reached the distance yet, as partial progress.
     static func progress(_ candidates: [CanonicalWorkout], quest: Quest, context: VerificationContext, source: String) -> VerificationResult {
-        guard let workout = candidates.filter({ ($0.distanceMeters ?? 0) > 0 }).max(by: { ($0.distanceMeters ?? 0) < ($1.distanceMeters ?? 0) }),
+        guard let workout = candidates.filter({ ($0.distanceMeters ?? 0) > 0 && !context.claims($0) }).max(by: { ($0.distanceMeters ?? 0) < ($1.distanceMeters ?? 0) }),
               let meters = workout.distanceMeters else { return .unchanged }
         let evidence = Evidence.make(
             source: source,
