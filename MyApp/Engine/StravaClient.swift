@@ -39,7 +39,8 @@ enum StravaClient {
         for page in 1...3 {
             guard let url = activitiesURL(after: start, before: end, perPage: 100, page: page),
                   let payload = await OnDeviceHTTP.getJSON(url, headers: bearer(token))?.arrayValue else {
-                return (activities, page > 1 ? "ok" : "request failed")
+                // A later page failed: the list is short, and its newest runs are the ones missing.
+                return (activities, page > 1 ? "partial" : "request failed")
             }
             activities += payload.filter { $0.objectValue != nil }
             if payload.count < 100 { break }

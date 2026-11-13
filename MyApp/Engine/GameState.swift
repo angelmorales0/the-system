@@ -60,7 +60,8 @@ struct GameSnapshot: Codable, Equatable {
     var hitPoints: HitPointState?
     /// Nil until the first integration refresh. Then `Fatigue` moves it on every refresh.
     var fatigue: FatigueState?
-    /// The last day that ended with a required quest open, until its own data is read once more (see `EndedDay`).
+    /// The last day that ended with a required quest open, or with a Screen Time row that a Mac can still fail,
+    /// until its own data is read once more (see `EndedDay`).
     var endedDay: EndedDay?
 
     static func fresh(

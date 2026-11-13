@@ -1,9 +1,12 @@
 import Foundation
 
 /// WHOOP cycles, recoveries, sleeps, and workouts as `RecoveryDay` rows for the REC stat.
-/// One row per cycle, keyed by the local day the cycle started (the day you woke up). Naps are skipped.
+/// One row per cycle, keyed by the local day its main sleep ended (the day you woke up). Naps are skipped.
 /// Bedtime and wake time are minutes from that day's local midnight, so a 23:00 bedtime is -60.
 enum WhoopRecovery {
+    /// A cycle that starts at or after this local hour started with a bedtime, not with a wake-up.
+    static let eveningStartHour = 15
+
     /// Up to `days` days back from `now`, oldest first. The status says what happened.
     /// `zone` nil uses the phone's current time zone.
     static func history(start: Date, end: Date, zone: TimeZone? = nil) async -> (days: [RecoveryDay], status: String) {
@@ -36,6 +39,8 @@ enum WhoopRecovery {
 
         var byCycle: [String: RecoveryDay] = [:]
         var order: [String] = []
+        var starts: [String: Date] = [:]
+        var keyedBySleep = Set<String>()
         for cycle in cycles {
             guard let start = time(cycle["start"]), let key = id(cycle["id"]) else { continue }
             var day = RecoveryDay(dayKey: OnDeviceTime.dayKey(start, zone: zone))
@@ -43,6 +48,7 @@ enum WhoopRecovery {
             // and a morning's low value would read as a rest day.
             day.dayStrain = time(cycle["end"]) == nil ? nil : cycle["score"]?["strain"]?.doubleValue
             if byCycle[key] == nil { order.append(key) }
+            starts[key] = start
             byCycle[key] = day
         }
         for recovery in recoveries {
@@ -53,29 +59,43 @@ enum WhoopRecovery {
         }
         for sleep in sleeps {
             if sleep["nap"].truthy { continue }
-            guard let key = id(sleep["cycle_id"]), var day = byCycle[key], let score = sleep["score"], score.objectValue != nil else { continue }
-            day.sleepNeedPct = score["sleep_performance_percentage"]?.doubleValue
-            day.sleepConsistencyPct = score["sleep_consistency_percentage"]?.doubleValue
-            day.sleepEfficiencyPct = score["sleep_efficiency_percentage"]?.doubleValue
-            day.sleepDebtMinutes = score["sleep_needed"]?["need_from_sleep_debt_milli"]?.doubleValue.map { $0 / 60_000 }
+            guard let key = id(sleep["cycle_id"]), var day = byCycle[key] else { continue }
             // The row is the day the player woke up on. A WHOOP cycle starts with its sleep, so a 23:00 bedtime
             // would put the cycle on the day before, and two nights could land on one day and drop one.
-            if let end = time(sleep["end"]) { day.dayKey = OnDeviceTime.dayKey(end, zone: zone) }
-            if let midnight = OnDeviceTime.dayBounds(day.dayKey, zone: zone)?.start {
-                if let start = time(sleep["start"]) { day.bedtimeMinutes = start.timeIntervalSince(midnight) / 60 }
-                if let end = time(sleep["end"]) { day.wakeMinutes = end.timeIntervalSince(midnight) / 60 }
+            // A sleep that has no score yet still has its times, so it still names the day.
+            if let end = time(sleep["end"]) {
+                day.dayKey = OnDeviceTime.dayKey(end, zone: zone)
+                keyedBySleep.insert(key)
+            }
+            if let score = sleep["score"], score.objectValue != nil {
+                day.sleepNeedPct = score["sleep_performance_percentage"]?.doubleValue
+                day.sleepConsistencyPct = score["sleep_consistency_percentage"]?.doubleValue
+                day.sleepEfficiencyPct = score["sleep_efficiency_percentage"]?.doubleValue
+                day.sleepDebtMinutes = score["sleep_needed"]?["need_from_sleep_debt_milli"]?.doubleValue.map { $0 / 60_000 }
+                if let midnight = OnDeviceTime.dayBounds(day.dayKey, zone: zone)?.start {
+                    if let start = time(sleep["start"]) { day.bedtimeMinutes = start.timeIntervalSince(midnight) / 60 }
+                    if let end = time(sleep["end"]) { day.wakeMinutes = end.timeIntervalSince(midnight) / 60 }
+                }
             }
             byCycle[key] = day
+        }
+        // A cycle with no sleep record has only its start. One that started in the afternoon or evening started
+        // with a bedtime, so its day is the next one: on its start day it would take the place of the cycle before.
+        for (key, start) in starts where !keyedBySleep.contains(key) {
+            guard OnDeviceTime.calendar(zone).component(.hour, from: start) >= eveningStartHour,
+                  let next = OnDeviceTime.calendar(zone).date(byAdding: .day, value: 1, to: start) else { continue }
+            byCycle[key]?.dayKey = OnDeviceTime.dayKey(next, zone: zone)
         }
         // Workouts carry no cycle id. Count them on the local day they started.
         var workoutsByDay: [String: Int] = [:]
         for workout in workouts {
             if let start = time(workout["start"]) { workoutsByDay[OnDeviceTime.dayKey(start, zone: zone), default: 0] += 1 }
         }
-        // WHOOP lists newest first. The first cycle seen on a day wins.
+        // WHOOP lists newest first. The first cycle seen on a day wins, but a row with its sleep beats one without.
         var byDay: [String: RecoveryDay] = [:]
         for key in order {
-            guard var day = byCycle[key], byDay[day.dayKey] == nil else { continue }
+            guard var day = byCycle[key] else { continue }
+            if let kept = byDay[day.dayKey], kept.sleepNeedPct != nil || day.sleepNeedPct == nil { continue }
             day.workoutCount = workoutsByDay[day.dayKey] ?? 0
             byDay[day.dayKey] = day
         }
@@ -140,6 +160,15 @@ enum WhoopRecovery {
         if nights.map(\.dayKey) != ["2026-10-22", "2026-10-23"] || nights.first?.bedtimeMinutes != -60 || nights.last?.bedtimeMinutes != -30
             || nights.first?.dayStrain != 11.2 || nights.last?.dayStrain != nil {
             errors.append("a cycle that starts at bedtime should give a row on the wake day, and an open cycle no strain, got \(nights)")
+        }
+        // The same nights, but the first night's sleep has no score: its row stays on its wake day and no night is lost.
+        var unscored = nightSleeps
+        unscored[1] = .object(["cycle_id": .number(11), "nap": .bool(false), "start": .string("2026-10-22T06:00:00Z"), "end": .string("2026-10-22T14:00:00Z")])
+        let kept = days(cycles: nightCycles, recoveries: [], sleeps: unscored, workouts: [], zone: zone)
+        let noRecord = days(cycles: nightCycles, recoveries: [], sleeps: [nightSleeps[0]], workouts: [], zone: zone)
+        if kept.map(\.dayKey) != ["2026-10-22", "2026-10-23"] || kept.first?.dayStrain != 11.2 || kept.last?.sleepNeedPct != 90
+            || noRecord.map(\.dayKey) != ["2026-10-22", "2026-10-23"] || noRecord.last?.sleepNeedPct != 90 {
+            errors.append("a night with no sleep score or no sleep record should keep its own day, got \(kept.map(\.dayKey)) \(noRecord.map(\.dayKey))")
         }
         return errors
     }

@@ -153,7 +153,7 @@ enum QuestPlanner {
 
     Readiness:
     - modeDecision.trainingBand is WHOOP readiness, one step lower after sleep performance under 60%. Green: full plan. Yellow and red: same exercises, one fewer back-off set and top sets at RPE 7. Every band still gets the run and strength work.
-    - If constraints.noGymToday is true, the player has no gym today: write no strength quests. Write the window's runs (runsToday) plus one added 10K Run, as long as the day stays at 20 km or under. The added 10K never counts toward the 50 km window: the app takes 10 km off that day when it builds later windows.
+    - If constraints.noGymToday is true, the player has no gym today: write no strength quests. Write the window's runs (runsToday) plus one added 10K Run, as long as the day stays at 20 km or under. The added 10K never counts toward the 50 km window: the app takes 10 km off that day when it builds later windows. Give the added 10K the id "q_<dayKey>_run_10k_no_gym", so the app knows which run is the added one.
 
     App rules:
     - Obey modeDecision.selectedMode. Do not change it. lockedByRules is authoritative.
@@ -232,7 +232,7 @@ enum QuestPlanner {
         let blocked = "Today's \(today["name"]?.stringValue ?? "None") heavy \(main["exercise"]?.stringValue ?? "None") would break the limits (\(problems.joined(separator: "; ")))."
         // The run window is full too: a run-only day would be an empty day, which no plan can be. Keep the day light.
         if let runs = context["trainingHistory"]?["runWindow"]?["runsToday"]?.arrayValue, runs.isEmpty {
-            return "\(blocked) The run window is full, so keep the split day and \(lightDayAdvice): \(lightSets) sets of \(lightReps) or more reps, under 80% of the best e1RM."
+            return "\(blocked) The run window is full, so keep the split day and \(lightDayAdvice): \(lightSetCount(context)) sets of \(lightReps) or more reps, under 80% of the best e1RM."
         }
         return "\(blocked) Make today a run-only day."
     }
@@ -242,8 +242,20 @@ enum QuestPlanner {
     static let lightSets = 3
     static let lightReps = 8
 
+    static func deloadDay(_ context: JSONValue) -> Bool {
+        context["trainingHistory"]?["fatigue"]?["deloadRecommended"]?.boolValue == true
+    }
+
+    /// A deload day holds half the sets, rounded up (`splitProblems`).
+    static func deloadSets(_ sets: Int) -> Int { max(1, (sets + 1) / 2) }
+
+    /// Sets of a light squat or deadlift row today: 3, or the deload share of 3.
+    static func lightSetCount(_ context: JSONValue) -> Int {
+        deloadDay(context) ? deloadSets(lightSets) : lightSets
+    }
+
     /// A heavy squat or deadlift row as its light version: 3 sets of 8, no load, like the split's own light squat.
-    static func lightened(_ quest: JSONValue, lifts: JSONValue?) -> JSONValue {
+    static func lightened(_ quest: JSONValue, lifts: JSONValue?, sets lightSets: Int = QuestPlanner.lightSets) -> JSONValue {
         guard TrainingHistory.questIsHeavyLower(quest, lifts: lifts), var row = quest.objectValue, var verification = row["verification"]?.objectValue,
               var params = verification["params"]?.objectValue, let name = params["exercise"]?.stringValue else { return quest }
         params["sets"] = .number(Double(lightSets))
@@ -675,8 +687,8 @@ enum QuestPlanner {
         let lighten = advice.contains(lightDayAdvice)
         let advised = !advice.isEmpty && !lighten
         if mode == "performance_training", let today, !noGym, !advised {
-            var lifts = splitQuests(today, band: band, day: day, mode: mode)
-            if lighten { lifts = lifts.map { lightened($0, lifts: context["trainingHistory"]?["lifts"]) } }
+            var lifts = splitQuests(today, band: band, day: day, mode: mode, deload: deloadDay(context))
+            if lighten { lifts = lifts.map { lightened($0, lifts: context["trainingHistory"]?["lifts"], sets: lightSetCount(context)) } }
             rows = rows.filter { $0["stat"]?.stringValue != "STR" } + lifts
             header = today["name"]?.stringValue ?? header
         } else if mode == "performance_training", advised {
@@ -732,11 +744,13 @@ enum QuestPlanner {
     }
 
     /// Today's split exercises without loads, like the app's offline day. Yellow and red take a set off the main lift.
-    static func splitQuests(_ today: JSONValue, band: String, day: String, mode: String) -> [JSONValue] {
+    /// `deload` halves every lift's sets, as the validator asks on a deload day.
+    static func splitQuests(_ today: JSONValue, band: String, day: String, mode: String, deload: Bool = false) -> [JSONValue] {
         (today["exercises"]?.arrayValue ?? []).map { item in
             let main = item["role"]?.stringValue == "main"
             var sets = item["sets"]?.intValue.flatMap { $0 == 0 ? nil : $0 } ?? 3
             if main, band != "green" { sets = max(1, sets - 1) }
+            if deload { sets = min(sets, deloadSets(item["sets"]?.intValue.flatMap { $0 == 0 ? nil : $0 } ?? 3)) }
             let name = item["exercise"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? "Lift"
             let slug = name.lowercased().replacingOccurrences(of: " ", with: "_") + (item["role"]?.stringValue == "light" ? "_light" : "")
             if let seconds = item["secondsPerSet"]?.doubleValue, seconds > 0 {
@@ -758,10 +772,9 @@ enum QuestPlanner {
         var runs = rows.filter { $0["stat"]?.stringValue != "STR" }
         let km = runs.reduce(0.0) { $0 + (($1["verification"]?["params"]?["minDistanceMeters"]?.doubleValue ?? 0) / 1000) }
         guard runs.count < NoGymDay.runCount, km + Double(TrainingHistory.noGymAddedKm) <= Double(TrainingHistory.maxRunKmPerDay) else { return runs }
-        let taken = Set(runs.compactMap { $0["id"]?.stringValue })
-        let index = runs.count
-        let slug = ["run_10k_\(index + 1)", "run_10k_extra_\(index + 1)"].first { !taken.contains("q_\(day)_\($0)") } ?? "run_10k_extra_\(index + 1)"
-        runs.append(quest(day, slug, "10K Run", "daily", "END", "strava_activity", ["types": .array([.string("Run")]), "minDistanceMeters": .number(tenKMeters)], "normal", 10, "km", mode))
+        // The app's own id for the added 10K (`NoGymDay.addedId`): the day's record then says "no gym", so later
+        // windows take its 10 km off, and "No gym" off removes the row.
+        runs.append(quest(day, NoGymDay.addedSlug, "10K Run", "daily", "END", "strava_activity", ["types": .array([.string("Run")]), "minDistanceMeters": .number(tenKMeters)], "normal", 10, "km", mode))
         return runs
     }
 

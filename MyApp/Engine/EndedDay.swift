@@ -17,17 +17,20 @@ struct EndedDay: Codable, Equatable {
     var owesOtherPenalty: Bool
     /// Reads so far. A service can be down, so the day is read again, at most `maxReads` times.
     var reads = 0
-    /// The day ended with a required quest open, so its penalty is open. False for a day kept only for the Macs' minutes.
+    /// The day counts as a miss now: it ended with a required quest open and no late read has completed it.
+    /// False for a day kept only for the Macs' minutes, and after a late read found the day's work.
     var missed = true
     /// The day's screen minutes as it ended.
     var screenTime: ScreenTimeDay?
     /// Gold the day was paid as it ended.
     var paidGold = 0
+    /// A missed month opened a penalty after this day ended. No late work on this day lifts that one.
+    var monthPenalty = false
 
     static let maxReads = 3
 
     private enum CodingKeys: String, CodingKey {
-        case bundle, owesOtherPenalty, reads, missed, screenTime, paidGold
+        case bundle, owesOtherPenalty, reads, missed, screenTime, paidGold, monthPenalty
     }
 
     init(bundle: QuestBundle, owesOtherPenalty: Bool, reads: Int = 0, missed: Bool = true, screenTime: ScreenTimeDay? = nil, paidGold: Int = 0) {
@@ -47,6 +50,7 @@ struct EndedDay: Codable, Equatable {
         missed = try container.decodeIfPresent(Bool.self, forKey: .missed) ?? true
         screenTime = try container.decodeIfPresent(ScreenTimeDay.self, forKey: .screenTime)
         paidGold = try container.decodeIfPresent(Int.self, forKey: .paidGold) ?? 0
+        monthPenalty = try container.decodeIfPresent(Bool.self, forKey: .monthPenalty) ?? false
     }
 }
 
@@ -77,7 +81,8 @@ extension QuestBundle {
 }
 
 extension GameSnapshot {
-    /// Keeps the day that is ending when it misses its required set. Runs in `refreshIfNeeded`, before the penalty opens.
+    /// Keeps the day that is ending when it misses its required set, or when its Screen Time row passed and a Mac
+    /// can still report minutes. Runs in `refreshIfNeeded`, before the penalty opens.
     mutating func keepEndedDay() {
         let missed = missesRequiredSet
         let rested = bundle.mode == .fullRecovery || signals.spendingFullRecovery || fullRecoveryDayKey == bundle.dayKey
@@ -94,8 +99,10 @@ extension GameSnapshot {
     }
 
     /// Settles the ended day against its own data, `integrations`, and the Macs' last minutes. Returns what changed.
+    /// `healthRead` is false when Apple Health could not be read (a locked phone): its workouts may still be missing.
     @discardableResult
-    mutating func settleEndedDay(integrations: DayIntegrationSnapshot, mac: LateMacRead = LateMacRead(), catalog: FallbackCatalog, now: Date) -> LateSettle {
+    mutating func settleEndedDay(integrations: DayIntegrationSnapshot, mac: LateMacRead = LateMacRead(), healthRead: Bool = true,
+                                 catalog: FallbackCatalog, now: Date) -> LateSettle {
         guard var ended = endedDay else { return LateSettle() }
         let dayKey = ended.bundle.dayKey
         guard dayKey < bundle.dayKey else {
@@ -170,11 +177,14 @@ extension GameSnapshot {
             // The penalty run of that day was done late: the older penalty is served.
             if hadOpenPenaltyRow, PenaltyQuests.isCleared(in: past.bundle) { ended.owesOtherPenalty = false }
             if !stillMissed {
-                if ended.missed, !ended.owesOtherPenalty, player.penaltyOpen {
+                if ended.missed, !ended.owesOtherPenalty, !ended.monthPenalty, player.penaltyOpen {
                     player.penaltyOpen = false
                     bundle.quests.removeAll { $0.kind == .penalty && $0.status != .completed }
                     settle.liftedPenalty = true
                 }
+                // The day is complete now. If the Macs' minutes arrive later and put it over the limit,
+                // it fails like a day that was complete on time: gold back, penalty open.
+                ended.missed = false
                 let required = past.bundle.quests.filter { $0.kind != .optional }
                 let perfect = !required.isEmpty && required.allSatisfy { $0.status == .completed && !$0.skippedWithPotion }
                     && !potionLog.contains { $0.dayKey == dayKey }
@@ -186,18 +196,21 @@ extension GameSnapshot {
                 }
             }
             // Lifts or stretches done late move their rotation. Today is planned again from it, and finished work stays.
-            // A rotation the player already started today is left alone: that day is underway.
+            // A day with a workout already done is left alone: its plan is underway, and a new plan would put an
+            // open copy of a finished run or lift next to it (a planner row and a catalog row have different ids).
             let splitMoved = GymSplit.today(history: questHistory, dayKey: bundle.dayKey).id != splitBefore
             let stretchMoved = StretchSplit.today(history: questHistory, dayKey: bundle.dayKey).id != stretchBefore
             let done = bundle.quests.filter { $0.status == .completed }
-            let liftsStarted = done.contains { TrainingDay.isStrength($0) && $0.id != DailyStretch.questId }
+            let workoutStarted = done.contains { $0.kind != .penalty && $0.id != ScreenTime.questId && $0.id != DailyStretch.questId }
             let stretchStarted = done.contains { $0.id == DailyStretch.questId } || !stretchesChecked.isEmpty
-            let underway = (splitMoved && liftsStarted) || (stretchMoved && stretchStarted)
+            let underway = workoutStarted || (stretchMoved && stretchStarted)
             if splitMoved || stretchMoved, !underway, runningTimers.isEmpty, bundle.dayKey == QuestDay.key(for: now) {
                 generatedBundle = nil
                 generationAttemptDayKey = nil
                 rebuildBundle(catalog: catalog, now: now)
                 keepFinished(done)
+                // A finished penalty row goes back over the new row with its id. An open penalty still needs an open row.
+                bundle = PenaltyQuests.ensure(in: bundle, open: player.penaltyOpen, band: trainingBand, catalog: catalog, now: now)
                 settle.rebuiltToday = true
             }
         }
@@ -208,6 +221,7 @@ extension GameSnapshot {
         let everySourceRead = (!integrations.strava.configured || integrations.strava.available)
             && (!integrations.hevy.configured || integrations.hevy.available)
             && (!integrations.whoop.configured || integrations.whoop.available)
+            && healthRead
         let waitsForWork = stillMissed && !everySourceRead
         let waitsForMacs = mac.trackerSet && !mac.answered
         endedDay = (waitsForWork || waitsForMacs) && ended.reads < EndedDay.maxReads ? ended : nil
@@ -324,6 +338,37 @@ enum EndedDayRules {
             || mac.questHistory.first?.missedRequired != true || screenRecord?.status != .failed || mac.endedDay != nil {
             errors.append("the Macs' final minutes over the limit should fail the day: penalty open, gold back, record corrected, got \(over)")
         }
+        // A day completed by a late run is paid. If the Macs then report a total over the limit, it fails like any
+        // day that was complete on time: the gold goes back and a penalty opens.
+        var both = GameSnapshot.fresh(catalog: catalog, now: dayOne)
+        both.applyScreenTime(phoneMinutes: 60, workMinutes: 300)
+        finish(&both) { !TrainingDay.isRaceRun($0) && $0.id != ScreenTime.questId }
+        both.refreshIfNeeded(catalog: catalog, now: dayTwo)
+        let ranLate = both.settleEndedDay(integrations: data(strava: [run]), mac: LateMacRead(trackerSet: true), catalog: catalog, now: dayTwo)
+        if !ranLate.liftedPenalty || ranLate.gold == 0 || both.endedDay?.missed != false {
+            errors.append("a late run should complete the day while it still waits for the Macs, got \(ranLate)")
+        }
+        let macLate = both.settleEndedDay(integrations: data(strava: [run]), mac: LateMacRead(trackerSet: true, answered: true, workMinutes: 840), catalog: catalog, now: dayTwo)
+        if !macLate.openedPenalty || !both.player.penaltyOpen || both.gold != 0 || PenaltyQuests.rows(in: both.bundle).filter({ $0.status != .completed }).count != 1 {
+            errors.append("Mac minutes over the limit should fail a day that a late run completed, got \(macLate) gold \(both.gold)")
+        }
+
+        // A missed month opens its penalty while the day still waits. The day's late runs do not lift that one.
+        var month = GameSnapshot.fresh(catalog: catalog, now: dayOne)
+        month.player.penaltyOpen = true
+        month.rebuildBundle(catalog: catalog, now: dayOne)
+        month.applyScreenTime(phoneMinutes: 30, workMinutes: nil)
+        finish(&month) { $0.kind != .penalty && !TrainingDay.isRaceRun($0) && $0.id != ScreenTime.questId }
+        month.refreshIfNeeded(catalog: catalog, now: dayTwo)
+        _ = month.settleEndedDay(integrations: data(stravaUp: false), catalog: catalog, now: dayTwo)
+        month.endedDay?.monthPenalty = true
+        let secondRun = WorkoutEvent(source: "strava", externalId: "late-run-2", sport: "Run", start: dayOne.addingTimeInterval(30_000),
+                                     end: dayOne.addingTimeInterval(33_300), movingTimeSec: 3_300, distanceMeters: 10_020)
+        let afterMonth = month.settleEndedDay(integrations: data(strava: [run, secondRun]), catalog: catalog, now: dayTwo)
+        if afterMonth.liftedPenalty || !month.player.penaltyOpen || PenaltyQuests.rows(in: month.bundle).isEmpty {
+            errors.append("late runs should not lift a penalty that a missed month opened, got \(afterMonth)")
+        }
+
         // A day with no Mac count and no tracker is not kept.
         var phoneOnly = GameSnapshot.fresh(catalog: catalog, now: dayOne)
         phoneOnly.applyScreenTime(phoneMinutes: 60, workMinutes: nil)

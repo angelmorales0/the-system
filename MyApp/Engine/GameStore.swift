@@ -1,5 +1,8 @@
 import Combine
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 enum GamePersistence {
     /// Saved on this device. Checkbox completion and XP survive relaunch.
@@ -582,7 +585,9 @@ final class GameStore: ObservableObject {
             var next = self.snapshot
             var settled = LateSettle()
             if let endedData, next.endedDay?.bundle.dayKey == endedKey {
-                settled = next.settleEndedDay(integrations: endedData, mac: endedMac, catalog: self.catalog, now: now)
+                // A locked phone hides Apple Health: a read made then cannot say that Health holds no late work.
+                let healthRead = endedData.health.access != .notRequested && Self.protectedDataAvailable
+                settled = next.settleEndedDay(integrations: endedData, mac: endedMac, healthRead: healthRead, catalog: self.catalog, now: now)
             }
             let rebuilt = next.applyWhoopReadiness(remote.whoop, catalog: self.catalog, now: now) || settled.rebuiltToday
             let phone = PhoneScreenGroup.minutes(for: next.bundle.dayKey)
@@ -629,7 +634,15 @@ final class GameStore: ObservableObject {
         }
     }
 
-    /// The workouts of the quest day `dayKey`, which has ended. Nil when no day waits for a late read.
+    /// False while the phone is locked: Apple Health and other protected data cannot be read then.
+    private static var protectedDataAvailable: Bool {
+        #if canImport(UIKit)
+        UIApplication.shared.isProtectedDataAvailable
+        #else
+        true
+        #endif
+    }
+
     /// The Macs' minutes for the quest day `dayKey`, which has ended, as the Worker holds them now.
     private static func endedMacRead(_ dayKey: String?) async -> LateMacRead {
         guard let dayKey, MacScreenSettings.load().baseURL != nil else { return LateMacRead() }
@@ -638,6 +651,7 @@ final class GameStore: ObservableObject {
                            overlapMinutes: screenOverlap(dayKey: dayKey, macScreen: reading))
     }
 
+    /// The workouts of the quest day `dayKey`, which has ended. Nil when no day waits for a late read.
     private static func endedDayData(_ dayKey: String?, workouts: Bool) async -> DayIntegrationSnapshot? {
         guard let dayKey, let inside = QuestDay.start(of: dayKey)?.addingTimeInterval(3_600) else { return nil }
         // A day that is kept only for the Macs' minutes has every workout row done: nothing to read.
@@ -755,6 +769,14 @@ final class GameStore: ObservableObject {
         guard snapshot.runningTimers.isEmpty else { return }
         let decision = ModePicker.decide(snapshot.modeInput(now: now))
         guard decision.selectedMode == context.modeDecision.selectedMode else { return }
+        // "No gym today" changed while the plan was written: that plan is for the other kind of day. Plan again.
+        guard context.constraints.noGymToday == snapshot.noGymToday else {
+            var retry = snapshot
+            retry.generationAttemptDayKey = nil
+            snapshot = retry
+            persist()
+            return
+        }
         guard let accepted = QuestSafety.accepting(bundle, context: context, assignedAt: now),
               let prepared = TrainingDay.exerciseOnly(accepted) else { return }
         // A rest day keeps the planner's words but none of its rows. The app adds Stretching and Screen Time.

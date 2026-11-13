@@ -37,6 +37,9 @@ enum TrainingHistory {
     static let deloadDecliningLifts = 3
     static let hrvDropShare = 0.90
 
+    /// A falling lift counts as fatigue while its newest session is at most this many days old.
+    static let fatigueWindowDays = 10
+
     static let heavyLowerPattern = "squat|deadlift"
     static let lowerPattern = "squat|deadlift|lunge|leg press|hip thrust|step up|leg curl|leg extension|calf|romanian|rdl|good morning"
     static let runTypes: Set<String> = ["run", "trailrun", "virtualrun"]
@@ -166,7 +169,7 @@ enum TrainingHistory {
         var lifts = Lifts()
         var sessions: [String: [JSONValue]] = [:]
         for workout in workouts.sorted(by: { $0.start < $1.start }) {
-            let day = OnDeviceTime.dayKey(workout.start, zone: zone)
+            let day = OnDeviceTime.questDayKey(workout.start, zone: zone)
             for exercise in workout.exercises {
                 let name = baseName(exercise.title)
                 let sets = workingSets(exercise)
@@ -186,7 +189,9 @@ enum TrainingHistory {
                 // Heavy and light days of one lift, and weighted and bodyweight sessions, are different work.
                 // The trend compares a session only with earlier ones of its own kind.
                 let bestReps = sets.map { $0.reps ?? 0 }.max() ?? 0
-                let kind = top.map { ($0.reps ?? 0) <= heavyRepsMax ? "heavy" : "light" } ?? (bestReps > 0 ? "reps" : "timed")
+                // Bodyweight sessions with another set count are another job: pull-ups run 4 volume sets on one day and
+                // a max set with 2 back-off sets on another, and the best set of the volume day is no decline.
+                let kind = top.map { ($0.reps ?? 0) <= heavyRepsMax ? "heavy" : "light" } ?? (bestReps > 0 ? "reps x\(sets.count)" : "timed")
                 sessions[name, default: []].append(.object([
                     "kind": .string(kind),
                     "date": .string(day),
@@ -223,6 +228,13 @@ enum TrainingHistory {
                 byKind[kind] = liftTrend(list.filter { $0["kind"]?.stringValue == kind })["trend"].map(JSONValue.string)
             }
             entry["trendByKind"] = .object(byKind)
+            // The series that fall now: their newest session is inside the fatigue window. An old heavy block that
+            // ended in a decline is no fatigue today.
+            entry["fallingSeries"] = .array(byKind.keys.sorted().filter { kind in
+                guard ["declining", "dropping"].contains(byKind[kind]?.stringValue ?? "") else { return false }
+                let newest = list.first { $0["kind"]?.stringValue == kind }?["date"]?.stringValue ?? today
+                return OnDeviceTime.daysBetween(newest, today) <= fatigueWindowDays
+            }.map(JSONValue.string))
             lifts.entries[name] = entry
         }
         return lifts
@@ -262,9 +274,9 @@ enum TrainingHistory {
     /// Whole-body fatigue: how many lifts are falling, and whether HRV is down. Says when to deload.
     static func fatigueSummary(_ lifts: JSONValue, recovery: [JSONValue]) -> JSONValue {
         let falling = (lifts.objectValue ?? [:]).filter { _, entry in
-            // Any series of the lift: the newest session can be the light day while the heavy days fall.
-            let trends = [entry["trend"]?.stringValue ?? ""] + (entry["trendByKind"]?.objectValue?.values.compactMap(\.stringValue) ?? [])
-            return trends.contains { ["declining", "dropping"].contains($0) } && (entry["daysSinceLast"]?.doubleValue ?? 99) <= 10
+            // Any series of the lift that is in use: the newest session can be the light day while the heavy days fall.
+            if entry["fallingSeries"]?.arrayValue?.isEmpty == false { return true }
+            return ["declining", "dropping"].contains(entry["trend"]?.stringValue ?? "") && (entry["daysSinceLast"]?.doubleValue ?? 99) <= Double(fatigueWindowDays)
         }.keys.sorted()
         let hrv = recovery.compactMap { $0["hrv"]?.doubleValue }
         let recent = Array(hrv.prefix(7))
@@ -301,7 +313,7 @@ enum TrainingHistory {
     /// One row per Hevy workout, newest first, marked when it held heavy squat or deadlift work.
     static func liftSessions(_ workouts: [HevyWorkout], lifts: Lifts, today: String, zone: TimeZone) -> [JSONValue] {
         workouts.sorted(by: { $0.start > $1.start }).map { workout in
-            let day = OnDeviceTime.dayKey(workout.start, zone: zone)
+            let day = OnDeviceTime.questDayKey(workout.start, zone: zone)
             var names: [String] = []
             var heavy = false
             for exercise in workout.exercises {
@@ -327,7 +339,9 @@ enum TrainingHistory {
         var rows: [JSONValue] = []
         for item in activities {
             guard let start = OnDeviceTime.parse(item["start_date"]?.stringValue ?? "") else { continue }
-            let day = OnDeviceTime.dayKey(start, zone: zone)
+            // The quest day, as the quests count it: a run at 0:30 belongs to the day before. `withQuestRuns` compares
+            // these rows with quest days, and a calendar key would count such a run two times.
+            let day = OnDeviceTime.questDayKey(start, zone: zone)
             let sportType = item["sport_type"]?.stringValue ?? ""
             let type = item["type"]?.stringValue ?? ""
             let sport = !sportType.isEmpty ? sportType : !type.isEmpty ? type : "other"
@@ -605,7 +619,11 @@ enum TrainingHistory {
         for quest in quests where method(quest) == "hevy_sets" {
             guard let params = params(quest), let entry = lifts?[baseName(params["exercise"]?.stringValue ?? "")], entry.truthy else { continue }
             // The planned row is compared with the sessions of its own kind: a heavy top set with the last heavy day.
-            let kind = (params["minReps"]?.doubleValue ?? 1) <= Double(heavyRepsMax) ? "heavy" : "light"
+            // A lift with one weighted series is one job (a 5-8 row whose top sets are 8s is "light" in the history and
+            // "heavy" by its bottom reps): that series judges it. Only a lift with both series is split by the row's reps.
+            var kind = (params["minReps"]?.doubleValue ?? 1) <= Double(heavyRepsMax) ? "heavy" : "light"
+            let weighted = ["heavy", "light"].filter { entry["trendByKind"]?[$0] != nil }
+            if entry["trendByKind"]?[kind] == nil, weighted.count == 1 { kind = weighted[0] }
             let series = (entry["sessions"]?.arrayValue ?? []).filter { $0["kind"]?.stringValue == kind }
             let trend = entry["trendByKind"]?.objectValue.map { $0[kind]?.stringValue ?? "new" } ?? entry["trend"]?.stringValue ?? ""
             let last = (entry["trendByKind"] == nil ? entry["sessions"]?.arrayValue?.first : series.first)?["topSetKg"]?.doubleValue

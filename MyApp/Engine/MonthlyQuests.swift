@@ -102,7 +102,8 @@ enum MonthlyQuests {
 
     static func budgetRow(month: String, finance: [FinanceMonth], excuses: PotionExcuses, ended: Bool) -> MonthlyQuestRow {
         let title = "Monthly budget"
-        guard let raw = finance.first(where: { $0.month == month }) else {
+        // No month, or a month whose last days Mercury has not sent yet: the row waits.
+        guard let raw = finance.first(where: { $0.month == month }), raw.missingLastDays != true else {
             return MonthlyQuestRow(id: budgetId, title: title, progress: "[--]", status: .noData, share: nil)
         }
         let spent = excuses.excusing(raw).spendingUsd
@@ -345,7 +346,7 @@ extension GameSnapshot {
         guard verdict == .missed else { return }
         player.penaltyOpen = true
         // This penalty is the month's. Late work on the last quest day must not lift it.
-        endedDay?.owesOtherPenalty = true
+        endedDay?.monthPenalty = true
         bundle = PenaltyQuests.ensure(in: bundle, open: true, band: trainingBand, catalog: catalog, now: now)
     }
 }

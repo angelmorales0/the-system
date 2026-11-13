@@ -54,6 +54,35 @@ enum PlanAndLockRules {
             errors.append("a light squat day should not make the heavy squat read as declining")
         }
 
+        // A 5-8 row whose top sets are 8s is one series: a real decline still stops a heavier row, and a lighter one passes.
+        func row(_ daysAgo: Int, _ kg: Double, _ reps: Int) -> HevyWorkout {
+            let start = morning.addingTimeInterval(Double(-daysAgo) * 86_400)
+            let sets = Array(repeating: HevySet(type: "normal", reps: reps, weightKg: kg, rpe: nil, durationSec: nil), count: 3)
+            return HevyWorkout(id: "row-\(daysAgo)", title: "Gym", start: start, end: start.addingTimeInterval(3_600),
+                               exercises: [HevyExercise(title: "Bent Over Row (Barbell)", templateId: nil, sets: sets)])
+        }
+        let rows = TrainingHistory.liftSummaries([row(12, 70, 8), row(7, 70, 8), row(2, 65, 7)], today: "2026-10-22", zone: QuestDay.timeZone)
+        func rowPlan(_ kg: Double) -> JSONValue {
+            .object(["mode": .string("performance_training"), "quests": .array([.object([
+                "title": .string("Bent Over Row 3x5-8"),
+                "verification": .object(["method": .string("hevy_sets"), "params": .object(["exercise": .string("Bent Over Row"), "sets": .number(3), "minReps": .number(5), "minWeightKg": .number(kg)])]),
+            ])])])
+        }
+        if TrainingHistory.limitProblems(rowPlan(75), .object(["lifts": rows.json])).isEmpty || !TrainingHistory.limitProblems(rowPlan(62.5), .object(["lifts": rows.json])).isEmpty {
+            errors.append("a declining row should not get more weight, but less is fine, whatever the planned bottom reps")
+        }
+        // Pull-ups: the volume day's best set is under the max-effort day's. Both rise, so nothing falls.
+        func pull(_ daysAgo: Int, _ reps: [Int]) -> HevyWorkout {
+            let start = morning.addingTimeInterval(Double(-daysAgo) * 86_400)
+            return HevyWorkout(id: "pull-\(daysAgo)", title: "Gym", start: start, end: start.addingTimeInterval(3_600),
+                               exercises: [HevyExercise(title: "Pull Up", templateId: nil, sets: reps.map { HevySet(type: "normal", reps: $0, weightKg: nil, rpe: nil, durationSec: nil) })])
+        }
+        let pulls = TrainingHistory.liftSummaries([pull(16, [7, 7, 7, 7]), pull(13, [14, 8, 8]), pull(11, [8, 8, 8, 8]), pull(8, [15, 9, 9]), pull(6, [9, 9, 9, 9]), pull(3, [16, 9, 9]), pull(1, [10, 10, 10, 10])],
+                                                  today: "2026-10-22", zone: QuestDay.timeZone)
+        if TrainingHistory.fatigueSummary(pulls.json, recovery: [])["decliningLifts"]?.arrayValue?.isEmpty != true || pulls.json["pull up"]?["trend"]?.stringValue == "declining" {
+            errors.append("pull-up volume days and max-effort days should not read as a decline, got \(pulls.json["pull up"]?["trendByKind"]?.sortedString() ?? "")")
+        }
+
         // The run window: runs inside the GPS tolerance fill it, and a run the app counted without Strava counts.
         let short = TrainingHistory.runWindow((1...5).map { .object(["km": .number(9.96), "daysAgo": .number(Double($0)), "counts": .string("10K")]) }, goalKm: 50)
         if short["runsToday"]?.arrayValue?.isEmpty != true { errors.append("five 10Ks inside the GPS tolerance should fill the 50 km window") }

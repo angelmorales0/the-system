@@ -232,26 +232,37 @@ enum LastGoodReadings {
     static let codeforcesKey = "com.angelmorales.thesystem.lastGoodCodeforces.v1"
     static let typingKey = "com.angelmorales.thesystem.lastGoodMonkeytype.v1"
 
-    static func codeforces(_ live: CodeforcesReading, save: Bool, defaults: UserDefaults = .standard) -> CodeforcesReading {
-        resolve(live, available: live.available, configured: live.configured, key: codeforcesKey, save: save, defaults: defaults)
+    /// A read with the contest list missing (`user.rating` failed, or the languages are not in) scores as unrated.
+    /// It is not good: it must not replace the saved reading.
+    static func codeforces(_ live: CodeforcesReading, save: Bool, account: String? = CodeforcesSettings.handle, defaults: UserDefaults = .standard) -> CodeforcesReading {
+        resolve(live, good: live.available && live.history != nil && live.languagesPending != true, configured: live.configured,
+                account: account, key: codeforcesKey, save: save, defaults: defaults)
     }
 
-    static func typing(_ live: MonkeytypeReading, save: Bool, defaults: UserDefaults = .standard) -> MonkeytypeReading {
-        resolve(live, available: live.available, configured: live.configured, key: typingKey, save: save, defaults: defaults)
+    static func typing(_ live: MonkeytypeReading, save: Bool, account: String? = MonkeytypeSettings.username, defaults: UserDefaults = .standard) -> MonkeytypeReading {
+        resolve(live, good: live.available, configured: live.configured, account: account, key: typingKey, save: save, defaults: defaults)
     }
 
-    /// A good reading is saved and used. A service that is not set forgets its reading. A failed read uses the saved one.
-    private static func resolve<Reading: Codable>(_ live: Reading, available: Bool, configured: Bool, key: String, save: Bool, defaults: UserDefaults) -> Reading {
+    /// A good reading is saved with its account and used. A service that is not set forgets its reading.
+    /// A failed read uses the saved one, but only for the same account: a new handle never shows the old handle's rating.
+    private static func resolve<Reading: Codable>(_ live: Reading, good: Bool, configured: Bool, account: String?, key: String, save: Bool,
+                                                  defaults: UserDefaults) -> Reading {
         guard save else { return live }
-        if available {
-            if let data = try? JSONEncoder().encode(live) { defaults.set(data, forKey: key) }
+        let owner = (account ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        if good {
+            if let data = try? JSONEncoder().encode(live) {
+                defaults.set(data, forKey: key)
+                defaults.set(owner, forKey: key + ".account")
+            }
             return live
         }
         guard configured else {
             defaults.removeObject(forKey: key)
+            defaults.removeObject(forKey: key + ".account")
             return live
         }
-        guard let data = defaults.data(forKey: key), let saved = try? JSONDecoder().decode(Reading.self, from: data) else { return live }
+        guard defaults.string(forKey: key + ".account") == owner, let data = defaults.data(forKey: key),
+              let saved = try? JSONDecoder().decode(Reading.self, from: data) else { return live }
         return saved
     }
 }

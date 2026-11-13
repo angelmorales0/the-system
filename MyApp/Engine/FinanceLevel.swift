@@ -22,6 +22,9 @@ nonisolated struct FinanceMonth: Codable, Equatable {
     var discretionaryUsd: Double? = nil
     /// The part of the spending that paid a credit card bill. Mercury does not see the purchases on the card.
     var cardBillUsd: Double? = nil
+    /// True when the month ended after the last good Mercury sync, so its last days are missing.
+    /// The FIN level still reads it, as before. The monthly budget quest waits for a full read.
+    var missingLastDays: Bool? = nil
 }
 
 /// Deterministic FIN (finance) level 0...350.
