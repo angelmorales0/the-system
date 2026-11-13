@@ -206,6 +206,32 @@ enum PlanAndLockRules {
             errors.append("a list should drop only the elements it cannot read")
         }
 
+        // The set limit: 3 for every lift and 4 for pull-ups, also for a plan or a saved day that asks for more.
+        var wide = GameSnapshot.fresh(catalog: catalog, now: morning)
+        for index in wide.bundle.quests.indices where wide.bundle.quests[index].verification.method == .hevySets && wide.bundle.quests[index].id != DailyStretch.questId {
+            wide.bundle.quests[index].verification.params["sets"] = .number(5)
+            wide.bundle.quests[index].progress.target = 5
+            wide.bundle.quests[index].title = "\(wide.bundle.quests[index].verification.params["exercise"]?.stringValue ?? "Lift") 5×8"
+        }
+        wide.bundle = wide.finished(wide.bundle, catalog: catalog, now: morning)
+        let capped = wide.bundle.quests.filter { $0.verification.method == .hevySets && $0.id != DailyStretch.questId }
+        let wrong = capped.filter { row in
+            let limit = GymSplit.maxSets(for: row.verification.params["exercise"]?.stringValue ?? "")
+            return row.verification.params["sets"]?.doubleValue != Double(limit) || row.progress.target != Double(limit) || !row.title.contains("\(limit)×8")
+        }
+        if capped.isEmpty || !wrong.isEmpty || capped.first(where: { $0.title.hasPrefix("Pull Up") })?.progress.target != 4 {
+            errors.append("a day should hold at most 3 sets a lift and 4 for pull-ups, got \(wrong.map(\.title))")
+        }
+        // The gym row adds up sets: a lift with 2 of 3 sets counts 2, a timed row counts its share, a done row all.
+        var twoSets = lift("Bench Press", sets: 3)
+        twoSets.progress.current = 2
+        var hold = Quest(id: "q_2026-10-22_dead_hang", title: "Dead Hang 3×60s", kind: .daily, stat: .STR,
+                         verification: VerificationSpec(method: .hevySets, params: ["exercise": .string("Dead Hang"), "sets": .number(3), "minDurationSec": .number(180)]),
+                         deadline: morning, difficulty: .normal, mode: .performanceTraining, progress: QuestProgress(current: 1, target: 3, unit: "min"), status: .pending)
+        if twoSets.liftSets != (2, 3) || hold.liftSets != (1, 3) { errors.append("the gym row should count the sets done of an open lift") }
+        hold.status = .completed
+        if hold.liftSets != (3, 3) { errors.append("a finished lift should count all its sets") }
+
         // The strict STR targets take no assisted set, and a nap is not the night's sleep.
         if !StrengthLevel.isAssisted("Pull Up (Assisted)") || !StrengthLevel.isAssisted("Chest Dip (Band)") || StrengthLevel.isAssisted("Pull Up (Weighted)") {
             errors.append("assisted and band sets should not count for a strict STR target")

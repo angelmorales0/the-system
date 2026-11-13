@@ -42,13 +42,13 @@
             "method": "hevy_sets",
             "params": {
               "exercise": "Bench Press",
-              "sets": 4
+              "sets": 3
             }
           },
           "difficulty": "normal",
           "progress": {
             "current": 0,
-            "target": 4,
+            "target": 3,
             "unit": "sets"
           }
         }

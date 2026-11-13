@@ -161,12 +161,16 @@ struct SystemView: View {
         GymSplit.day(named: store.bundle.headerLine)?.name ?? "Gym"
     }
 
+    /// The gym row counts sets, not finished exercises: each set that Hevy holds shows at once, so a lift with
+    /// 2 of its 3 sets done already moves the row. The box fills when every exercise is done.
     private func liftGroupRow(_ lifts: [Quest]) -> some View {
         let done = lifts.filter { $0.status == .completed }.count
-        return foldRow(title: liftGroupTitle, label: "[\(done)/\(lifts.count)]", checked: done == lifts.count, expanded: liftsExpanded) {
+        let sets = lifts.map(\.liftSets)
+        let setsDone = sets.reduce(0) { $0 + $1.done }, setsAsked = sets.reduce(0) { $0 + $1.total }
+        return foldRow(title: liftGroupTitle, label: "[\(setsDone)/\(setsAsked)]", checked: done == lifts.count, expanded: liftsExpanded) {
             liftsExpanded.toggle()
         }
-        .accessibilityValue("\(done) of \(lifts.count) exercises done, \(liftsExpanded ? "expanded" : "collapsed")")
+        .accessibilityValue("\(setsDone) of \(setsAsked) sets done, \(done) of \(lifts.count) exercises done, \(liftsExpanded ? "expanded" : "collapsed")")
         .accessibilityHint(liftsExpanded ? "Hides the exercises" : "Shows the exercises")
     }
 

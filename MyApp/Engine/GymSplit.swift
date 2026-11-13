@@ -90,8 +90,8 @@ enum GymSplit {
         lift("Bent Over Row", .main, 3, 5...8, target: "Barbell row", aliases: StrengthLevel.row.aliases),
         lift("Pull Up", .accessory, 4, 3...10, target: "Pull-ups", aliases: StrengthLevel.pullUps.aliases, note: pullUpVolume),
         lift("Chest Dip", .accessory, 3, 5...8, target: "Weighted dips", aliases: StrengthLevel.dips.aliases),
-        lift("Lateral Raise", .accessory, 4, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
-        lift("Bicep Curl", .accessory, 4, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
+        lift("Lateral Raise", .accessory, 3, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
+        lift("Bicep Curl", .accessory, 3, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
     ])
 
     static let squat = Day(id: "squat", name: "Squat Day", focus: "Lower body: squat, single-leg work, hamstrings, calves, and hips", lowerBody: true, exercises: [
@@ -105,15 +105,15 @@ enum GymSplit {
     ] + hipRows + [
         hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
         // Optional and last: done at home on a good day, so the gym session stays short next to the running.
-        lift("Pistol Squat", .accessory, 6, 3...10, target: "Pistol squats", aliases: StrengthLevel.pistolAliases, optional: true,
+        lift("Pistol Squat", .accessory, 3, 3...10, target: "Pistol squats", aliases: StrengthLevel.pistolAliases, optional: true,
              note: "Optional. Do them at home only if your legs feel good. Skipping them never misses the day."),
     ])
 
     static let press = Day(id: "press", name: "Press Day", focus: "Upper body: shoulders, back, chest, biceps", lowerBody: false, exercises: [
         lift("Overhead Press", .main, 3, 1...5, target: "Overhead press", aliases: StrengthLevel.overheadPress.aliases),
         lift("Pull Up", .main, 4, 3...5, target: "Pull-ups", aliases: StrengthLevel.pullUps.aliases, note: pullUpStrength),
-        lift("Lateral Raise", .accessory, 4, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
-        lift("Bicep Curl", .accessory, 4, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
+        lift("Lateral Raise", .accessory, 3, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
+        lift("Bicep Curl", .accessory, 3, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
         hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
         // Optional and last, like the pistol squats: done at home if there is time.
         lift("Handstand Push Up", .accessory, 3, 1...5, target: "Handstand push-ups", aliases: StrengthLevel.handstandPushUps.aliases, optional: true,
@@ -136,8 +136,8 @@ enum GymSplit {
 
     static let arms = Day(id: "arms", name: "Arms Day", focus: "Pull-ups first while fresh, then side delts, biceps, grip, and core. No pressing", lowerBody: false, exercises: [
         lift("Pull Up", .accessory, 3, 3...20, target: "Pull-ups", aliases: StrengthLevel.pullUps.aliases, note: pullUpMax),
-        lift("Lateral Raise", .accessory, 4, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
-        lift("Bicep Curl", .accessory, 4, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
+        lift("Lateral Raise", .accessory, 3, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
+        lift("Bicep Curl", .accessory, 3, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
         lift("Toes To Bar", .accessory, 3, 5...10, target: "Toes-to-bar", aliases: StrengthLevel.toesToBar.aliases),
         hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
         support("Face Pull", 3, 12...15, muscle: "Rear delts", aliases: ["face pull"],
@@ -148,6 +148,43 @@ enum GymSplit {
     static let pullUpVolume = "Volume: strict sets, each stopped about 3 reps short of failure. Add 1 rep to every set each week. Never to failure today."
     static let pullUpStrength = "Weighted strength: add weight with a belt or a dumbbell so the top set of 5 is about RPE 8. Under 8 strict bodyweight reps, do bodyweight sets of 3-5 instead."
     static let pullUpMax = "Max effort: first set as many strict reps as you can, stopping 1 rep short of failure. Then 2 sets at about 60% of that number. The first set shows your progress to 20."
+
+    /// The most sets one lift holds in a day: 3 for every lift, 4 for pull-ups, the main goal.
+    /// The split, the planner's plans, and a day that is already saved all keep to it.
+    static let maxSetsPerLift = 3
+    static let maxPullUpSets = 4
+
+    static func maxSets(for exercise: String) -> Int {
+        StrengthLevel.pullUps.aliases.contains(StrengthLevel.normalizedName(exercise)) ? maxPullUpSets : maxSetsPerLift
+    }
+
+    /// Cuts each open lift row that asks for more sets down to the limit: a plan the planner wrote, or a day saved
+    /// before the limit. A finished row stays as it is. A timed row keeps its seconds per set.
+    static func cappingSets(_ bundle: QuestBundle) -> QuestBundle {
+        var copy = bundle
+        for index in copy.quests.indices {
+            let quest = copy.quests[index]
+            guard quest.verification.method == .hevySets, quest.id != DailyStretch.questId, quest.status != .completed,
+                  let sets = quest.verification.params["sets"]?.doubleValue, sets > 0 else { continue }
+            let limit = Double(maxSets(for: quest.verification.params["exercise"]?.stringValue ?? quest.title))
+            guard sets > limit else { continue }
+            var row = quest
+            row.verification.params["sets"] = .number(limit)
+            if let seconds = quest.verification.params["minDurationSec"]?.doubleValue {
+                row.verification.params["minDurationSec"] = .number(seconds / sets * limit)
+            }
+            row.progress.target = quest.progress.target / sets * limit
+            row.progress.current = min(quest.progress.current, row.progress.target)
+            for mark in ["×", "x"] {
+                if let range = row.title.range(of: "\(Int(sets))\(mark)") {
+                    row.title.replaceSubrange(range, with: "\(Int(limit))\(mark)")
+                    break
+                }
+            }
+            copy.quests[index] = row
+        }
+        return copy
+    }
 
     /// The player's top focus right now. Each is trained 3 times a rotation, and is never dropped for time.
     /// Pull-ups lead: 20 strict reps is the main goal.
@@ -253,8 +290,8 @@ enum GymSplit {
                             custom: true)
         case .reps:
             let target = max(goal.targetReps, 1)
-            return Exercise(exercise: name, aliases: [goal.alias], role: .accessory, sets: 4, minReps: max(1, target / 4), maxReps: target, target: goal.category,
-                            note: "Your goal: \(goal.goal). First set as many strict reps as you can, stopping 1 rep short of failure. Then 3 sets at about 60% of that number.",
+            return Exercise(exercise: name, aliases: [goal.alias], role: .accessory, sets: maxSets(for: name), minReps: max(1, target / 4), maxReps: target, target: goal.category,
+                            note: "Your goal: \(goal.goal). First set as many strict reps as you can, stopping 1 rep short of failure. Then \(maxSets(for: name) - 1) sets at about 60% of that number.",
                             custom: true)
         case .hold:
             let seconds = min(goal.targetSeconds, max(10, (goal.targetSeconds / 2).rounded()))
@@ -347,6 +384,14 @@ enum GymSplit {
         }
         if arms.exercises.contains(where: { ["Bench press", "Overhead press", "Weighted dips", "Handstand push-ups"].contains($0.target) }) {
             errors.append("Arms Day must not press, so the next Bench Day starts fresh")
+        }
+        for day in rotation {
+            for exercise in day.exercises where exercise.sets > maxSets(for: exercise.exercise) {
+                errors.append("\(exercise.exercise) on \(day.name) should have at most \(maxSets(for: exercise.exercise)) sets, got \(exercise.sets)")
+            }
+        }
+        if maxSets(for: "Pull Up (Weighted)") != 4 || maxSets(for: "Lateral Raise") != 3 {
+            errors.append("the set limit should be 4 for pull-ups and 3 for every other lift")
         }
         for day in rotation where countedRows(day.exercises) > maxExercisesPerDay {
             errors.append("\(day.name) should have at most \(maxExercisesPerDay) exercises so the day fits the quest limits")
@@ -678,5 +723,18 @@ extension GameSnapshot {
         generationAttemptDayKey = nil
         rebuildBundle(catalog: catalog, now: now)
         return nil
+    }
+}
+
+extension Quest {
+    /// Sets done and sets asked of a lift row. The gym row adds them up, so each set found in Hevy shows at once,
+    /// not only a lift with every set done. A timed row shows minutes; each of its sets is an equal share.
+    var liftSets: (done: Int, total: Int) {
+        let asked = verification.params["sets"]?.doubleValue ?? (progress.unit == "sets" ? progress.target : 1)
+        let total = max(1, Int(asked.rounded()))
+        if status == .completed { return (total, total) }
+        guard progress.target > 0 else { return (0, total) }
+        let share = progress.unit == "sets" ? progress.current : progress.current / progress.target * Double(total)
+        return (min(total, max(0, Int(share + 0.001))), total)
     }
 }

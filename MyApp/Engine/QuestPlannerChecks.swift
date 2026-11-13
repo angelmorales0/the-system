@@ -18,8 +18,8 @@ extension QuestPlanner {
         "name": .string("Squat Day"),
         "lowerBody": .bool(true),
         "exercises": .array([
-            .object(["exercise": .string("Squat"), "aliases": .array([.string("squat")]), "role": .string("main"), "sets": .number(4), "minReps": .number(1), "maxReps": .number(5)]),
-            .object(["exercise": .string("Bulgarian Split Squat"), "aliases": .array([.string("bulgarian split squat")]), "role": .string("accessory"), "sets": .number(4), "minReps": .number(8), "maxReps": .number(12)]),
+            .object(["exercise": .string("Squat"), "aliases": .array([.string("squat")]), "role": .string("main"), "sets": .number(3), "minReps": .number(1), "maxReps": .number(5)]),
+            .object(["exercise": .string("Bulgarian Split Squat"), "aliases": .array([.string("bulgarian split squat")]), "role": .string("accessory"), "sets": .number(3), "minReps": .number(8), "maxReps": .number(12)]),
             .object(["exercise": .string("Dead Hang"), "aliases": .array([.string("dead hang"), .string("hang")]), "role": .string("accessory"), "sets": .number(3),
                      "minReps": .number(0), "maxReps": .number(0), "secondsPerSet": .number(60)]),
         ]),
@@ -235,7 +235,7 @@ extension QuestPlanner {
                                                      "today": sampleSplitDay, "lastDone": .object([:])]))
         body = setting(body, ["trainingHistory"], to: .object(["lifts": .object([:]), "strengthSessions": .array([])]))
         let day = templateBundle(body)
-        if day["headerLine"]?.stringValue != "Squat Day" || titles(day) != ["10K Run", "Squat 4x1-5", "Bulgarian Split Squat 4x8-12", "Dead Hang 3x60s"] {
+        if day["headerLine"]?.stringValue != "Squat Day" || titles(day) != ["10K Run", "Squat 3x1-5", "Bulgarian Split Squat 3x8-12", "Dead Hang 3x60s"] {
             errors.append("the template should follow today's split day, got \(titles(day))")
         }
         let problems = validateBundle(sanitize(day, body), body)
