@@ -82,6 +82,20 @@ enum PlanAndLockRules {
         if TrainingHistory.fatigueSummary(pulls.json, recovery: [])["decliningLifts"]?.arrayValue?.isEmpty != true || pulls.json["pull up"]?["trend"]?.stringValue == "declining" {
             errors.append("pull-up volume days and max-effort days should not read as a decline, got \(pulls.json["pull up"]?["trendByKind"]?.sortedString() ?? "")")
         }
+        // One-set sessions next to max days and volume days are not alike (a test, a day cut short): they fall, and
+        // nothing declines. A lift that is always one set is a series, and three falling sessions of it are a decline.
+        let withSingles = TrainingHistory.liftSummaries([pull(20, [18]), pull(16, [7, 7, 7, 7]), pull(13, [14, 8, 8]), pull(12, [9]), pull(11, [8, 8, 8, 8]),
+                                                         pull(8, [15, 9, 9]), pull(6, [9, 9, 9, 9]), pull(3, [16, 9, 9]), pull(1, [7])],
+                                                        today: "2026-10-22", zone: QuestDay.timeZone)
+        let singleEntry = withSingles.json["pull up"]
+        if TrainingHistory.fatigueSummary(withSingles.json, recovery: [])["decliningLifts"]?.arrayValue?.isEmpty != true
+            || singleEntry?["fallingSeries"]?.arrayValue?.isEmpty != true || ["declining", "dropping"].contains(singleEntry?["trend"]?.stringValue ?? "") {
+            errors.append("one-set sessions next to max days and volume days should make no falling series, got \(singleEntry?["trendByKind"]?.sortedString() ?? "")")
+        }
+        let onlySingles = TrainingHistory.liftSummaries([pull(9, [18]), pull(5, [12]), pull(1, [7])], today: "2026-10-22", zone: QuestDay.timeZone)
+        if TrainingHistory.fatigueSummary(onlySingles.json, recovery: [])["decliningLifts"]?.arrayValue?.count != 1 {
+            errors.append("a lift that is always one set should still show a decline")
+        }
 
         // The run window: runs inside the GPS tolerance fill it, and a run the app counted without Strava counts.
         let short = TrainingHistory.runWindow((1...5).map { .object(["km": .number(9.96), "daysAgo": .number(Double($0)), "counts": .string("10K")]) }, goalKm: 50)

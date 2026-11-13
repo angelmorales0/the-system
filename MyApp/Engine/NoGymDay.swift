@@ -108,6 +108,7 @@ extension GameSnapshot {
         if on {
             noGymDayKey = bundle.dayKey
             bundle = finished(bundle, catalog: catalog, now: now)
+            giveRealRunToAddedRow()
             return "No gym available. Strength quests are swapped for an added 10K. It does not count toward the 50 km window."
         }
         noGymDayKey = nil
@@ -118,6 +119,7 @@ extension GameSnapshot {
             generationAttemptDayKey = nil
         }
         noGymPlanDayKey = nil
+        giveAddedRunToDayRun()
         var fresh = self
         fresh.rebuildBundle(catalog: catalog, now: now)
         let dayKey = bundle.dayKey
@@ -135,6 +137,44 @@ extension GameSnapshot {
         bundle = TrainingDay.cappingWorkouts(bundle)
         bundle.headerLine = fresh.bundle.headerLine
         return "Gym day again. Strength quests are back."
+    }
+
+    /// A real 10K that the day's run took before the setting went on fills the added 10K, and the day's run is open
+    /// again with its hand check. That is the day the same work gives when the setting goes on first: there the run
+    /// fills the added 10K, which is checked first. Without this, the day asked for a second real 10K.
+    /// A hand check or a potion is no real run, so such a row stays as it is.
+    private mutating func giveRealRunToAddedRow() {
+        let dayKey = bundle.dayKey, addedId = NoGymDay.addedId(dayKey)
+        guard let added = bundle.quests.firstIndex(where: { $0.id == addedId && $0.status != .completed }),
+              let ran = bundle.quests.firstIndex(where: { quest in
+                  quest.kind == .daily && quest.id != addedId && NoGymDay.isTenK(quest) && quest.status == .completed
+                      && !quest.skippedWithPotion && !quest.evidence.isEmpty && quest.evidence.allSatisfy { !$0.workoutIds.isEmpty }
+              }) else { return }
+        let dayId = bundle.quests[ran].id
+        bundle.quests[added].id = dayId
+        bundle.quests[ran].id = addedId
+        moveEvidenceUses(from: dayId, to: addedId)
+        bundle = NoGymDay.addedRunFirst(bundle)
+    }
+
+    /// The other direction, when the setting goes off: a real 10K on the added row is the day's run while that run
+    /// is open. The day is then the gym day it was, with its run done, and the record of the day holds no added 10K.
+    private mutating func giveAddedRunToDayRun() {
+        let dayKey = bundle.dayKey, addedId = NoGymDay.addedId(dayKey)
+        guard let ran = bundle.quests.firstIndex(where: { $0.id == addedId && $0.status == .completed }),
+              let open = bundle.quests.firstIndex(where: { $0.kind == .daily && $0.id != addedId && NoGymDay.isTenK($0) && $0.status != .completed }) else { return }
+        let dayId = bundle.quests[open].id
+        bundle.quests[ran].id = dayId
+        bundle.quests.remove(at: open)
+        moveEvidenceUses(from: addedId, to: dayId)
+    }
+
+    /// The evidence a row used goes with the row when it takes another id, so the same run cannot fill the row that
+    /// now has the old id.
+    private mutating func moveEvidenceUses(from oldId: String, to newId: String) {
+        for index in evidenceLog.indices where evidenceLog[index].dayKey == bundle.dayKey && evidenceLog[index].questId == oldId {
+            evidenceLog[index].questId = newId
+        }
     }
 }
 
@@ -261,6 +301,43 @@ enum NoGymDayRules {
         _ = written.setNoGym(false, catalog: catalog, now: now)
         if !written.bundle.quests.contains(where: { isLift($0) }) || written.generatedBundle != nil || written.bundle.headerLine != "Bench Day" {
             errors.append("no gym off should bring the lifts back after a plan written for the no-gym day, got \(written.bundle.quests.map(\.id))")
+        }
+
+        // One real 10K and one hand check finish a no-gym day when the run comes before the setting too: the run
+        // goes to the added 10K, and the day's run is open with its hand check. The run cannot fill both rows.
+        // Off again gives the gym day back with its run done.
+        var early = GameSnapshot.fresh(catalog: catalog, now: now)
+        if let dayRun = early.bundle.quests.first(where: { NoGymDay.isTenK($0) }) {
+            let start = now.addingTimeInterval(3_600)
+            let real = Evidence.make(source: "strava", externalId: "\(Evidence.workoutPrefix)strava:early", payload: "early", timestamp: start.addingTimeInterval(3_300),
+                                     recordings: ["strava:early"], sessionStart: start)
+            _ = early.apply(.completed(evidence: real), questId: dayRun.id, now: now)
+            let gymDay = early.bundle
+            _ = early.setNoGym(true, catalog: catalog, now: now)
+            let runs = early.bundle.quests.filter { TrainingDay.isRaceRun($0) }
+            if runs.map(\.id) != [NoGymDay.addedId(early.bundle.dayKey), dayRun.id] || runs.first?.status != .completed
+                || runs.last?.status == .completed || runs.last?.allowsCheckOff != true {
+                errors.append("a real 10K before no gym should fill the added 10K and leave the day's run open, got \(runs.map { "\($0.id) \($0.status)" })")
+            }
+            var again = early
+            if let open = runs.last, again.apply(.completed(evidence: real), questId: open.id, now: now) == .completed {
+                errors.append("the run that filled the added 10K should not fill the day's run too")
+            }
+            let on = early.bundle
+            _ = early.setNoGym(true, catalog: catalog, now: now)
+            if early.bundle != on { errors.append("no gym on twice after a real run should change nothing") }
+            _ = early.setNoGym(false, catalog: catalog, now: now)
+            if early.bundle.quests.map(\.id) != gymDay.quests.map(\.id) || early.bundle.quests.first(where: { $0.id == dayRun.id })?.status != .completed
+                || !early.evidenceLog.contains(where: { $0.questId == dayRun.id }) || early.evidenceLog.contains(where: { $0.questId == NoGymDay.addedId(gymDay.dayKey) }) {
+                errors.append("no gym off should give the gym day back with its real run done, got \(early.bundle.quests.map { "\($0.id) \($0.status)" })")
+            }
+            // A hand check is no real run: the added 10K stays open and the checked row stays.
+            var checked = GameSnapshot.fresh(catalog: catalog, now: now)
+            _ = checked.applyLocalOverride(questId: dayRun.id, now: now)
+            _ = checked.setNoGym(true, catalog: catalog, now: now)
+            if checked.bundle.quests.first(where: \.isNoGymRun)?.status == .completed || checked.bundle.quests.first(where: { $0.id == dayRun.id })?.status != .completed {
+                errors.append("a hand check before no gym should not fill the added 10K")
+            }
         }
 
         // With a penalty open, the added 10K goes below the Penalty 10K, so the first run clears the penalty.

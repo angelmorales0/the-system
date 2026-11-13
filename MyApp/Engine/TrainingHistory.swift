@@ -221,10 +221,15 @@ enum TrainingHistory {
             if values.count >= 2, let first = values.first, let oldest = values.last {
                 entry["e1rmChangeKg"] = .number(pyRound(first - oldest, 1))
             }
-            for (key, value) in liftTrend(list) { entry[key] = .string(value) }
+            // One set alone shows no shape. Next to max days or volume days it is a session cut short, or a test:
+            // such sessions are not alike, so they make no series and get no trend. A lift that is always one set
+            // keeps its series.
+            let kinds = Set(list.compactMap { $0["kind"]?.stringValue })
+            let judged = kinds.contains("reps max") || kinds.contains("reps volume") ? list.filter { $0["kind"]?.stringValue != "reps single" } : list
+            for (key, value) in liftTrend(judged) { entry[key] = .string(value) }
             var byKind: [String: JSONValue] = [:]
-            for kind in Set(list.compactMap { $0["kind"]?.stringValue }) {
-                byKind[kind] = liftTrend(list.filter { $0["kind"]?.stringValue == kind })["trend"].map(JSONValue.string)
+            for kind in Set(judged.compactMap { $0["kind"]?.stringValue }) {
+                byKind[kind] = liftTrend(judged.filter { $0["kind"]?.stringValue == kind })["trend"].map(JSONValue.string)
             }
             entry["trendByKind"] = .object(byKind)
             // The series that fall now: their newest session is inside the fatigue window. An old heavy block that
@@ -247,7 +252,8 @@ enum TrainingHistory {
 
     /// The best set against the second best: on a max day the next set is a back-off, far under it. On a volume day
     /// the reps can fall off set by set, but the two best sets stay close. One set alone shows no shape: it is its
-    /// own kind, so a session cut short joins neither series.
+    /// own kind, so a session cut short joins neither series. `liftSummaries` judges that kind only for a lift
+    /// that has no max days and no volume days.
     static func repsKind(_ reps: [Int]) -> String {
         let counted = reps.filter { $0 > 0 }.sorted(by: >)
         guard counted.count >= 2 else { return "reps single" }
