@@ -112,7 +112,9 @@ final class SoundPlayer {
 /// Turns one snapshot change into its cues, so every path that changes the snapshot sounds the same:
 /// a tap, a timer, a connected verifier, or a refresh.
 enum SoundCues {
-    static func sounds(from old: GameSnapshot, to new: GameSnapshot) -> [SystemSound] {
+    /// `dayCuePlayed`: the day cue already played for this quest day. A run that "No gym today" only moves can
+    /// complete the day a second time, and that is nothing new.
+    static func sounds(from old: GameSnapshot, to new: GameSnapshot, dayCuePlayed: Bool = false) -> [SystemSound] {
         var cues: [SystemSound] = []
         // A new day replaces the quests. Its own cue plays from `refreshForToday`.
         if old.bundle.dayKey == new.bundle.dayKey {
@@ -132,8 +134,9 @@ enum SoundCues {
                 }
                 if quest.status == .failed, was != .failed { failed = true }
             }
-            // A moved run is no new quest, but it can be what makes the day complete: that cue still plays.
-            if finished, old.missesRequiredSet, !new.missesRequiredSet {
+            // A moved run is no new quest, but it can be what makes the day complete: that cue still plays,
+            // one time for the day.
+            if finished, old.missesRequiredSet, !new.missesRequiredSet, completed || !dayCuePlayed {
                 cues.append(.dayClear)
             } else if completed {
                 cues.append(.questComplete)

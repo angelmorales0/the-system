@@ -245,7 +245,13 @@ enum TrainingHistory {
             // when none does: an older series that ended must not pass for today's.
             var series = judged
             if leftOut, list.first?["kind"]?.stringValue == "reps single" {
-                series = falling.first.map { kind in judged.filter { $0["kind"]?.stringValue == kind } } ?? []
+                // The series that falls most: two sessions down in a row before one, then the newest series.
+                func newest(_ kind: String) -> String { judged.first { $0["kind"]?.stringValue == kind }?["date"]?.stringValue ?? "" }
+                let worst = falling.min { left, right in
+                    let leftDrops = byKind[left]?.stringValue == "dropping", rightDrops = byKind[right]?.stringValue == "dropping"
+                    return leftDrops != rightDrops ? leftDrops : newest(left) > newest(right)
+                }
+                series = worst.map { kind in judged.filter { $0["kind"]?.stringValue == kind } } ?? []
             }
             for (key, value) in liftTrend(series) { entry[key] = .string(value) }
             lifts.entries[name] = entry

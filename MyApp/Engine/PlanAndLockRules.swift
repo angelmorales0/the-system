@@ -110,6 +110,17 @@ enum PlanAndLockRules {
         if hidden.json["pull up"]?["trend"]?.stringValue != "dropping" || hidden.json["pull up"]?["advice"]?.stringValue?.contains("Deload") != true {
             errors.append("a series that falls now should give the lift its trend when the newest session is left out, got \(hidden.json["pull up"]?["trend"]?.stringValue ?? "")")
         }
+        // Two series fall and the newest session is a left-out single set: the lift takes the one that falls most.
+        func weightedPull(_ daysAgo: Int, _ kg: Double, _ reps: Int) -> HevyWorkout {
+            let start = morning.addingTimeInterval(Double(-daysAgo) * 86_400)
+            return HevyWorkout(id: "wpull-\(daysAgo)", title: "Gym", start: start, end: start.addingTimeInterval(3_600),
+                               exercises: [HevyExercise(title: "Pull Up", templateId: nil, sets: Array(repeating: HevySet(type: "normal", reps: reps, weightKg: kg, rpe: nil, durationSec: nil), count: 3))])
+        }
+        let twoFall = TrainingHistory.liftSummaries([weightedPull(13, 30, 5), weightedPull(11, 10, 12), weightedPull(9, 32, 5), weightedPull(7, 10, 10),
+                                                     weightedPull(5, 28, 5), weightedPull(3, 10, 8), pull(1, [10])], today: "2026-10-22", zone: QuestDay.timeZone)
+        if twoFall.json["pull up"]?["fallingSeries"]?.arrayValue?.count != 2 || twoFall.json["pull up"]?["trend"]?.stringValue != "dropping" {
+            errors.append("with two falling series the lift should take the one that drops, got \(twoFall.json["pull up"]?["trend"]?.stringValue ?? "") \(twoFall.json["pull up"]?["trendByKind"]?.sortedString() ?? "")")
+        }
         for (name, history) in [("usual", endedBlock), ("left out", cutShort)] {
             if TrainingHistory.fatigueSummary(history.json, recovery: [])["decliningLifts"]?.arrayValue?.isEmpty != true
                 || ["declining", "dropping"].contains(history.json["pull up"]?["trend"]?.stringValue ?? "") {
@@ -261,6 +272,28 @@ enum PlanAndLockRules {
             if locked.bundle.quests[index].status != .completed || locked.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != 7 {
                 errors.append("a pass whose source gives no workouts should take no progress away, got \(rowsText(locked))")
             }
+            // The two sources measure one run differently: Apple Health 7.04 km first, then Strava alone 6.98 km.
+            // It is one run by its time, so the penalty row gives it up when the 5K takes it.
+            var twoSources = owes
+            twoSources.bundle.quests[index].verification.params["minDistanceMeters"] = .number(5_000)
+            twoSources.bundle.quests[index].progress.target = 5
+            let fiveKDay = twoSources
+            twoSources.checkOpenRows(integrations: dayData(strava: [], health: [recorded("healthkit", "src-hk", meters: 7_040, after: 3_600)]), now: passNow, skipping: passSkips)
+            twoSources.checkOpenRows(integrations: dayData(strava: [recorded("strava", "src-strava", meters: 6_980, after: 3_620)]), now: passNow, skipping: passSkips)
+            if twoSources.bundle.quests[index].status != .completed || twoSources.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != 0 {
+                errors.append("one run that two sources measure differently should leave the row that showed it, got \(rowsText(twoSources))")
+            }
+            // Two runs of the same length: Strava's finished the 5K, and Apple Health's alone shows on the penalty row.
+            // A pass with no Health data holds only the used run. The other run's progress stays.
+            var sameLength = fiveKDay
+            let usedRun = recorded("strava", "same-a", meters: 5_020, after: 3_600), freeRun = recorded("healthkit", "same-b", meters: 5_040, after: 14_400)
+            sameLength.checkOpenRows(integrations: dayData(strava: [usedRun]), now: passNow, skipping: passSkips)
+            sameLength.checkOpenRows(integrations: dayData(strava: [usedRun], health: [freeRun]), now: passNow, skipping: passSkips)
+            let withHealth = sameLength.bundle.quests.first { $0.id == penalty.id }?.progress.current
+            sameLength.checkOpenRows(integrations: dayData(strava: [usedRun]), now: passNow, skipping: passSkips)
+            if withHealth != 5 || sameLength.bundle.quests.first(where: { $0.id == penalty.id })?.progress.current != 5 {
+                errors.append("a used run of the same length should take no progress from the row that shows another run, got \(String(describing: withHealth)) then \(rowsText(sameLength))")
+            }
         } else {
             errors.append("a penalty day should hold a penalty row and the day's run")
         }
@@ -350,6 +383,10 @@ enum PlanAndLockRules {
             let beforeOff = lastRow
             _ = lastRow.setNoGym(false, catalog: catalog, now: morning)
             let cues = SoundCues.sounds(from: beforeOff, to: lastRow)
+            // After the day cue played for this day, the same move is nothing new.
+            if SoundCues.sounds(from: beforeOff, to: lastRow, dayCuePlayed: true).contains(.dayClear) {
+                errors.append("a run that only moves should not play the day cue a second time")
+            }
             if !beforeOff.missesRequiredSet || lastRow.missesRequiredSet || !cues.contains(.dayClear) || cues.contains(.questComplete) {
                 errors.append("no gym off that completes the day should play the day cue, got \(cues) misses \(beforeOff.missesRequiredSet) -> \(lastRow.missesRequiredSet)")
             }

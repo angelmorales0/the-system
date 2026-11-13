@@ -15,10 +15,18 @@ enum GamePersistence {
 final class GameStore: ObservableObject {
     @Published private(set) var snapshot: GameSnapshot {
         didSet {
+            let dayKey = snapshot.bundle.dayKey
+            let cues = SoundCues.sounds(from: oldValue, to: snapshot, dayCuePlayed: dayCueDayKey == dayKey)
+            if cues.contains(.dayClear) { dayCueDayKey = dayKey }
             guard soundsOn else { return }
-            for sound in SoundCues.sounds(from: oldValue, to: snapshot) { sound.play() }
+            for sound in cues { sound.play() }
         }
     }
+    /// The quest day whose day cue played, so a run that "No gym today" moves back does not play it again.
+    private var dayCueDayKey: String? = UserDefaults.standard.string(forKey: GameStore.dayCueKey) {
+        didSet { if persistence == .standard { UserDefaults.standard.set(dayCueDayKey, forKey: GameStore.dayCueKey) } }
+    }
+    private static let dayCueKey = "dayCueDayKey"
     @Published private(set) var verificationNote: String?
     @Published private(set) var clock = Date()
     @Published private(set) var dayClock: DayClock

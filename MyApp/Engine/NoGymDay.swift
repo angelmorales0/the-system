@@ -207,6 +207,7 @@ extension GameSnapshot {
         for index in evidenceLog.indices where evidenceLog[index].dayKey == dayKey && evidenceLog[index].questId == oldId {
             evidenceLog[index].questId = newId
         }
+        progressLog.removeAll { $0.dayKey == dayKey && $0.questId == newId }
         for index in hiddenUnlocks.indices where hiddenUnlocks[index].dayKey == dayKey && hiddenUnlocks[index].questId == oldId {
             hiddenUnlocks[index].questId = newId
         }

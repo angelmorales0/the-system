@@ -150,6 +150,7 @@ extension GameSnapshot {
             }
         }
 
+        progressLog = past.progressLog
         let stillMissed = !past.bundle.openRequired.isEmpty
         if past.bundle != asItEnded {
             let splitBefore = GymSplit.today(history: questHistory, dayKey: bundle.dayKey).id
