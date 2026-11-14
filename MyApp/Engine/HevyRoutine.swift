@@ -10,11 +10,14 @@ enum HevyRoutine {
     static let titlePrefix = "The System"
     static let idKey = "hevyRoutineId"
     static let signatureKey = "hevyRoutineSignature"
+    static let refusedKey = "hevyRoutineSignature.refused"
     static let templatesKey = "hevyRoutineTemplateIds"
+    static let typesKey = "hevyRoutineTemplateTypes"
+    static let missingKey = "hevyRoutineTemplateIds.missing"
     /// Hevy lists 100 exercise templates in a page. The built-in list and a player's own exercises fit in these.
     static let templatePages = 12
     /// Routines come 10 in a page. The routine of an earlier install is looked for in these.
-    static let routinePages = 5
+    static let routinePages = 10
 
     struct SetPlan: Equatable {
         var repsLow: Int?
@@ -40,51 +43,102 @@ enum HevyRoutine {
         var unknown: [String] { exercises.filter { $0.templateId == nil }.map(\.name) }
     }
 
+    /// What a row asks of the load, which decides the Hevy exercise and the weight it gets.
+    enum Load: Equatable {
+        /// The plan names a weight, or the split says the lift is weighted (weighted pull-ups).
+        case weighted
+        /// Bodyweight work: the split's volume and max-effort pull-ups.
+        case bodyweight
+        case any
+    }
+
+    /// The Hevy exercise and the weight for one row, from the player's own logs, newest first.
+    ///
+    /// The log must be of the row's job, not only of its name: Squat is heavy on one day and light on another, and
+    /// pull-ups are weighted, bodyweight, or band-assisted. So a weight comes only from a session whose reps fit
+    /// the row, a bodyweight row takes a log with no weight, and an assisted log is taken only when there is no
+    /// other, and never for its weight (that number is help, not load).
+    static func logged(name: String, templateId: String?, load: Load, low: Int?, high: Int?, plannedKg: Double?,
+                       newestFirst: [HevyWorkout]) -> (templateId: String, weightKg: Double?)? {
+        var found: [(entry: HevyExercise, id: String)] = []
+        for workout in newestFirst {
+            for entry in workout.exercises {
+                guard let id = entry.templateId else { continue }
+                if templateId.map({ $0 == id }) ?? (StrengthLevel.normalizedName(entry.title) == name) { found.append((entry, id)) }
+            }
+        }
+        let plain = found.filter { !StrengthLevel.isAssisted($0.entry.title) }
+        let assistedOnly = plain.isEmpty
+        let pool = assistedOnly ? found : plain
+        guard let newest = pool.first else { return nil }
+        func working(_ entry: HevyExercise) -> [HevySet] { entry.sets.filter(\.isWorking) }
+        func loaded(_ entry: HevyExercise) -> [HevySet] { working(entry).filter { ($0.weightKg ?? 0) > 0 } }
+        func fits(_ set: HevySet) -> Bool {
+            guard let reps = set.reps, let low, let high else { return true }
+            return reps >= low && reps <= max(low, high)
+        }
+        switch load {
+        case .bodyweight:
+            let own = pool.first { loaded($0.entry).isEmpty } ?? newest
+            return (own.id, nil)
+        case .weighted, .any:
+            if let plannedKg {
+                // The plan's weight goes on the exercise that carried about that weight: a barbell weight does not
+                // go on the dumbbell exercise the player used last.
+                let own = pool.first { loaded($0.entry).contains { ($0.weightKg ?? 0) >= 0.8 * plannedKg } } ?? newest
+                return (own.id, plannedKg)
+            }
+            if !assistedOnly, let own = pool.first(where: { loaded($0.entry).contains(where: fits) }) {
+                return (own.id, loaded(own.entry).filter(fits).compactMap(\.weightKg).max())
+            }
+            return (newest.id, nil)
+        }
+    }
+
     /// The lift rows of the day in list order, then the stretches of the day. Nil when the day has none of them.
     /// Finished rows stay in the plan: the routine is the day's workout, and it does not change while it is done.
     ///
-    /// The Hevy exercise of a row is the one the player logged last under that name (the Hevy check's name rule), so
-    /// "Bench Press" is the barbell or the dumbbell bench the player uses. A name with no log comes from `templates`
-    /// (normalized Hevy title to id). The weight is the plan's weight, else the top weight of the last session.
-    static func plan(for bundle: QuestBundle, history: [HevyWorkout], templates: [String: String]) -> Plan? {
+    /// `templates` is Hevy's own list, by the name rule of the Hevy check, for a name the player never logged.
+    /// `types` is the Hevy type of each exercise id, when it is known: a set holds only what its exercise takes.
+    static func plan(for bundle: QuestBundle, history: [HevyWorkout], templates: [String: String], types: [String: String] = [:]) -> Plan? {
         let newestFirst = history.sorted { $0.start > $1.start }
-        func lastLogged(_ name: String, templateId: String?) -> HevyExercise? {
-            for workout in newestFirst {
-                if let entry = workout.exercises.first(where: { entry in
-                    if let templateId { return entry.templateId == templateId }
-                    return StrengthLevel.normalizedName(entry.title) == name && entry.templateId != nil
-                }) { return entry }
-            }
-            return nil
-        }
+        let split = GymSplit.day(named: bundle.headerLine)
         var exercises: [ExercisePlan] = []
         for quest in bundle.quests where quest.verification.method == .hevySets && quest.id != DailyStretch.questId && quest.kind != .penalty {
             let params = quest.verification.params
             let shown = params["exercise"]?.stringValue ?? quest.title
             let name = StrengthLevel.normalizedName(shown)
-            let count = max(1, Int(params["sets"]?.doubleValue ?? quest.progress.target))
-            let logged = lastLogged(name, templateId: params["templateId"]?.stringValue)
-            let templateId = params["templateId"]?.stringValue ?? logged?.templateId ?? templates[name]
+            let range = repRange(quest)
+            let count = setCount(quest)
+            let plannedKg = params["minWeightKg"]?.doubleValue.flatMap { $0 > 0 ? $0 : nil }
+            let light = quest.id.hasSuffix("_light")
+            let own = split?.exercises.first { StrengthLevel.normalizedName($0.exercise) == name && ($0.role == .light) == light }
+            let load: Load = plannedKg != nil || own?.note?.hasPrefix("Weighted") == true ? .weighted
+                : (own?.note == GymSplit.pullUpVolume || own?.note == GymSplit.pullUpMax ? .bodyweight : .any)
+            let low = range?.low ?? params["minReps"]?.doubleValue.map { Int($0) }
+            let found = logged(name: name, templateId: params["templateId"]?.stringValue, load: load, low: low, high: range?.high ?? low,
+                               plannedKg: plannedKg, newestFirst: newestFirst)
+            let templateId = params["templateId"]?.stringValue ?? found?.templateId ?? templates[name]
             var set = SetPlan()
             if let total = params["minDurationSec"]?.doubleValue {
                 set.seconds = max(1, Int((total / Double(count)).rounded()))
             } else {
-                let range = repRange(quest)
-                set.repsLow = range?.low ?? params["minReps"]?.doubleValue.map { Int($0) }
-                set.repsHigh = range?.high ?? set.repsLow
-                let top = logged?.sets.filter(\.isWorking).compactMap(\.weightKg).max()
-                set.weightKg = params["minWeightKg"]?.doubleValue ?? top.flatMap { $0 > 0 ? $0 : nil }
+                set.repsLow = low
+                set.repsHigh = range?.high ?? low
+                set.weightKg = plannedKg ?? found?.weightKg
             }
-            exercises.append(ExercisePlan(name: shown, templateId: templateId, sets: Array(repeating: set, count: count), note: quest.title))
+            exercises.append(ExercisePlan(name: shown, templateId: templateId, sets: Array(repeating: fitted(set, to: templateId.flatMap { types[$0] }), count: count),
+                                          note: [quest.title, own?.note].compactMap { $0 }.joined(separator: ". ")))
         }
         if let stretchRow = bundle.quests.first(where: { $0.id == DailyStretch.questId }), let day = StretchSplit.day(of: stretchRow) {
             for stretch in day.stretches {
                 let name = StrengthLevel.normalizedName(stretch.name)
                 let seconds = stretch.seconds * (stretch.perSide ? 2 : 1)
+                let templateId = logged(name: name, templateId: nil, load: .bodyweight, low: nil, high: nil, plannedKg: nil, newestFirst: newestFirst)?.templateId ?? templates[name]
                 exercises.append(ExercisePlan(
                     name: stretch.name,
-                    templateId: lastLogged(name, templateId: nil)?.templateId ?? templates[name],
-                    sets: Array(repeating: SetPlan(seconds: seconds), count: stretch.sets),
+                    templateId: templateId,
+                    sets: Array(repeating: fitted(SetPlan(seconds: seconds), to: templateId.flatMap { types[$0] }), count: stretch.sets),
                     note: stretch.perSide ? "\(stretch.seconds) s each side in one set." : nil
                 ))
             }
@@ -93,12 +147,37 @@ enum HevyRoutine {
         return Plan(title: "\(titlePrefix): \(bundle.headerLine)", exercises: exercises)
     }
 
-    /// "Bench Press 3×3-5" gives 3 to 5. "Dead Hang 3×60s" gives nil: that is time.
+    /// A set holds only what its Hevy exercise takes: Hevy can refuse a whole routine for one set that does not fit.
+    /// A hold on an exercise that counts reps, or a weight on a bodyweight exercise, is left empty for the player.
+    /// An exercise of an unknown type gets the set as planned.
+    static func fitted(_ set: SetPlan, to type: String?) -> SetPlan {
+        guard let type = type?.lowercased(), !type.isEmpty else { return set }
+        // Hevy's types are words joined by "_": weight_reps, bodyweight_reps, weighted_bodyweight, duration, ...
+        let words = Set(type.split(separator: "_").map(String.init))
+        var copy = set
+        if !words.contains("reps") { copy.repsLow = nil; copy.repsHigh = nil }
+        if !words.contains("duration") { copy.seconds = nil }
+        if words.isDisjoint(with: ["weight", "weighted", "assisted"]) { copy.weightKg = nil }
+        return copy
+    }
+
+    /// The sets of a row: its `sets`, else the number before the "×" of its title, else its target when that counts sets.
+    static func setCount(_ quest: Quest) -> Int {
+        if let sets = quest.verification.params["sets"]?.doubleValue, sets >= 1 { return Int(sets) }
+        if let match = quest.title.range(of: #"\d+\s*[×xX]\s*\d"#, options: .regularExpression),
+           let count = Int(quest.title[match].prefix(while: \.isNumber)), count >= 1 { return count }
+        return quest.progress.unit == "sets" ? max(1, Int(quest.progress.target)) : 1
+    }
+
+    /// "Bench Press 3×3-5" gives 3 to 5. "Dead Hang 3×60s" and "Farmers Walk 3×40m" give nil: time and distance.
+    /// The sets come before the mark, so a number in the exercise's name ("Max 10 Push Up 3×8") is not the reps.
     static func repRange(_ quest: Quest) -> (low: Int, high: Int)? {
-        guard let match = quest.title.range(of: #"[×x]\s*\d+(-\d+)?(?![\ds])"#, options: .regularExpression) else { return nil }
-        let numbers = quest.title[match].split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
-        guard let low = numbers.first else { return nil }
-        return (low, numbers.count > 1 ? numbers[1] : low)
+        let pattern = #"\d+\s*[×xX]\s*(\d+)(?:\s*[-–]\s*(\d+))?(?!\d|\s*(?:s|sec|m|min|km)\b)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: quest.title, range: NSRange(quest.title.startIndex..., in: quest.title)),
+              let lowRange = Range(match.range(at: 1), in: quest.title), let low = Int(quest.title[lowRange]) else { return nil }
+        let high = Range(match.range(at: 2), in: quest.title).flatMap { Int(quest.title[$0]) }
+        return (low, max(low, high ?? low))
     }
 
     /// The body of Hevy's "create routine" and "update routine" calls. `create` adds the folder: null is "My Routines".
@@ -113,7 +192,7 @@ enum HevyRoutine {
                     let range = set.repsLow != nil && set.repsLow != set.repsHigh
                     return .object([
                         "type": .string("normal"),
-                        "weight_kg": set.weightKg.map(JSONValue.number) ?? .null,
+                        "weight_kg": set.weightKg.map { .number(($0 * 100).rounded() / 100) } ?? .null,
                         "reps": range ? .null : set.repsLow.map { .number(Double($0)) } ?? .null,
                         "distance_meters": .null,
                         "duration_seconds": set.seconds.map { .number(Double($0)) } ?? .null,
@@ -142,87 +221,137 @@ enum HevyRoutine {
         EvidenceHash.sha256(body(plan, create: false).sortedString())
     }
 
-    /// Every exercise Hevy knows on this account, by the name rule of the Hevy check. Of two exercises with one
-    /// name ("Bench Press (Barbell)", "Bench Press (Dumbbell)") the first one Hevy lists stays, and a name the
-    /// player logged never comes here: `plan` takes the logged one.
-    static func loadTemplates(key: String) async -> [String: String]? {
-        var found: [String: String] = [:]
+    /// Changes when the rows the routine is made of change: the store writes the routine again then.
+    static func rowsKey(_ bundle: QuestBundle) -> String {
+        let lifts = bundle.quests.filter { $0.verification.method == .hevySets && $0.kind != .penalty }
+        return ([bundle.dayKey, bundle.headerLine] + lifts.map { "\($0.id)|\($0.title)|\($0.verification.params.sortedText)" }).joined(separator: "\n")
+    }
+
+    // MARK: - Hevy calls
+
+    /// The calls to Hevy, so the self-check can run the write with no network.
+    struct Transport {
+        var get: (URL, [String: String]) async -> (status: Int, json: JSONValue?)?
+        var send: (String, URL, [String: String], JSONValue) async -> (status: Int, json: JSONValue?)?
+
+        static let live = Transport(
+            get: { url, headers in await OnDeviceHTTP.get(url, headers: headers) },
+            send: { method, url, headers, body in await OnDeviceHTTP.sendJSON(method, url, headers: headers, body: body) }
+        )
+    }
+
+    /// Every exercise Hevy knows on this account: its id by the name rule of the Hevy check, and its type by id.
+    /// Of two exercises with one name ("Bench Press (Barbell)", "Bench Press (Dumbbell)") the first one Hevy lists
+    /// stays; a name the player logged never comes here, because `plan` takes the logged one. Nil when Hevy's
+    /// list could not be read to its end.
+    static func loadTemplates(key: String, transport: Transport) async -> (ids: [String: String], types: [String: String])? {
+        var ids: [String: String] = [:]
+        var types: [String: String] = [:]
         for number in 1...templatePages {
             guard let url = OnDeviceHTTP.url("\(HevyClient.api)/v1/exercise_templates", [("page", String(number)), ("pageSize", "100")]),
-                  let payload = await OnDeviceHTTP.getJSON(url, headers: HevyClient.headers(key)),
-                  let items = payload["exercise_templates"]?.arrayValue else {
-                return number == 1 ? nil : found
-            }
+                  let reply = await transport.get(url, HevyClient.headers(key)), (200..<300).contains(reply.status),
+                  let items = reply.json?["exercise_templates"]?.arrayValue else { return nil }
             for item in items {
                 guard let id = item["id"]?.stringValue, !id.isEmpty, let title = item["title"]?.stringValue else { continue }
                 let name = StrengthLevel.normalizedName(title)
-                if found[name] == nil { found[name] = id }
+                if ids[name] == nil { ids[name] = id }
+                if let type = item["type"]?.stringValue { types[id] = type }
             }
-            if items.isEmpty || number >= (payload["page_count"]?.intValue ?? number) { break }
+            if items.isEmpty || number >= (reply.json?["page_count"]?.intValue ?? number) { break }
         }
-        return found
+        return (ids, types)
+    }
+
+    enum Lookup: Equatable {
+        case found(String)
+        /// Hevy's list was read to its end and holds no routine of the app.
+        case none
+        /// The list could not be read. A new routine must not be made: one can be there.
+        case failed
     }
 
     /// The routine an earlier install made, by its title.
-    static func existingRoutineId(key: String) async -> String? {
+    static func existingRoutine(key: String, transport: Transport) async -> Lookup {
         for number in 1...routinePages {
             guard let url = OnDeviceHTTP.url("\(HevyClient.api)/v1/routines", [("page", String(number)), ("pageSize", "10")]),
-                  let payload = await OnDeviceHTTP.getJSON(url, headers: HevyClient.headers(key)),
-                  let items = payload["routines"]?.arrayValue else { return nil }
-            if let mine = items.first(where: { $0["title"]?.stringValue?.hasPrefix(titlePrefix + ":") == true }) {
-                return mine["id"]?.stringValue
+                  let reply = await transport.get(url, HevyClient.headers(key)), (200..<300).contains(reply.status),
+                  let items = reply.json?["routines"]?.arrayValue else { return .failed }
+            if let id = items.first(where: { $0["title"]?.stringValue?.hasPrefix(titlePrefix + ":") == true })?["id"]?.stringValue, !id.isEmpty {
+                return .found(id)
             }
-            if items.isEmpty || number >= (payload["page_count"]?.intValue ?? number) { break }
+            if items.isEmpty || number >= (reply.json?["page_count"]?.intValue ?? number) { return .none }
         }
-        return nil
+        // More routines than the pages read: one of the app's can be past them.
+        return .failed
     }
 
     /// The id in Hevy's reply, which holds the routine as an object or as a list of one.
     static func routineId(in reply: JSONValue?) -> String? {
         let routine = reply?["routine"]
-        return routine?["id"]?.stringValue ?? routine?.arrayValue?.first?["id"]?.stringValue
+        let id = routine?["id"]?.stringValue ?? routine?.arrayValue?.first?["id"]?.stringValue
+        return id.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     /// Writes the day's routine to Hevy when it changed. Returns a line for the player, or nil when nothing was sent.
-    static func sync(bundle: QuestBundle, history: [HevyWorkout],
-                     key: String? = SecretStore.read(.hevyApiKey), defaults: UserDefaults = .standard) async -> String? {
+    ///
+    /// A new routine is made only when Hevy's list was read to its end and holds none of the app's, or when Hevy
+    /// says the stored one is gone (404). Any failure to read or write leaves Hevy as it is and tries again later.
+    static func sync(bundle: QuestBundle, history: [HevyWorkout], key: String? = SecretStore.read(.hevyApiKey),
+                     defaults: UserDefaults = .standard, transport: Transport = .live) async -> String? {
         guard let key else { return nil }
         var templates = defaults.dictionary(forKey: templatesKey) as? [String: String] ?? [:]
-        guard var plan = plan(for: bundle, history: history, templates: templates) else { return nil }
-        // A row with no Hevy exercise yet: read Hevy's list one time for each new set of names.
+        var types = defaults.dictionary(forKey: typesKey) as? [String: String] ?? [:]
+        guard var plan = plan(for: bundle, history: history, templates: templates, types: types) else { return nil }
+        // Hevy's list is read one time, for the types, and again for each new set of names that are not known.
         let missing = plan.unknown.joined(separator: "|")
-        if !missing.isEmpty, defaults.string(forKey: templatesKey + ".missing") != missing {
-            if let loaded = await loadTemplates(key: key) {
-                templates = loaded
-                defaults.set(loaded, forKey: templatesKey)
-                defaults.set(missing, forKey: templatesKey + ".missing")
-                plan = self.plan(for: bundle, history: history, templates: templates) ?? plan
+        if types.isEmpty || (!missing.isEmpty && defaults.string(forKey: missingKey) != missing) {
+            if let loaded = await loadTemplates(key: key, transport: transport) {
+                templates = loaded.ids
+                types = loaded.types
+                defaults.set(loaded.ids, forKey: templatesKey)
+                defaults.set(loaded.types, forKey: typesKey)
+                plan = self.plan(for: bundle, history: history, templates: templates, types: types) ?? plan
+                // The names Hevy's list does not hold: the list is not read again for them.
+                defaults.set(plan.unknown.joined(separator: "|"), forKey: missingKey)
             }
         }
         guard !plan.known.isEmpty else { return "Hevy has none of today's exercises. No routine was written." }
         let signature = signature(plan)
         // The same routine is sent one time, also when Hevy refused it: a new day or a new plan sends again.
-        guard defaults.string(forKey: signatureKey) != signature, defaults.string(forKey: signatureKey + ".refused") != signature else { return nil }
+        guard defaults.string(forKey: signatureKey) != signature, defaults.string(forKey: refusedKey) != signature else { return nil }
 
         var id = defaults.string(forKey: idKey)
-        if id == nil { id = await existingRoutineId(key: key) }
+        if id == nil {
+            switch await existingRoutine(key: key, transport: transport) {
+            case .found(let found): id = found
+            case .none: break
+            case .failed: return "Hevy did not answer. The routine is written at the next refresh."
+            }
+        }
         var reply: (status: Int, json: JSONValue?)?
+        var created = false
         if let id, let url = URL(string: "\(HevyClient.api)/v1/routines/\(id)") {
-            reply = await OnDeviceHTTP.sendJSON("PUT", url, headers: HevyClient.headers(key), body: body(plan, create: false))
+            reply = await transport.send("PUT", url, HevyClient.headers(key), body(plan, create: false))
+            guard reply != nil else { return "Hevy did not answer. The routine is written at the next refresh." }
         }
         // No routine yet, or the player deleted it in Hevy.
-        if reply == nil || reply?.status == 404, let url = URL(string: "\(HevyClient.api)/v1/routines") {
-            if id == nil || reply?.status == 404 {
-                reply = await OnDeviceHTTP.sendJSON("POST", url, headers: HevyClient.headers(key), body: body(plan, create: true))
-            }
+        if id == nil || reply?.status == 404, let url = URL(string: "\(HevyClient.api)/v1/routines") {
+            reply = await transport.send("POST", url, HevyClient.headers(key), body(plan, create: true))
+            created = true
         }
         guard let reply else { return "Hevy did not answer. The routine is written at the next refresh." }
         guard (200..<300).contains(reply.status) else {
+            if created { defaults.removeObject(forKey: idKey) }
             if reply.status == 403 { return "Hevy holds its limit of routines. Delete one in Hevy, and the day's routine is written." }
-            if reply.status == 400 { defaults.set(signature, forKey: signatureKey + ".refused") }
+            if reply.status == 400 { defaults.set(signature, forKey: refusedKey) }
             return "Hevy refused the routine (HTTP \(reply.status))."
         }
-        if let written = routineId(in: reply.json) ?? id { defaults.set(written, forKey: idKey) }
+        if created {
+            // Only the id Hevy gave. With none, the next write finds the routine by its title.
+            if let made = routineId(in: reply.json) { defaults.set(made, forKey: idKey) } else { defaults.removeObject(forKey: idKey) }
+        } else if let id {
+            defaults.set(id, forKey: idKey)
+        }
         defaults.set(signature, forKey: signatureKey)
         return "In Hevy: \"\(plan.title)\"." + (plan.unknown.isEmpty ? "" : " Not in Hevy: \(plan.unknown.joined(separator: ", ")).")
     }
@@ -245,25 +374,40 @@ enum HevyRoutine {
                                exercises: [HevyExercise(title: title, templateId: id, sets: sets)])
         }
         // The player benches with dumbbells now: the newest log names the Hevy exercise and its top working weight.
-        let history = [logged("Bench Press (Barbell)", "BARBELL", kg: 80, reps: 5, daysAgo: 9), logged("Bench Press (Dumbbell)", "DUMBBELL", kg: 36, reps: 5, daysAgo: 2),
-                       logged("Pull Up", "PULLUP", kg: nil, reps: 8, daysAgo: 2)]
+        let range = repRange(bench)
+        let benchReps = range?.low ?? 5
+        let history = [logged("Bench Press (Barbell)", "BARBELL", kg: 80, reps: benchReps, daysAgo: 9), logged("Bench Press (Dumbbell)", "DUMBBELL", kg: 36, reps: benchReps, daysAgo: 2),
+                       logged("Pull Up", "PULLUP", kg: nil, reps: 8, daysAgo: 4), logged("Pull Up (Weighted)", "WEIGHTED", kg: 10, reps: 5, daysAgo: 2),
+                       logged("Pull Up (Assisted)", "ASSISTED", kg: 30, reps: 8, daysAgo: 1)]
         guard let plan = plan(for: day.bundle, history: history, templates: ["lateral raise": "LATERAL"]) else { return ["a Bench Day should give a routine"] }
         if plan.title != "\(titlePrefix): \(day.bundle.headerLine)" { errors.append("the routine should carry the day's name, got \(plan.title)") }
         let benchPlan = plan.exercises.first { $0.name == bench.verification.params["exercise"]?.stringValue }
-        let range = repRange(bench)
         if benchPlan?.templateId != "DUMBBELL" || benchPlan?.sets.count != Int(bench.verification.params["sets"]?.doubleValue ?? 0)
             || benchPlan?.sets.first?.weightKg != 36 || range == nil || benchPlan?.sets.first?.repsLow != range?.low || benchPlan?.sets.first?.repsHigh != range?.high {
             errors.append("Bench Press should be the exercise logged last, with the row's sets and reps and the last top weight, got \(String(describing: benchPlan))")
         }
+        // Bench Day's pull-ups are bodyweight volume: not the weighted log, and not the band-assisted one or its 30 kg of help.
         let pullPlan = plan.exercises.first { $0.name == pull.verification.params["exercise"]?.stringValue }
         if pullPlan?.templateId != "PULLUP" || pullPlan?.sets.count != GymSplit.maxPullUpSets || pullPlan?.sets.first?.weightKg != nil {
-            errors.append("Pull Up should have its 4 sets and no weight, got \(String(describing: pullPlan))")
+            errors.append("Bench Day's Pull Up should be the bodyweight exercise with 4 sets and no weight, got \(String(describing: pullPlan))")
         }
         if plan.exercises.first(where: { StrengthLevel.normalizedName($0.name) == "lateral raise" })?.templateId != "LATERAL" {
             errors.append("an exercise with no log should take its Hevy exercise from Hevy's list")
         }
         if plan.unknown.isEmpty || plan.known.count + plan.unknown.count != plan.exercises.count {
             errors.append("exercises Hevy does not know should be named, not sent")
+        }
+        // The log is of the row's job. A light squat row (8 reps) takes no weight from the heavy day, and the heavy
+        // row takes the heavy day's. The plan's 82.5 kg goes on the barbell bench, which carried it, not on the dumbbells.
+        let squats = [logged("Squat (Barbell)", "SQUAT", kg: 140, reps: 5, daysAgo: 2), logged("Squat (Barbell)", "SQUAT", kg: 90, reps: 8, daysAgo: 4)]
+        let newestFirst = squats.sorted { $0.start > $1.start }
+        let lightSquat = HevyRoutine.logged(name: "squat", templateId: nil, load: .any, low: 8, high: 8, plannedKg: nil, newestFirst: newestFirst)
+        let heavySquat = HevyRoutine.logged(name: "squat", templateId: nil, load: .any, low: 1, high: 5, plannedKg: nil, newestFirst: newestFirst)
+        let planned = HevyRoutine.logged(name: "bench press", templateId: nil, load: .weighted, low: 5, high: 5, plannedKg: 82.5, newestFirst: history.sorted { $0.start > $1.start })
+        let weighted = HevyRoutine.logged(name: "pull up", templateId: nil, load: .weighted, low: 3, high: 5, plannedKg: nil, newestFirst: history.sorted { $0.start > $1.start })
+        if lightSquat?.weightKg != 90 || heavySquat?.weightKg != 140 || planned?.templateId != "BARBELL" || planned?.weightKg != 82.5
+            || weighted?.templateId != "WEIGHTED" || weighted?.weightKg != 10 {
+            errors.append("the exercise and the weight should come from a log of the row's job, got \(String(describing: lightSquat)) \(String(describing: heavySquat)) \(String(describing: planned)) \(String(describing: weighted))")
         }
         // The body Hevy takes: a rep range or reps, never both; seconds for a hold; no exercise without an id.
         let sent = body(plan, create: true)
@@ -280,30 +424,209 @@ enum HevyRoutine {
         } else {
             errors.append("the bench press should be in the routine body")
         }
-        // A hold is seconds for each set, and a stretch for two sides is one set of both.
+        // A hold is seconds for each set. A set holds only what its Hevy exercise takes.
         var holds = QuestBundle.empty
         holds.mode = .performanceTraining
         holds.headerLine = "Deadlift Day"
         holds.quests = [GymSplit.quest(for: GymSplit.Exercise(exercise: "Dead Hang", aliases: [], role: .accessory, sets: 3, minReps: 0, maxReps: 0, secondsPerSet: 60, target: "grip"),
                                        band: .green, dayKey: "2026-10-05", now: now)]
-        let hang = HevyRoutine.plan(for: holds, history: [], templates: ["dead hang": "HANG"])
-        if hang?.exercises.first?.sets.map(\.seconds) != [60, 60, 60] || repRange(holds.quests[0]) != nil
-            || body(hang ?? Plan(title: "", exercises: []), create: false)["routine"]?["exercises"]?.arrayValue?.first?["sets"]?.arrayValue?.first?["duration_seconds"]?.doubleValue != 60 {
-            errors.append("a hold should be 60 seconds for each of its 3 sets, got \(String(describing: hang))")
+        let hang = HevyRoutine.plan(for: holds, history: [], templates: ["dead hang": "HANG"], types: ["HANG": "duration"])
+        let hangOnReps = HevyRoutine.plan(for: holds, history: [], templates: ["dead hang": "HANG"], types: ["HANG": "reps_only"])
+        if hang?.exercises.first?.sets.map(\.seconds) != [60, 60, 60] || repRange(holds.quests[0]) != nil || hangOnReps?.exercises.first?.sets.first != SetPlan()
+            || fitted(SetPlan(repsLow: 3, repsHigh: 5, weightKg: 40), to: "bodyweight_reps") != SetPlan(repsLow: 3, repsHigh: 5)
+            || fitted(SetPlan(repsLow: 3, repsHigh: 5, weightKg: 40), to: "weight_reps").weightKg != 40 {
+            errors.append("a hold should be 60 seconds for each of its 3 sets, and a set should hold only what its exercise takes, got \(String(describing: hang))")
+        }
+        // Reps from a title: the number after the mark, a range with a hyphen or a dash, never seconds or meters.
+        func titled(_ title: String, sets: Double? = nil, unit: String = "sets", target: Double = 3) -> Quest {
+            var quest = holds.quests[0]
+            quest.title = title
+            quest.verification.params["sets"] = sets.map(JSONValue.number)
+            quest.progress = QuestProgress(current: 0, target: target, unit: unit)
+            return quest
+        }
+        let titles: [(String, Int?, Int?)] = [("Bench Press 3×3-5", 3, 5), ("Bench Press 3×3–5", 3, 5), ("Bench Press 3 x 3 - 5", 3, 5), ("Squat 3x5 @ 100 kg", 5, 5),
+                                               ("Max 10 Push Up 3×8", 8, 8), ("Dead Hang 3×60s", nil, nil), ("Dead Hang 3×60 s", nil, nil), ("Farmers Walk 3×40m", nil, nil),
+                                               ("Pull Up 4×3-10", 3, 10), ("Plank", nil, nil)]
+        for (title, low, high) in titles where repRange(titled(title))?.low != low || repRange(titled(title))?.high != high {
+            errors.append("the reps of \"\(title)\" should be \(String(describing: low)) to \(String(describing: high)), got \(String(describing: repRange(titled(title))))")
+        }
+        if setCount(titled("Plank", unit: "min", target: 10)) != 1 || setCount(titled("Dead Hang 3×60s", unit: "min", target: 3)) != 3 || setCount(titled("Squat", sets: 4)) != 4 {
+            errors.append("a row with no sets should take them from its title, and never from its minutes")
         }
         // The routine changes when the day changes, and only then.
         var other = plan
         other.exercises[0].sets.removeLast()
-        if signature(plan) != signature(plan) || signature(plan) == signature(other) {
-            errors.append("the signature should change with the routine and only with it")
+        var rowsChanged = day.bundle
+        rowsChanged.headerLine = "Squat Day"
+        if signature(plan) != signature(plan) || signature(plan) == signature(other) || rowsKey(day.bundle) != rowsKey(day.bundle) || rowsKey(day.bundle) == rowsKey(rowsChanged) {
+            errors.append("the signature and the rows key should change with the day's rows and only with them")
         }
-        // A day with no lifts and its stretching done has no routine.
+        // A bundle with no lifts and no stretch row has no routine. Penalty rows are never in it.
         var rest = QuestBundle.empty
         rest.mode = .fullRecovery
-        if HevyRoutine.plan(for: rest, history: history, templates: [:]) != nil { errors.append("a day with no lifts and no stretches should give no routine") }
-        if routineId(in: .object(["routine": .array([.object(["id": .string("r1")])])])) != "r1" || routineId(in: .object(["routine": .object(["id": .string("r2")])])) != "r2" {
-            errors.append("the routine id should be read from an object and from a list")
+        var owed = GameSnapshot.fresh(catalog: catalog, now: now)
+        owed.player.penaltyOpen = true
+        owed.rebuildBundle(catalog: catalog, now: now)
+        if HevyRoutine.plan(for: rest, history: history, templates: [:]) != nil
+            || HevyRoutine.plan(for: owed.bundle, history: history, templates: [:])?.exercises.contains(where: { $0.name.contains("Penalty") }) != false {
+            errors.append("a day with no lifts and no stretches should give no routine, and a penalty row is no exercise")
+        }
+        // A stretch for two sides is one set of both sides.
+        if let stretchDay = day.bundle.quests.first(where: { $0.id == DailyStretch.questId }).flatMap({ StretchSplit.day(of: $0) }),
+           let sided = stretchDay.stretches.first(where: \.perSide) {
+            let name = StrengthLevel.normalizedName(sided.name)
+            let stretched = HevyRoutine.plan(for: day.bundle, history: [], templates: [name: "STRETCH"])
+            if stretched?.exercises.first(where: { $0.templateId == "STRETCH" })?.sets.first?.seconds != sided.seconds * 2 {
+                errors.append("a stretch for two sides should be one set of both sides")
+            }
+        }
+        if routineId(in: .object(["routine": .array([.object(["id": .string("r1")])])])) != "r1" || routineId(in: .object(["routine": .object(["id": .string("r2")])])) != "r2"
+            || routineId(in: .object(["id": .string("r3")])) != nil {
+            errors.append("the routine id should be read from an object and from a list, and from nothing else")
         }
         return errors
     }
+}
+
+extension HevyRoutine {
+    /// The write to Hevy, with replies made here and no network: when a routine is made, updated, or left alone.
+    static func checkWrites() async -> [String] {
+        var errors: [String] = []
+        let catalog = FallbackCatalog.bundled()
+        guard let now = QuestDay.start(of: "2026-10-05")?.addingTimeInterval(4 * 3_600) else { return ["could not build routine dates"] }
+        let bundle = GameSnapshot.fresh(catalog: catalog, now: now).bundle
+        var other = bundle
+        other.headerLine = "Squat Day"
+
+        /// Hevy, as far as this check needs it.
+        final class Hevy {
+            var routines: [(id: String, title: String)] = []
+            var listFails = false, sendFails = false, missing: Set<String> = [], refuse: Int? = nil, replyHasId = true
+            var calls: [String] = []
+            var made = 0
+        }
+        func transport(_ hevy: Hevy) -> Transport {
+            Transport(
+                get: { url, _ in
+                    if url.path.hasSuffix("/exercise_templates") {
+                        hevy.calls.append("GET templates")
+                        let items: [JSONValue] = ["Bench Press (Barbell)", "Pull Up", "Lateral Raise"].enumerated().map { index, title in
+                            .object(["id": .string("T\(index)"), "title": .string(title), "type": .string(title == "Pull Up" ? "bodyweight_reps" : "weight_reps")])
+                        }
+                        return (200, .object(["page": .number(1), "page_count": .number(1), "exercise_templates": .array(items)]))
+                    }
+                    hevy.calls.append("GET routines")
+                    if hevy.listFails { return nil }
+                    let items: [JSONValue] = hevy.routines.map { .object(["id": .string($0.id), "title": .string($0.title)]) }
+                    return (200, .object(["page": .number(1), "page_count": .number(1), "routines": .array(items)]))
+                },
+                send: { method, url, _, body in
+                    hevy.calls.append("\(method) \(url.lastPathComponent)")
+                    if hevy.sendFails { return nil }
+                    if let status = hevy.refuse { return (status, .object(["error": .string("refused")])) }
+                    let title = body["routine"]?["title"]?.stringValue ?? ""
+                    if method == "PUT" {
+                        guard let at = hevy.routines.firstIndex(where: { $0.id == url.lastPathComponent }), !hevy.missing.contains(url.lastPathComponent) else {
+                            return (404, .object(["error": .string("not found")]))
+                        }
+                        hevy.routines[at].title = title
+                        return (200, .object(["routine": .object(["id": .string(hevy.routines[at].id)])]))
+                    }
+                    hevy.made += 1
+                    let id = "made-\(hevy.made)"
+                    hevy.routines.append((id, title))
+                    return (201, hevy.replyHasId ? .object(["routine": .array([.object(["id": .string(id)])])]) : .object([:]))
+                }
+            )
+        }
+        func fresh(_ label: String) -> (UserDefaults, String) {
+            let name = "hevy-routine-check-\(label)"
+            UserDefaults().removePersistentDomain(forName: name)
+            return (UserDefaults(suiteName: name) ?? .standard, name)
+        }
+        func write(_ hevy: Hevy, _ defaults: UserDefaults, _ day: QuestBundle) async -> String? {
+            hevy.calls = []
+            return await sync(bundle: day, history: [], key: "check", defaults: defaults, transport: transport(hevy))
+        }
+
+        // No routine yet and the list cannot be read: nothing is made. One can be there.
+        var (defaults, suite) = fresh("list")
+        var hevy = Hevy()
+        hevy.listFails = true
+        _ = await write(hevy, defaults, bundle)
+        if hevy.made != 0 || defaults.string(forKey: idKey) != nil || defaults.string(forKey: signatureKey) != nil {
+            errors.append("no routine should be made when Hevy's list cannot be read, got \(hevy.calls)")
+        }
+        // The list is read and holds none: one routine is made, and its id is kept.
+        hevy.listFails = false
+        let first = await write(hevy, defaults, bundle)
+        if hevy.made != 1 || defaults.string(forKey: idKey) != "made-1" || first?.contains(bundle.headerLine) != true {
+            errors.append("one routine should be made when Hevy has none, got \(hevy.calls) \(String(describing: first))")
+        }
+        // The same day again: no call. Another day: the same routine is updated, none is made.
+        let same = await write(hevy, defaults, bundle)
+        let sameCalls = hevy.calls
+        _ = await write(hevy, defaults, other)
+        if same != nil || !sameCalls.isEmpty || hevy.made != 1 || hevy.calls != ["PUT made-1"] || hevy.routines.first?.title != "\(titlePrefix): Squat Day" {
+            errors.append("an unchanged day should send nothing, and a new day should update the one routine, got \(sameCalls) then \(hevy.calls)")
+        }
+        // Hevy does not answer the update: nothing is made, and the next write tries again.
+        hevy.sendFails = true
+        _ = await write(hevy, defaults, bundle)
+        if hevy.made != 1 || hevy.calls != ["PUT made-1"] || defaults.string(forKey: idKey) != "made-1" {
+            errors.append("an update with no answer should make no routine, got \(hevy.calls)")
+        }
+        hevy.sendFails = false
+        // The player deleted the routine in Hevy: a new one is made, and its id replaces the old one.
+        hevy.missing = ["made-1"]
+        _ = await write(hevy, defaults, bundle)
+        if hevy.made != 2 || hevy.calls != ["PUT made-1", "POST routines"] || defaults.string(forKey: idKey) != "made-2" {
+            errors.append("a deleted routine should be made again one time, got \(hevy.calls) id \(defaults.string(forKey: idKey) ?? "none")")
+        }
+        UserDefaults().removePersistentDomain(forName: suite)
+
+        // A new install: the routine of the app is found by its title and updated. No second one is made.
+        (defaults, suite) = fresh("found")
+        hevy = Hevy()
+        hevy.routines = [("mine", "Push Day"), ("app", "\(titlePrefix): Deadlift Day")]
+        _ = await write(hevy, defaults, bundle)
+        if hevy.made != 0 || hevy.calls.last != "PUT app" || hevy.routines.first?.title != "Push Day" || defaults.string(forKey: idKey) != "app" {
+            errors.append("the app's routine should be found by its title, and the player's own routine left alone, got \(hevy.calls)")
+        }
+        UserDefaults().removePersistentDomain(forName: suite)
+
+        // Hevy makes the routine but its reply has no id: no id is kept, so the next write finds the routine by title.
+        (defaults, suite) = fresh("no-id")
+        hevy = Hevy()
+        hevy.replyHasId = false
+        _ = await write(hevy, defaults, bundle)
+        let keptId = defaults.string(forKey: idKey)
+        _ = await write(hevy, defaults, other)
+        if keptId != nil || hevy.made != 1 || hevy.calls.last != "PUT made-1" {
+            errors.append("a reply with no id should not lead to a second routine, got \(hevy.calls) made \(hevy.made)")
+        }
+        UserDefaults().removePersistentDomain(forName: suite)
+
+        // Hevy refuses the routine: the same routine is not sent again, and a new plan is.
+        (defaults, suite) = fresh("refused")
+        hevy = Hevy()
+        hevy.routines = [("app", "\(titlePrefix): Deadlift Day")]
+        hevy.refuse = 400
+        _ = await write(hevy, defaults, bundle)
+        _ = await write(hevy, defaults, bundle)
+        let afterRefusal = hevy.calls
+        hevy.refuse = nil
+        _ = await write(hevy, defaults, other)
+        if !afterRefusal.isEmpty || hevy.calls.last != "PUT app" || hevy.made != 0 || defaults.string(forKey: idKey) != "app" {
+            errors.append("a refused routine should not be sent again, and a new plan should be, got \(afterRefusal) then \(hevy.calls)")
+        }
+        UserDefaults().removePersistentDomain(forName: suite)
+        return errors
+    }
+}
+
+private extension Dictionary where Key == String, Value == JSONValue {
+    /// The params in one fixed order.
+    var sortedText: String { keys.sorted().map { "\($0)=\(self[$0]?.sortedString() ?? "")" }.joined(separator: ",") }
 }

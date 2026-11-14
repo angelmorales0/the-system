@@ -18,6 +18,8 @@ final class GameStore: ObservableObject {
             let dayKey = snapshot.bundle.dayKey
             let cues = SoundCues.sounds(from: oldValue, to: snapshot, dayCuePlayed: dayCueDayKey == dayKey)
             if cues.contains(.dayClear) { dayCueDayKey = dayKey }
+            // The day's lifts changed (a plan, a rest day, "No gym today", a new day): Hevy's routine follows.
+            if HevyRoutine.rowsKey(oldValue.bundle) != HevyRoutine.rowsKey(snapshot.bundle) { writeHevyRoutine(now: .now) }
             guard soundsOn else { return }
             for sound in cues { sound.play() }
         }
@@ -28,10 +30,20 @@ final class GameStore: ObservableObject {
     }
     private static let dayCueKey = "dayCueDayKey"
     @Published private(set) var verificationNote: String?
-    /// What the last write of the day's routine to Hevy did, for the line under the lifts. Nil before any write.
-    @Published private(set) var hevyRoutineNote: String? = UserDefaults.standard.string(forKey: GameStore.hevyRoutineNoteKey)
+    /// What the last write of the day's routine to Hevy did, with the quest day it was for. Nil before any write.
+    @Published private var hevyRoutineResult: (dayKey: String, note: String)? = {
+        guard let note = UserDefaults.standard.string(forKey: GameStore.hevyRoutineNoteKey),
+              let dayKey = UserDefaults.standard.string(forKey: GameStore.hevyRoutineNoteKey + ".day") else { return nil }
+        return (dayKey, note)
+    }()
+    /// The line under the lifts: where today's workout is ready. Nil when the last write was for another day.
+    var hevyRoutineNote: String? {
+        hevyRoutineResult?.dayKey == snapshot.bundle.dayKey ? hevyRoutineResult?.note : nil
+    }
     private static let hevyRoutineNoteKey = "hevyRoutineNote"
     private var writingHevyRoutine = false
+    /// The rows changed while a write was on its way: one more write follows it.
+    private var hevyRoutineAgain = false
     @Published private(set) var clock = Date()
     @Published private(set) var dayClock: DayClock
     /// Stat levels for the Status page. 0 until a stat's data arrives.
@@ -82,6 +94,11 @@ final class GameStore: ObservableObject {
             + MonthlyQuests.check() + EndedDayRules.check() + WorkoutClaimRules.check() + RebuiltRowRules.check() + PlanAndLockRules.check()
             + HevyRoutine.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
+        // The write to Hevy is checked with replies made in the check: it calls no server.
+        Task { @MainActor in
+            let writeProblems = await HevyRoutine.checkWrites()
+            precondition(writeProblems.isEmpty, writeProblems.joined(separator: "\n"))
+        }
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
         #endif
@@ -262,7 +279,6 @@ final class GameStore: ObservableObject {
         clock = now
         persist()
         enforcePenalty()
-        writeHevyRoutine(now: now)
     }
 
     /// After the owner saves or removes a key in Status → Connections: read the services again.
@@ -717,9 +733,17 @@ final class GameStore: ObservableObject {
 
     /// Writes today's lifts and stretches to Hevy as a routine, when they changed (`HevyRoutine`).
     /// It waits for the Hevy history, so the routine holds the exercises the player uses.
+    /// Only the player's phone writes: a Simulator build has the same key and its own, other day.
     private func writeHevyRoutine(now: Date) {
-        guard persistence == .standard, !writingHevyRoutine, statHistoriesLoaded, let inputs = statInputs?.inputs,
+        #if targetEnvironment(simulator)
+        return
+        #else
+        guard persistence == .standard, statHistoriesLoaded, let inputs = statInputs?.inputs,
               snapshot.bundle.dayKey == QuestDay.key(for: now) else { return }
+        guard !writingHevyRoutine else {
+            hevyRoutineAgain = true
+            return
+        }
         let bundle = snapshot.bundle
         let history = inputs.hevyWorkouts + dayData.hevy.workouts
         writingHevyRoutine = true
@@ -728,10 +752,16 @@ final class GameStore: ObservableObject {
             guard let self else { return }
             self.writingHevyRoutine = false
             if let note {
-                self.hevyRoutineNote = note
+                self.hevyRoutineResult = (bundle.dayKey, note)
                 UserDefaults.standard.set(note, forKey: Self.hevyRoutineNoteKey)
+                UserDefaults.standard.set(bundle.dayKey, forKey: Self.hevyRoutineNoteKey + ".day")
+            }
+            if self.hevyRoutineAgain {
+                self.hevyRoutineAgain = false
+                self.writeHevyRoutine(now: .now)
             }
         }
+        #endif
     }
 
     private func enforcePenalty() {
