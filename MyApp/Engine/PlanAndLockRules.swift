@@ -469,6 +469,34 @@ enum PlanAndLockRules {
                     errors.append("a row should keep the run it had before a penalty opened, got \(rowsText(midFive))")
                 }
             }
+            // A penalty opens after a 3 km run that no row has counted yet. Then 2 km (the 5K is done by 3 + 2) and
+            // 8 km: the runs after the penalty reach 10 km with the 5K's, so the penalty takes them and the 5K is open.
+            var afterOpen = GameSnapshot.fresh(catalog: catalog, now: morning)
+            if let at = afterOpen.bundle.quests.firstIndex(where: { $0.kind == .daily && TrainingDay.isRaceRun($0) }) {
+                afterOpen.bundle.quests[at].verification.params["minDistanceMeters"] = .number(5_000)
+                afterOpen.bundle.quests[at].progress.target = 5
+                let three = recorded("strava", "open-3", meters: 3_000, after: 3_600), two = recorded("strava", "open-2", meters: 2_000, after: 14_400)
+                let eight = recorded("strava", "open-8", meters: 8_000, after: 25_200)
+                afterOpen.checkOpenRows(integrations: dayData(strava: [three]), now: passNow, skipping: passSkips)
+                afterOpen.player.penaltyOpen = true
+                afterOpen.bundle = PenaltyQuests.ensure(in: afterOpen.bundle, open: true, band: afterOpen.trainingBand, catalog: catalog, now: passNow)
+                passes(&afterOpen, "penalty after an uncounted run", [dayData(strava: [three, two]), dayData(strava: [three, two, eight])])
+                if afterOpen.player.penaltyOpen {
+                    errors.append("runs that no row had counted when the penalty opened should clear it, got \(rowsText(afterOpen))")
+                }
+            }
+            // "No gym today" is on and the penalty is done by 5.2 + 5.1 km. A pass with Strava down brings an 11 km run
+            // from Apple Health: the penalty takes it, and its two runs finish the added 10K in that same pass.
+            var freed = owes
+            let runA = recorded("strava", "freed-a", meters: 5_200, after: 3_600), runB = recorded("strava", "freed-b", meters: 5_100, after: 14_400)
+            passes(&freed, "freed runs", [dayData(strava: [runA, runB])])
+            _ = freed.setNoGym(true, catalog: catalog, now: passNow, integrations: dayData(strava: [runA, runB]))
+            var strava = dayData(strava: [], health: [recorded("healthkit", "freed-big", meters: 11_000, after: 25_200)])
+            strava.strava = StravaDayReading(available: false, configured: true, reason: "down", dayKey: freed.bundle.dayKey, activities: [])
+            passes(&freed, "freed runs", [strava])
+            if freed.bundle.quests.first(where: \.isNoGymRun)?.status != .completed || shows(freed) != 11 {
+                errors.append("runs that the penalty gives up should finish the added 10K in the same pass, got \(rowsText(freed))")
+            }
             // A note that an earlier build saved with the km it showed still loads.
             let old = Data(#"{"dayKey":"2026-10-22","questId":"q","evidence":{"source":"strava","externalId":"workout:strava:x","payloadHash":"h","timestamp":0},"shown":7.2}"#.utf8)
             if (try? JSONDecoder().decode(ShownWorkout.self, from: old))?.meters != 7_200 {
@@ -512,18 +540,18 @@ enum PlanAndLockRules {
                 }
                 if SoundCues.sounds(from: on, to: day).contains(.questComplete) { errors.append("no gym off should play no quest cue for a run that was done before") }
             }
-            // A 9.96 km run counts as 10 km. With no data at the switch nothing shows that, so the next pass with
-            // the data moves the run. Off gives the 5K back with the distance it showed, 9.9 km.
+            // A 9.96 km run counts as 10 km. The 5K's own note of the run says so, so the switch moves it to the added
+            // 10K with no data. Off gives the 5K back with the distance it showed, 9.9 km.
             let near = dayData(strava: [recorded("strava", "five-near", meters: 9_960, after: 3_600)])
             var late = fiveK
             late.checkOpenRows(integrations: near, now: passNow, skipping: passSkips)
             _ = late.checkHiddenQuests(integrations: near, now: passNow)
             let nearDay = late
             _ = late.setNoGym(true, catalog: catalog, now: passNow)
-            let atSwitch = status(late, addedId)
+            let atSwitch = late
             late.checkOpenRows(integrations: near, now: passNow, skipping: passSkips)
-            if atSwitch == .completed || status(late, addedId) != .completed || status(late, dayId) == .completed {
-                errors.append("a 9.96 km run on a 5K should go to the added 10K in the first pass that has the data, got \(rowsText(late))")
+            if status(atSwitch, addedId) != .completed || status(atSwitch, dayId) == .completed || late.bundle != atSwitch.bundle {
+                errors.append("a 9.96 km run on a 5K should go to the added 10K at the switch, and a pass should change nothing, got \(rowsText(atSwitch)) then \(rowsText(late))")
             }
             _ = late.setNoGym(false, catalog: catalog, now: passNow, integrations: near)
             if late.bundle.quests[index].progress.current != nearDay.bundle.quests[index].progress.current || status(late, dayId) != .completed {
@@ -586,6 +614,34 @@ enum PlanAndLockRules {
             _ = sumOff.checkHiddenQuests(integrations: withEight, now: passNow)
             if sumOff.bundle.quests[index].verification.params[HiddenQuests.baseParam] != nil || sumOff.beyondTheLimitToday?.questId != dayId {
                 errors.append("a new run on the 5K should be measured against 5 km, got \(rowsText(sumOff)) unlock \(String(describing: sumOff.beyondTheLimitToday?.questId))")
+            }
+            // The added 10K is done by 5 km and 4.96 km: 9.96 km. Off moves both to the 5K, which shows their sum,
+            // 9.9 km, not the 10 km the added row showed.
+            var nearSum = fiveK
+            let fiveFlat = recorded("strava", "near-5", meters: 5_000, after: 3_600), fourNine = recorded("strava", "near-496", meters: 4_960, after: 14_400)
+            _ = nearSum.setNoGym(true, catalog: catalog, now: passNow)
+            nearSum.checkOpenRows(integrations: dayData(strava: [fiveFlat, fourNine]), now: passNow, skipping: passSkips)
+            let addedDone = status(nearSum, addedId) == .completed
+            _ = nearSum.setNoGym(false, catalog: catalog, now: passNow, integrations: dayData(strava: [fiveFlat, fourNine]))
+            if !addedDone || status(nearSum, dayId) != .completed || nearSum.bundle.quests[index].progress.current != 9.9 {
+                errors.append("a finish that moves should show the sum of its runs, got \(rowsText(nearSum))")
+            }
+            // A 5K that holds one part of a run does not hold the whole run. Strava has the run in two parts
+            // (5.5 km and 6 km) and the 5K took the 6 km. "No gym today" goes on, and a pass with Strava down
+            // brings the whole run from Apple Health: the 5K keeps its part, and nothing moves to the added 10K.
+            var onePart = fiveK
+            let partFive = WorkoutEvent(source: "strava", externalId: "part-55", sport: "Run", start: morning.addingTimeInterval(3_600),
+                                        end: morning.addingTimeInterval(5_400), movingTimeSec: 1_800, distanceMeters: 5_500)
+            let partSix = WorkoutEvent(source: "strava", externalId: "part-60", sport: "Run", start: morning.addingTimeInterval(5_460),
+                                       end: morning.addingTimeInterval(7_500), movingTimeSec: 2_040, distanceMeters: 6_000)
+            let wholeRun = WorkoutEvent(source: "healthkit", externalId: "part-whole", sport: "running", start: morning.addingTimeInterval(3_600),
+                                        end: morning.addingTimeInterval(7_500), movingTimeSec: 3_840, distanceMeters: 11_500)
+            onePart.checkOpenRows(integrations: dayData(strava: [partFive, partSix]), now: passNow, skipping: passSkips)
+            _ = onePart.setNoGym(true, catalog: catalog, now: passNow)
+            for _ in 0..<2 { onePart.checkOpenRows(integrations: dayData(strava: [], health: [wholeRun]), now: passNow, skipping: passSkips) }
+            let partUses = onePart.evidenceLog.filter { $0.dayKey == onePart.bundle.dayKey }
+            if status(onePart, dayId) != .completed || status(onePart, addedId) == .completed || partUses.count != 1 {
+                errors.append("a 5K that holds one part of a run should not give the whole run to the added 10K, got \(rowsText(onePart)) uses \(partUses.count)")
             }
         } else {
             errors.append("a fresh day should hold a run")

@@ -255,7 +255,10 @@ struct SystemView: View {
         let optional = quest.kind == .optional
         let ink = penalty ? QuestLight.penalty : screenTimeInk(quest) ?? QuestLight.ink.opacity(optional ? 0.7 : 1)
         // Blue once this run unlocked Beyond the Limit: [15.2/10km].
-        let beyond = store.snapshot.beyondTheLimitToday?.questId == quest.id && quest.status == .completed
+        // The mark is for the row that holds the run: a row that gave that run to another row and was then
+        // finished by a shorter one shows less than the unlock.
+        let unlock = store.snapshot.beyondTheLimitToday
+        let beyond = unlock?.questId == quest.id && quest.status == .completed && quest.progress.current + 0.05 >= (unlock?.achieved ?? 0)
         // The run's checkbox is its own button: a hand check for a bike day. The rest of the row still asks Strava.
         let handCheck = quest.allowsCheckOff && quest.status == .pending
         return HStack(spacing: 11) {

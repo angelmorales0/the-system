@@ -18,6 +18,8 @@ struct GameSnapshot: Codable, Equatable {
     /// run row, and one run counts for one row. The log outlives a pass, because a pass can lack a source that
     /// held a run (Apple Health on a locked phone), and two sources name and measure one run differently.
     var progressLog: [ShownWorkout] = []
+    /// For each penalty row: the runs that finished rows held when the row was first planned (`PenaltyStart`).
+    var penaltyStarts: [PenaltyStart] = []
     var runningTimers: [TimerRun] = []
     /// Today's WHOOP recovery. Not copied into `player.stats.REC`.
     var readiness: ReadinessSnapshot?
@@ -102,6 +104,7 @@ struct GameSnapshot: Codable, Equatable {
         // Evidence stops one quest from using another quest's proof on the same day. Older days are never read again.
         evidenceLog.removeAll { $0.dayKey < bundle.dayKey }
         progressLog.removeAll { $0.dayKey < bundle.dayKey }
+        penaltyStarts.removeAll { $0.dayKey < bundle.dayKey }
         assignQueuedRecovery(on: key)
         rebuildBundle(catalog: catalog, now: now)
         runningTimers.removeAll()
@@ -306,6 +309,7 @@ struct GameSnapshot: Codable, Equatable {
     /// same rows, whenever the app read them. The notes outlive a pass, so a source that gives no workouts now
     /// (Apple Health on a locked phone) takes nothing away.
     mutating func checkOpenRows(integrations: DayIntegrationSnapshot, now: Date, skipping: Set<VerificationMethod>) {
+        markPenaltyStarts()
         // "No gym today" can go on before the day's data is read. With the data, a real 10 km run on the day's
         // run goes to the added 10K, as it does at the switch.
         giveRealRunToAddedRow(integrations: integrations)
@@ -335,17 +339,37 @@ struct GameSnapshot: Codable, Equatable {
         quest.status == .completed && !quest.skippedWithPotion && !quest.evidence.isEmpty && quest.evidence.allSatisfy { !$0.workoutIds.isEmpty }
     }
 
+    /// Each penalty row gets, one time, the runs that finished rows hold now: the first pass after the row was
+    /// made. A penalty of the day's start finds none. A penalty that opens in the day finds the runs that were
+    /// done and counted before it, and it can never count those.
+    private mutating func markPenaltyStarts() {
+        let dayKey = bundle.dayKey
+        for quest in bundle.quests where quest.kind == .penalty && DistanceRule.minimumMeters(quest) != nil
+            && !penaltyStarts.contains(where: { $0.dayKey == dayKey && $0.questId == quest.id }) {
+            let counted = evidenceLog.filter { use in
+                use.dayKey == dayKey && use.questId != quest.id && !use.evidence.workoutIds.isEmpty
+                    && bundle.quests.contains { $0.id == use.questId && $0.status == .completed }
+            }.map(\.evidence)
+            penaltyStarts.append(PenaltyStart(dayKey: dayKey, questId: quest.id, counted: counted))
+        }
+    }
+
+    /// The runs a penalty row cannot count: done and counted before it opened.
+    private func countedBefore(_ penalty: Quest) -> [Evidence] {
+        penaltyStarts.first { $0.dayKey == bundle.dayKey && $0.questId == penalty.id }?.counted ?? []
+    }
+
     /// The uses of other rows that `quest` cannot take back. A run that finished a later run row can go to an
     /// earlier row that needs it, and a finished row can change one run for a longer one, so such a use is not
-    /// fixed. A hand check and another kind of row keep what they used. A penalty row takes back only runs that
-    /// started after it opened: a run that was done and counted before the penalty cannot clear it.
+    /// fixed. A hand check and another kind of row keep what they used, and a penalty row never takes a run that
+    /// was counted before it opened.
     private func fixedUses(for quest: Quest) -> [Evidence] {
-        evidenceLog.filter { use in
+        let before = quest.kind == .penalty ? countedBefore(quest) : []
+        return evidenceLog.filter { use in
             guard use.dayKey == bundle.dayKey, use.questId != quest.id else { return false }
             guard let row = bundle.quests.first(where: { $0.id == use.questId }), DistanceRule.minimumMeters(row) != nil,
                   ranForReal(row) else { return true }
-            if quest.kind == .penalty, (use.evidence.session?.start ?? .distantPast) < quest.assignedAt { return true }
-            return false
+            return before.contains { Self.sameWorkout($0, use.evidence) }
         }.map(\.evidence)
     }
 
@@ -423,11 +447,11 @@ struct GameSnapshot: Codable, Equatable {
             guard DistanceRule.minimumMeters(quest) != nil, !skipping.contains(quest.verification.method) else { return false }
             if quest.status != .completed { return true }
             guard ranForReal(quest) else { return false }
-            // A run that was done and counted before a penalty opened stays with its row: if the row gave it up
-            // for a longer run, that penalty could take it. This holds after the penalty is done too, so the rows
-            // do not change again when it closes.
+            // A row that holds only runs that were counted before a penalty opened keeps them: that penalty can
+            // never count them, so a change of the row for a later run would only take that run from the penalty.
             if penalties.contains(where: { penalty in
-                penalty.id != quest.id && quest.evidence.contains { ($0.session?.start ?? .distantPast) < penalty.assignedAt }
+                let before = countedBefore(penalty)
+                return penalty.id != quest.id && !before.isEmpty && quest.evidence.allSatisfy { evidence in before.contains { Self.sameWorkout($0, evidence) } }
             }) { return false }
             // Each run of the row has one note, and no other row holds a run of that note. Two sources can make
             // one workout of two runs that two rows hold (parts in Strava, the whole in Apple Health): such rows
@@ -463,9 +487,8 @@ struct GameSnapshot: Codable, Equatable {
                 guard let minimum = DistanceRule.minimumMeters(quest) else { continue }
                 let pool = notes(quest.id).filter { note in
                     if taken.contains(where: { Self.sameWorkout($0, note.evidence) }) { return false }
-                    // A penalty row takes back no run that was done before it opened.
-                    if quest.kind == .penalty, (note.evidence.session?.start ?? .distantPast) < quest.assignedAt,
-                       uses.contains(where: { $0.questId != quest.id && Self.sameWorkout($0.evidence, note.evidence) }) { return false }
+                    // A penalty row never counts a run that was done and counted before it opened.
+                    if quest.kind == .penalty, countedBefore(quest).contains(where: { Self.sameWorkout($0, note.evidence) }) { return false }
                     return true
                 }.sorted { left, right in
                     // The longest first. Of two runs of one length, the one Strava does not hold first: the rows
@@ -502,7 +525,10 @@ struct GameSnapshot: Codable, Equatable {
             let quest = bundle.quests[index]
             if let mine = picks[index] {
                 let evidence = mine.map(\.evidence)
-                if quest.status != .completed || Set(quest.evidence.map(\.payloadHash)) != Set(evidence.map(\.payloadHash)) {
+                // Written again when the runs change, and when a run has more recordings now: a second source
+                // joined it, and the row must hold each recording to be the run's holder.
+                if quest.status != .completed || Set(quest.evidence.map(\.payloadHash)) != Set(evidence.map(\.payloadHash))
+                    || Set(quest.evidence.flatMap(\.workoutIds)) != Set(evidence.flatMap(\.workoutIds)) {
                     // The distance a moved run is measured against goes when the row holds none of its old runs.
                     if !evidence.contains(where: { new in quest.evidence.contains { Self.sameWorkout($0, new) } }) {
                         bundle.quests[index].verification.params[HiddenQuests.baseParam] = nil
@@ -870,7 +896,7 @@ struct GameSnapshot: Codable, Equatable {
 
 extension GameSnapshot {
     private enum CodingKeys: String, CodingKey {
-        case version, player, signals, bundle, evidenceLog, progressLog, runningTimers
+        case version, player, signals, bundle, evidenceLog, progressLog, penaltyStarts, runningTimers
         case recentQuestTitles, generationAttemptDayKey, generatedBundle, readiness
         case finance, monthlyPenaltyMonth
         case fullRecoveryDayKey, queuedFullRecoveryDayKey
@@ -889,6 +915,7 @@ extension GameSnapshot {
         bundle = try container.decode(QuestBundle.self, forKey: .bundle)
         evidenceLog = try container.decodeIfPresent([EvidenceUse].self, forKey: .evidenceLog) ?? []
         progressLog = (try? container.decodeIfPresent([ShownWorkout].self, forKey: .progressLog)) ?? []
+        penaltyStarts = (try? container.decodeIfPresent([PenaltyStart].self, forKey: .penaltyStarts)) ?? []
         runningTimers = try container.decodeIfPresent([TimerRun].self, forKey: .runningTimers) ?? []
         recentQuestTitles = try container.decodeIfPresent([String].self, forKey: .recentQuestTitles) ?? []
         readiness = try container.decodeIfPresent(ReadinessSnapshot.self, forKey: .readiness)
@@ -923,6 +950,7 @@ extension GameSnapshot {
         try container.encode(bundle, forKey: .bundle)
         try container.encode(evidenceLog, forKey: .evidenceLog)
         try container.encode(progressLog, forKey: .progressLog)
+        try container.encode(penaltyStarts, forKey: .penaltyStarts)
         try container.encode(runningTimers, forKey: .runningTimers)
         try container.encode(recentQuestTitles, forKey: .recentQuestTitles)
         try container.encodeIfPresent(readiness, forKey: .readiness)

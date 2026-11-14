@@ -66,6 +66,14 @@ struct EvidenceUse: Codable, Equatable {
     var evidence: Evidence
 }
 
+/// The runs that finished rows held when a penalty row was first planned. A penalty that opens in the day cannot
+/// be cleared by them: they were done and counted before it.
+struct PenaltyStart: Codable, Equatable {
+    var dayKey: String
+    var questId: String
+    var counted: [Evidence]
+}
+
 /// A workout that an open run row can count: no row has used it. `meters` is its longest reading.
 struct ShownWorkout: Codable, Equatable {
     var dayKey: String

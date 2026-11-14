@@ -57,19 +57,6 @@ enum NoGymDay {
         return copy
     }
 
-    /// True when the day's data holds a run of 10 km that this evidence stands for.
-    static func reachedTenK(_ evidence: [Evidence], in data: DayIntegrationSnapshot?) -> Bool {
-        guard let data else { return false }
-        return data.workouts.contains { workout in
-            guard workout.sportFamily == .run, DistanceRule.meets(workout, TrainingDay.tenKMeters) else { return false }
-            let ids = Set(workout.members.map(\.id) + [workout.id])
-            return evidence.contains { use in
-                !use.workoutIds.isDisjoint(with: ids)
-                    || use.session.map { WorkoutDedupe.sameTime($0.start, $0.end, workout.start, workout.end) } ?? false
-            }
-        }
-    }
-
     static func isTenK(_ quest: Quest) -> Bool {
         TrainingDay.isRaceRun(quest) && quest.verification.params["minDistanceMeters"]?.doubleValue == TrainingDay.tenKMeters
     }
@@ -157,7 +144,7 @@ extension GameSnapshot {
     /// run is open again with its hand check. That is the day the same work gives when the setting goes on first:
     /// there the run fills the added 10K, which is checked first. Without this, the day asked for a second real 10K.
     /// A hand check or a potion is no real run, so such a row stays as it is. A 10K row was finished by 10 km.
-    /// A 5K row can hold a shorter run, so the row or the day's data must show that its run reached 10 km.
+    /// A 5K row can hold a shorter run, so the row or the notes of its own runs must show 10 km.
     /// The switch can come before the day's data, so each pass that has the data does this too (`checkOpenRows`).
     @discardableResult
     mutating func giveRealRunToAddedRow(integrations: DayIntegrationSnapshot?) -> Bool {
@@ -166,10 +153,28 @@ extension GameSnapshot {
               let ran = bundle.quests.firstIndex(where: { quest in
                   guard quest.kind == .daily, quest.id != addedId, TrainingDay.isRaceRun(quest), quest.status == .completed,
                         !quest.skippedWithPotion, !quest.evidence.isEmpty, quest.evidence.allSatisfy({ !$0.workoutIds.isEmpty }) else { return false }
-                  return NoGymDay.isTenK(quest) || quest.progress.current >= 10 || NoGymDay.reachedTenK(quest.evidence, in: integrations)
+                  return NoGymDay.isTenK(quest) || quest.progress.current >= 10 || ownRunsReachTenK(quest)
               }) else { return false }
         moveFinish(from: ran, to: added, integrations: integrations)
         return true
+    }
+
+    /// True when the runs this row holds reach 10 km by its own notes. Each run must have one note, its own, that
+    /// no other row holds a part of: the row can hold one part of a session that another source holds whole, and
+    /// the whole is then not its run.
+    private func ownRunsReachTenK(_ quest: Quest) -> Bool {
+        let dayKey = bundle.dayKey
+        let own = progressLog.filter { $0.dayKey == dayKey && $0.questId == quest.id }
+        var matched: Set<Int> = []
+        for evidence in quest.evidence {
+            let hits = own.indices.filter { GameSnapshot.sameWorkout(own[$0].evidence, evidence) }
+            guard hits.count == 1 else { return false }
+            matched.insert(hits[0])
+        }
+        guard !matched.contains(where: { at in
+            evidenceLog.contains { $0.dayKey == dayKey && $0.questId != quest.id && GameSnapshot.sameWorkout($0.evidence, own[at].evidence) }
+        }) else { return false }
+        return matched.reduce(0) { $0 + own[$1].meters } + DistanceRule.toleranceMeters >= TrainingDay.tenKMeters
     }
 
     /// The other direction, when the setting goes off: a real 10K on the added row is the day's run while that run
@@ -196,9 +201,17 @@ extension GameSnapshot {
         let carried = progressLog.filter { note in note.dayKey == dayKey && note.questId == oldId && moved.contains { GameSnapshot.sameWorkout(note.evidence, $0) } }
         // A finished run row can show its real distance, such as 15.2 km. It goes with the finish: the sum of the
         // moved runs when their notes are there, so a 9.96 km run reads 10 on a 10K and 9.9 on a 5K.
-        let known = !carried.isEmpty && moved.allSatisfy { evidence in carried.contains { GameSnapshot.sameWorkout($0.evidence, evidence) } }
+        // A note can be a whole session of which this row holds one part, and another row the other: the sum of
+        // the notes is then more than the row ran, so the row keeps what it showed.
+        let shared = carried.contains { note in
+            evidenceLog.contains { $0.dayKey == dayKey && $0.questId != oldId && GameSnapshot.sameWorkout($0.evidence, note.evidence) }
+        }
+        let known = !carried.isEmpty && !shared && moved.allSatisfy { evidence in carried.contains { GameSnapshot.sameWorkout($0.evidence, evidence) } }
         bundle.quests[to].progress.current = max(target, known ? DistanceRule.kilometers(carried.reduce(0) { $0 + $1.meters }) : bundle.quests[from].progress.current)
-        bundle.quests[to].evidence = bundle.quests[from].evidence
+        // The notes hold each run with all the recordings the app knows of it now. The row takes those, so it
+        // holds the run as it is counted: a second source can have joined a run since the row was finished.
+        let held = known ? carried.map(\.evidence) : moved
+        bundle.quests[to].evidence = held
         bundle.quests[to].skippedWithPotion = false
         if let meters = HiddenQuests.completingWorkout(for: bundle.quests[to], in: integrations?.workouts ?? [])?.distanceMeters {
             bundle.quests[to].progress.current = max(target, DistanceRule.kilometers(meters))
@@ -211,9 +224,8 @@ extension GameSnapshot {
         bundle.quests[from].status = .pending
         bundle.quests[from].progress.current = 0
         bundle.quests[from].evidence = []
-        for index in evidenceLog.indices where evidenceLog[index].dayKey == dayKey && evidenceLog[index].questId == oldId {
-            evidenceLog[index].questId = newId
-        }
+        evidenceLog.removeAll { $0.dayKey == dayKey && $0.questId == oldId }
+        evidenceLog.append(contentsOf: held.map { EvidenceUse(dayKey: dayKey, questId: newId, evidence: $0) })
         progressLog.removeAll { $0.dayKey == dayKey && $0.questId == newId }
         progressLog.append(contentsOf: carried.map { ShownWorkout(dayKey: dayKey, questId: newId, evidence: $0.evidence, meters: $0.meters) })
         for index in hiddenUnlocks.indices where hiddenUnlocks[index].dayKey == dayKey && hiddenUnlocks[index].questId == oldId {
