@@ -38,7 +38,9 @@ final class GameStore: ObservableObject {
     }()
     /// The line under the lifts: where today's workout is ready. Nil when the last write was for another day.
     var hevyRoutineNote: String? {
-        hevyRoutineResult?.dayKey == snapshot.bundle.dayKey ? hevyRoutineResult?.note : nil
+        guard hevyRoutineResult?.dayKey == snapshot.bundle.dayKey, let note = hevyRoutineResult?.note, !note.isEmpty,
+              !note.hasPrefix("Hevy refused") else { return nil }
+        return note
     }
     private static let hevyRoutineNoteKey = "hevyRoutineNote"
     private var writingHevyRoutine = false

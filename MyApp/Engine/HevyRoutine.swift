@@ -13,6 +13,11 @@ enum HevyRoutine {
     static let refusedKey = "hevyRoutineSignature.refused"
     static let templatesKey = "hevyRoutineTemplateIds"
     static let typesKey = "hevyRoutineTemplateTypes"
+    static let ranksKey = "hevyRoutineTemplateRanks"
+    /// Set when Hevy's list was read with the equipment order.
+    static let readKey = "hevyRoutineTemplateTypes.read.v2"
+    /// Hevy's answer to the last routine it refused, for the developer. The player does not see it.
+    static let errorKey = "hevyRoutineError"
     static let missingKey = "hevyRoutineTemplateIds.missing"
     /// Hevy lists 100 exercise templates in a page. The built-in list and a player's own exercises fit in these.
     static let templatePages = 12
@@ -52,6 +57,38 @@ enum HevyRoutine {
         case any
     }
 
+    /// The order of equipment for one exercise name: barbell, then other free weights and bodyweight, then a
+    /// machine, then a cable, then a band or other help. Biceps and side delts take the dumbbell before the barbell.
+    /// The words of the title come first: Hevy files a cable exercise under "machine".
+    static func rank(title: String, equipment: String? = nil, dumbbellFirst: Bool = false) -> Int {
+        let text = title.lowercased()
+        let kind: String
+        if let open = text.lastIndex(of: "("), text.hasSuffix(")") { kind = String(text[open...]) } else { kind = "" }
+        func has(_ words: [String], in source: String) -> Bool { words.contains { source.contains($0) } }
+        if has(["band", "assisted", "suspension"], in: kind) { return 4 }
+        if text.contains("cable") { return 3 }
+        if has(["machine", "smith", "lever"], in: kind) { return 2 }
+        if has(["barbell", "ez bar", "trap bar"], in: kind) { return dumbbellFirst ? 1 : 0 }
+        if kind.contains("dumbbell") { return dumbbellFirst ? 0 : 1 }
+        if !kind.isEmpty { return 1 }
+        switch equipment?.lowercased() {
+        case "barbell": return dumbbellFirst ? 1 : 0
+        case "dumbbell": return dumbbellFirst ? 0 : 1
+        case "machine": return 2
+        case "resistance_band", "suspension": return 4
+        default: return 1
+        }
+    }
+
+    /// Free weights are one group for a log: the player's newest free-weight exercise stays. Not for biceps and side delts.
+    static func group(_ rank: Int, dumbbellFirst: Bool) -> Int { dumbbellFirst ? rank : [0, 0, 1, 2, 3][min(max(rank, 0), 4)] }
+
+    /// Biceps and side delts: the dumbbell is first there. `muscle` is Hevy's primary muscle, when it is known.
+    static func dumbbellFirst(name: String, muscle: String? = nil) -> Bool {
+        if muscle?.lowercased() == "biceps" || name.contains("lateral raise") { return true }
+        return name.contains("curl") && !["leg", "wrist", "hamstring", "nordic", "reverse"].contains { name.contains($0) }
+    }
+
     /// The Hevy exercise and the weight for one row, from the player's own logs, newest first.
     ///
     /// The log must be of the row's job, not only of its name: Squat is heavy on one day and light on another, and
@@ -59,7 +96,7 @@ enum HevyRoutine {
     /// the row, a bodyweight row takes a log with no weight, and an assisted log is taken only when there is no
     /// other, and never for its weight (that number is help, not load).
     static func logged(name: String, templateId: String?, load: Load, low: Int?, high: Int?, plannedKg: Double?,
-                       newestFirst: [HevyWorkout]) -> (templateId: String, weightKg: Double?)? {
+                       newestFirst: [HevyWorkout]) -> (templateId: String, weightKg: Double?, group: Int)? {
         var found: [(entry: HevyExercise, id: String)] = []
         for workout in newestFirst {
             for entry in workout.exercises {
@@ -69,8 +106,12 @@ enum HevyRoutine {
         }
         let plain = found.filter { !StrengthLevel.isAssisted($0.entry.title) }
         let assistedOnly = plain.isEmpty
-        let pool = assistedOnly ? found : plain
-        guard let newest = pool.first else { return nil }
+        // The best equipment the player logged for this name, then the newest log of it.
+        let first = dumbbellFirst(name: name)
+        func group(_ entry: HevyExercise) -> Int { HevyRoutine.group(rank(title: entry.title, dumbbellFirst: first), dumbbellFirst: first) }
+        let best = (assistedOnly ? found : plain).map { group($0.entry) }.min()
+        let pool = (assistedOnly ? found : plain).filter { group($0.entry) == best }
+        guard let newest = pool.first, let best else { return nil }
         func working(_ entry: HevyExercise) -> [HevySet] { entry.sets.filter(\.isWorking) }
         func loaded(_ entry: HevyExercise) -> [HevySet] { working(entry).filter { ($0.weightKg ?? 0) > 0 } }
         func fits(_ set: HevySet) -> Bool {
@@ -80,19 +121,19 @@ enum HevyRoutine {
         switch load {
         case .bodyweight:
             let own = pool.first { loaded($0.entry).isEmpty } ?? newest
-            return (own.id, nil)
+            return (own.id, nil, best)
         case .weighted, .any:
             if let plannedKg {
                 // The plan's weight goes on the exercise that carried about that weight: a barbell weight does not
                 // go on the dumbbell exercise the player used last.
                 let own = pool.first { loaded($0.entry).contains { ($0.weightKg ?? 0) >= 0.8 * plannedKg } } ?? newest
                 // On a band-assisted exercise Hevy reads the number as help: no weight there.
-                return (own.id, assistedOnly ? nil : plannedKg)
+                return (own.id, assistedOnly ? nil : plannedKg, best)
             }
             if !assistedOnly, let own = pool.first(where: { loaded($0.entry).contains(where: fits) }) {
-                return (own.id, loaded(own.entry).filter(fits).compactMap(\.weightKg).max())
+                return (own.id, loaded(own.entry).filter(fits).compactMap(\.weightKg).max(), best)
             }
-            return (newest.id, nil)
+            return (newest.id, nil, best)
         }
     }
 
@@ -101,7 +142,15 @@ enum HevyRoutine {
     ///
     /// `templates` is Hevy's own list, by the name rule of the Hevy check, for a name the player never logged.
     /// `types` is the Hevy type of each exercise id, when it is known: a set holds only what its exercise takes.
-    static func plan(for bundle: QuestBundle, history: [HevyWorkout], templates: [String: String], types: [String: String] = [:]) -> Plan? {
+    /// `ranks` is the equipment order of the exercise that `templates` holds for each name. A log stays only when
+    /// its equipment is as good as that: a barbell exercise in Hevy's list comes before a machine log.
+    static func plan(for bundle: QuestBundle, history: [HevyWorkout], templates: [String: String], types: [String: String] = [:],
+                     ranks: [String: Int] = [:]) -> Plan? {
+        /// The log, when Hevy's list holds no exercise of better equipment for the name.
+        func kept(_ found: (templateId: String, weightKg: Double?, group: Int)?, _ name: String) -> (templateId: String, weightKg: Double?, group: Int)? {
+            guard let found, templates[name] != nil, let listed = ranks[name] else { return found }
+            return found.group <= group(listed, dumbbellFirst: dumbbellFirst(name: name)) ? found : nil
+        }
         let newestFirst = history.sorted { $0.start > $1.start }
         let split = GymSplit.day(named: bundle.headerLine)
         var exercises: [ExercisePlan] = []
@@ -117,8 +166,10 @@ enum HevyRoutine {
             let load: Load = plannedKg != nil || own?.note?.hasPrefix("Weighted") == true ? .weighted
                 : (own?.note == GymSplit.pullUpVolume || own?.note == GymSplit.pullUpMax ? .bodyweight : .any)
             let low = range?.low ?? params["minReps"]?.doubleValue.map { Int($0) }
-            let found = logged(name: name, templateId: params["templateId"]?.stringValue, load: load, low: low, high: range?.high ?? low,
-                               plannedKg: plannedKg, newestFirst: newestFirst)
+            let fixed = params["templateId"]?.stringValue
+            let log = logged(name: name, templateId: fixed, load: load, low: low, high: range?.high ?? low,
+                             plannedKg: plannedKg, newestFirst: newestFirst)
+            let found = fixed != nil ? log : kept(log, name)
             let templateId = params["templateId"]?.stringValue ?? found?.templateId ?? templates[name]
             var set = SetPlan()
             if let total = params["minDurationSec"]?.doubleValue {
@@ -136,7 +187,7 @@ enum HevyRoutine {
             for stretch in day.stretches {
                 let name = StrengthLevel.normalizedName(stretch.name)
                 let seconds = stretch.seconds * (stretch.perSide ? 2 : 1)
-                let templateId = logged(name: name, templateId: nil, load: .bodyweight, low: nil, high: nil, plannedKg: nil, newestFirst: newestFirst)?.templateId ?? templates[name]
+                let templateId = kept(logged(name: name, templateId: nil, load: .bodyweight, low: nil, high: nil, plannedKg: nil, newestFirst: newestFirst), name)?.templateId ?? templates[name]
                 exercises.append(ExercisePlan(
                     name: stretch.name,
                     templateId: templateId,
@@ -244,12 +295,12 @@ enum HevyRoutine {
     }
 
     /// Every exercise Hevy knows on this account: its id by the name rule of the Hevy check, and its type by id.
-    /// Of two exercises with one name ("Bench Press (Barbell)", "Bench Press (Dumbbell)") the first one Hevy lists
-    /// stays; a name the player logged never comes here, because `plan` takes the logged one. Nil when Hevy's
-    /// list could not be read to its end.
-    static func loadTemplates(key: String, transport: Transport) async -> (ids: [String: String], types: [String: String])? {
+    /// Of the exercises with one name ("Deadlift (Barbell)", "Deadlift (Band)") the one with the best equipment
+    /// stays: see `rank`. Nil when Hevy's list could not be read to its end.
+    static func loadTemplates(key: String, transport: Transport) async -> (ids: [String: String], types: [String: String], ranks: [String: Int])? {
         var ids: [String: String] = [:]
         var types: [String: String] = [:]
+        var ranks: [String: Int] = [:]
         for number in 1...templatePages {
             guard let url = OnDeviceHTTP.url("\(HevyClient.api)/v1/exercise_templates", [("page", String(number)), ("pageSize", "100")]),
                   let reply = await transport.get(url, HevyClient.headers(key)), (200..<300).contains(reply.status),
@@ -257,12 +308,18 @@ enum HevyRoutine {
             for item in items {
                 guard let id = item["id"]?.stringValue, !id.isEmpty, let title = item["title"]?.stringValue else { continue }
                 let name = StrengthLevel.normalizedName(title)
-                if ids[name] == nil { ids[name] = id }
+                let order = rank(title: title, equipment: item["equipment"]?.stringValue,
+                                 dumbbellFirst: dumbbellFirst(name: name, muscle: item["primary_muscle_group"]?.stringValue))
+                // The best equipment for the name; of two that are equal, the first one Hevy lists.
+                if order < ranks[name] ?? Int.max {
+                    ids[name] = id
+                    ranks[name] = order
+                }
                 if let type = item["type"]?.stringValue { types[id] = type }
             }
             if items.isEmpty || number >= (reply.json?["page_count"]?.intValue ?? number) { break }
         }
-        return (ids, types)
+        return (ids, types, ranks)
     }
 
     enum Lookup: Equatable {
@@ -304,17 +361,22 @@ enum HevyRoutine {
         guard let key else { return nil }
         var templates = defaults.dictionary(forKey: templatesKey) as? [String: String] ?? [:]
         var types = defaults.dictionary(forKey: typesKey) as? [String: String] ?? [:]
-        guard var plan = plan(for: bundle, history: history, templates: templates, types: types) else { return nil }
+        var ranks = defaults.dictionary(forKey: ranksKey) as? [String: Int] ?? [:]
+        // A list read before the equipment order is not used: its exercise for a name can be the band one.
+        if !defaults.bool(forKey: readKey) { templates = [:] }
+        guard var plan = plan(for: bundle, history: history, templates: templates, types: types, ranks: ranks) else { return nil }
         // Hevy's list is read one time, for the types, and again for each new set of names that are not known.
         let missing = plan.unknown.joined(separator: "|")
-        if !defaults.bool(forKey: typesKey + ".read") || (!missing.isEmpty && defaults.string(forKey: missingKey) != missing) {
+        if !defaults.bool(forKey: readKey) || (!missing.isEmpty && defaults.string(forKey: missingKey) != missing) {
             if let loaded = await loadTemplates(key: key, transport: transport) {
                 templates = loaded.ids
                 types = loaded.types
+                ranks = loaded.ranks
                 defaults.set(loaded.ids, forKey: templatesKey)
                 defaults.set(loaded.types, forKey: typesKey)
-                defaults.set(true, forKey: typesKey + ".read")
-                plan = self.plan(for: bundle, history: history, templates: templates, types: types) ?? plan
+                defaults.set(loaded.ranks, forKey: ranksKey)
+                defaults.set(true, forKey: readKey)
+                plan = self.plan(for: bundle, history: history, templates: templates, types: types, ranks: ranks) ?? plan
                 // The names Hevy's list does not hold: the list is not read again for them.
                 defaults.set(plan.unknown.joined(separator: "|"), forKey: missingKey)
             }
@@ -350,7 +412,10 @@ enum HevyRoutine {
             if created { defaults.removeObject(forKey: idKey) }
             if reply.status == 403 { return "Hevy holds its limit of routines. Delete one in Hevy, and the day's routine is written." }
             if reply.status == 400 { defaults.set(signature, forKey: refusedKey) }
-            return "Hevy refused the routine (HTTP \(reply.status))."
+            // Hevy's own words and the body it refused, kept for the developer. The player sees no line: an empty
+            // note takes the line of an earlier write off the screen.
+            defaults.set("HTTP \(reply.status) \(reply.json?.sortedString() ?? "") BODY \(body(plan, create: created).sortedString())", forKey: errorKey)
+            return ""
         }
         if created {
             // Only the id Hevy gave. With none, the next write finds the routine by its title.
@@ -424,6 +489,29 @@ enum HevyRoutine {
             if set == nil || set?.weightKg != nil {
                 errors.append("the plan's weight should not go on a band-assisted exercise, got \(String(describing: set))")
             }
+        }
+        // The equipment order: barbell, other free weights, machine, cable, band. Biceps and side delts: dumbbell first.
+        let order = ["Deadlift (Barbell)", "Deadlift (Dumbbell)", "Deadlift (Smith Machine)", "Cable Pull Through", "Deadlift (Band)"].map { rank(title: $0) }
+        if order != [0, 1, 2, 3, 4] || rank(title: "Face Pull", equipment: "machine") != 2 || rank(title: "Seated Row (Cable)", equipment: "machine") != 3
+            || rank(title: "Pull Up", equipment: "none") != 1 || rank(title: "Squat", equipment: "resistance_band") != 4
+            || rank(title: "Bicep Curl (Dumbbell)", dumbbellFirst: true) != 0 || rank(title: "Bicep Curl (Barbell)", dumbbellFirst: true) != 1
+            || !dumbbellFirst(name: "bicep curl") || !dumbbellFirst(name: "hammer curl") || !dumbbellFirst(name: "lateral raise")
+            || dumbbellFirst(name: "lying leg curl") || dumbbellFirst(name: "deadlift") || !dumbbellFirst(name: "preacher", muscle: "biceps") {
+            errors.append("the equipment order should be barbell, free weight, machine, cable, band, with the dumbbell first for biceps and side delts, got \(order)")
+        }
+        // A machine log does not stay when Hevy's list has the barbell exercise. A dumbbell log stays: free weights are one group.
+        let machineBench = [logged("Bench Press (Machine)", "MACHINE", kg: 60, reps: benchReps, daysAgo: 1)]
+        let listed = HevyRoutine.plan(for: day.bundle, history: machineBench, templates: ["bench press": "BARBELL"], ranks: ["bench press": 0])
+        let keptLog = HevyRoutine.plan(for: day.bundle, history: history, templates: ["bench press": "BARBELL"], ranks: ["bench press": 0])
+        func benchId(_ plan: Plan?) -> String? { plan?.exercises.first { $0.name == bench.verification.params["exercise"]?.stringValue }?.templateId }
+        if benchId(listed) != "BARBELL" || benchId(keptLog) != "DUMBBELL" {
+            errors.append("a barbell exercise in Hevy's list should come before a machine log, and a dumbbell log should stay, got \(String(describing: benchId(listed))) \(String(describing: benchId(keptLog)))")
+        }
+        // Two logs of one name: the cable one is newer, and the dumbbell one is taken.
+        let raises = [logged("Lateral Raise (Cable)", "CABLE", kg: 10, reps: 12, daysAgo: 1), logged("Lateral Raise (Dumbbell)", "DB", kg: 8, reps: 12, daysAgo: 5),
+                      logged("Lateral Raise (Barbell)", "BB", kg: 20, reps: 12, daysAgo: 3)].sorted { $0.start > $1.start }
+        if HevyRoutine.logged(name: "lateral raise", templateId: nil, load: .any, low: 10, high: 15, plannedKg: nil, newestFirst: raises)?.templateId != "DB" {
+            errors.append("a side delt exercise should take the dumbbell log before the cable and the barbell ones")
         }
         // The body Hevy takes: a rep range or reps, never both; seconds for a hold; no exercise without an id.
         let sent = body(plan, create: true)
@@ -531,7 +619,7 @@ extension HevyRoutine {
                 get: { url, _ in
                     if url.path.hasSuffix("/exercise_templates") {
                         hevy.calls.append("GET templates")
-                        let items: [JSONValue] = ["Bench Press (Barbell)", "Pull Up", "Lateral Raise"].enumerated().map { index, title in
+                        let items: [JSONValue] = ["Bench Press (Band)", "Bench Press (Barbell)", "Pull Up", "Lateral Raise"].enumerated().map { index, title in
                             .object(["id": .string("T\(index)"), "title": .string(title), "type": .string(title == "Pull Up" ? "bodyweight_reps" : "weight_reps")])
                         }
                         return (200, .object(["page": .number(1), "page_count": .number(1), "exercise_templates": .array(items)]))
@@ -649,7 +737,11 @@ extension HevyRoutine {
         hevy = Hevy()
         hevy.routines = [("app", "\(titlePrefix): Deadlift Day")]
         hevy.refuse = 400
-        _ = await write(hevy, defaults, bundle)
+        let refusal = await write(hevy, defaults, bundle)
+        if refusal != "" || defaults.string(forKey: errorKey)?.contains("refused") != true || defaults.string(forKey: templatesKey + ".none") != nil
+            || (defaults.dictionary(forKey: templatesKey) as? [String: String])?["bench press"] != "T1" {
+            errors.append("a refusal should give the player no line and keep Hevy's words, and the barbell bench should come before the band one")
+        }
         _ = await write(hevy, defaults, bundle)
         let afterRefusal = hevy.calls
         hevy.refuse = nil
