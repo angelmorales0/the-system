@@ -126,6 +126,9 @@ final class GameStore: ObservableObject {
             snapshot = GameSnapshot.loadFromUserDefaults() ?? GameSnapshot.fresh(catalog: catalog)
             snapshot.refreshIfNeeded(catalog: catalog)
             snapshot.claimQueuedRecoveryForToday(catalog: catalog, now: .now)
+            snapshot.bundle = GymSplit.withoutOldRows(snapshot.bundle)
+            // The saved plan too: a rebuild later in the day reads it, and would put the row back.
+            snapshot.generatedBundle = snapshot.generatedBundle.map(GymSplit.withoutOldRows)
             // A day saved before the Stretching row, the exercise-only Training rule, or penalty rows gets them now.
             snapshot.bundle = snapshot.finished(TrainingDay.exerciseOnly(snapshot.bundle) ?? snapshot.bundle, catalog: catalog, now: .now)
         }

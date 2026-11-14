@@ -5,7 +5,7 @@ import Foundation
 /// Dead hangs come 3 times (Squat, Press, and Arms Day), never on Deadlift Day, so grip gets a day off between hard pulls.
 /// Lateral raises and curls, the current focus, come 3 times a rotation (Bench, Press, and Arms Day), never on a leg day.
 /// Pull-ups, the main goal (20 strict reps), also come 3 times, each with its own job: volume on Bench Day,
-/// weighted strength on Press Day, and a max-effort set on Arms Day. Squats come twice (heavy and light).
+/// weighted strength on Press Day, and a max-effort set on Arms Day. Squats come once, heavy.
 /// Rows and the deadlift come once: the deadlift is the most tiring lift next to the running.
 /// Pistol squats and handstand push-ups are optional rows, done at home on a good day: one per day at most.
 /// Eight support exercises score no STR target: Romanian deadlift and calf raises on Squat Day for the running;
@@ -332,6 +332,21 @@ enum GymSplit {
         return copy
     }
 
+    /// Takes a row the split no longer has off a day that was saved before the split changed.
+    /// The light squat left Deadlift Day; a saved Deadlift Day still had its row. A row with sets done stays.
+    static func withoutOldRows(_ bundle: QuestBundle) -> QuestBundle {
+        guard bundle.headerLine == deadlift.name else { return bundle }
+        var copy = bundle
+        // The planner writes its own ids and names ("Squat (Barbell)"), so the exercise decides, not the id.
+        let squats = Set((StrengthLevel.squat.aliases + ["Squat"]).map(StrengthLevel.normalizedName))
+        copy.quests.removeAll {
+            guard $0.verification.method == .hevySets, !$0.id.hasSuffix("_goal"),
+                  let exercise = $0.verification.params["exercise"]?.stringValue else { return false }
+            return squats.contains(StrengthLevel.normalizedName(exercise)) && $0.status == .pending && $0.progress.current == 0 && $0.evidence.isEmpty
+        }
+        return copy
+    }
+
     static func quest(for exercise: Exercise, band: ReadinessBand, dayKey: String, now: Date) -> Quest {
         let sets = exercise.role == .main && band != .green ? max(1, exercise.sets - 1) : exercise.sets
         var params: [String: JSONValue] = ["exercise": .string(exercise.exercise), "sets": .number(Double(sets))]
@@ -370,6 +385,28 @@ enum GymSplit {
     static func check() -> [String] {
         var errors: [String] = []
         guard let now = QuestDay.date(from: "2026-10-05") else { return ["quest day failed to parse"] }
+        // A Deadlift Day saved before the light squat left the split loses that row; a row with sets done stays.
+        let deadliftDay = apply(deadlift, to: FallbackCatalog.bundled().makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), band: .green, now: now)
+        var oldRow = quest(for: lift("Squat", .light, 3, 8...8, target: "Squat", aliases: []), band: .green, dayKey: "2026-10-05", now: now)
+        var saved = deadliftDay
+        saved.quests.append(oldRow)
+        if withoutOldRows(saved).quests != deadliftDay.quests {
+            errors.append("a saved Deadlift Day should lose the old light squat row")
+        }
+        var planned = oldRow
+        planned.id = "q_2026-10-05_model_squat"
+        planned.verification.params["exercise"] = .string("Squat (Barbell)")
+        saved = deadliftDay
+        saved.quests.append(planned)
+        if withoutOldRows(saved).quests != deadliftDay.quests {
+            errors.append("a saved Deadlift Day should lose a squat row the planner wrote")
+        }
+        oldRow.progress.current = 1
+        saved = deadliftDay
+        saved.quests.append(oldRow)
+        if withoutOldRows(saved).quests != saved.quests {
+            errors.append("a light squat row with a set done should stay")
+        }
         let catalog = FallbackCatalog.bundled()
 
         // Every exercise trains a real STR target, and every STR target is in the split.
