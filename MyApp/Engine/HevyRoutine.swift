@@ -126,7 +126,8 @@ enum HevyRoutine {
             } else {
                 set.repsLow = low
                 set.repsHigh = range?.high ?? low
-                set.weightKg = plannedKg ?? found?.weightKg
+                // The log's answer when there is a log: it holds the plan's weight, or none for a band-assisted exercise.
+                set.weightKg = found != nil ? found?.weightKg : plannedKg
             }
             exercises.append(ExercisePlan(name: shown, templateId: templateId, sets: Array(repeating: fitted(set, to: templateId.flatMap { types[$0] }), count: count),
                                           note: [quest.title, own?.note].compactMap { $0 }.joined(separator: ". ")))
@@ -413,6 +414,16 @@ enum HevyRoutine {
         if lightSquat?.weightKg != 90 || heavySquat?.weightKg != 140 || planned?.templateId != "BARBELL" || planned?.weightKg != 82.5
             || weighted?.templateId != "WEIGHTED" || weighted?.weightKg != 10 {
             errors.append("the exercise and the weight should come from a log of the row's job, got \(String(describing: lightSquat)) \(String(describing: heavySquat)) \(String(describing: planned)) \(String(describing: weighted))")
+        }
+        // The plan names 10 kg for the pull-ups, and the only log is band-assisted: the routine holds no weight there.
+        var weightedRow = day.bundle
+        if let at = weightedRow.quests.firstIndex(where: { $0.id == pull.id }) {
+            weightedRow.quests[at].verification.params["minWeightKg"] = .number(10)
+            let assistedOnly = HevyRoutine.plan(for: weightedRow, history: [logged("Pull Up (Assisted)", "ASSISTED", kg: 30, reps: 8, daysAgo: 1)], templates: [:])
+            let set = assistedOnly?.exercises.first { $0.templateId == "ASSISTED" }?.sets.first
+            if set == nil || set?.weightKg != nil {
+                errors.append("the plan's weight should not go on a band-assisted exercise, got \(String(describing: set))")
+            }
         }
         // The body Hevy takes: a rep range or reps, never both; seconds for a hold; no exercise without an id.
         let sent = body(plan, create: true)
