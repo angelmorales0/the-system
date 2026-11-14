@@ -209,6 +209,12 @@ enum IntegrationRules {
         } else {
             errors.append("one set at 85 kg by template id should complete")
         }
+        // The plan's weight is a target: the two sets at 80 kg count on a row that asks for 85 kg.
+        let under = quest(method: .hevySets, params: ["templateId": .string("BP"), "sets": .number(3), "minReps": .number(5), "minWeightKg": .number(85)])
+        if case .completed = HevySetsVerifier().evaluate(quest: under, context: context(lifted, now: start)) {
+        } else {
+            errors.append("sets under the plan's weight and reps should count")
+        }
         if HevySetsVerifier.baseName("Incline Bench Press (Dumbbell)") == "bench press" {
             errors.append("an incline bench should not match a Bench Press quest")
         }

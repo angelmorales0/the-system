@@ -84,7 +84,7 @@ struct StravaActivityVerifier: Verifier {
 /// Counts today's working sets of one exercise in Hevy, or their total hold time. Params:
 /// `exercise` (title without the equipment in brackets, so "Bench Press" matches "Bench Press (Barbell)"
 /// but not "Incline Bench Press (Dumbbell)"), or `templateId`.
-/// Set mode: `sets` (else the quest target); optional `minWeightKg` per set. `minReps` is the row's target, and a set under it counts.
+/// Set mode: `sets` (else the quest target); `minReps` and `minWeightKg` are the row's targets, and a set under them counts.
 /// Time mode: `minDurationSec` sums the timed sets, for stretches such as "Splits [0/3min]".
 /// Warm-up sets never count.
 struct HevySetsVerifier: Verifier {
@@ -106,7 +106,8 @@ struct HevySetsVerifier: Verifier {
         // The reps of a row are a target, not a gate: a set that falls short of them is still a set that was done.
         // 4 reps on a row that asks for 6 count. A set with no rep does not.
         let minReps = 1.0
-        let minWeight = params["minWeightKg"]?.doubleValue
+        // The plan's weight is a target too: a set with less weight was still done, and it counts.
+        let minWeight: Double? = nil
         let minDuration = params["minDurationSec"]?.doubleValue
 
         var total = 0.0
