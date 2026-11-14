@@ -101,6 +101,15 @@ struct SystemView: View {
                                 questRow(quest)
                                     .padding(.leading, 16)
                             }
+                            // Where the workout is ready: the routine the app wrote to Hevy.
+                            if let note = store.hevyRoutineNote {
+                                Text(note)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.white.opacity(0.55))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.leading, 16)
+                                    .padding(.top, 4)
+                            }
                         }
                     }
                 }

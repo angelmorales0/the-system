@@ -119,6 +119,21 @@ enum OnDeviceHTTP {
         return reply.json
     }
 
+    /// A JSON body sent with POST or PUT. The HTTP status and the decoded reply, or nil when the request did not complete.
+    static func sendJSON(_ method: String, _ url: URL, headers: [String: String], body: JSONValue, timeout: TimeInterval = 12) async -> (status: Int, json: JSONValue?)? {
+        guard let data = try? JSONEncoder().encode(body) else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = timeout
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+        request.httpBody = data
+        guard let (reply, response) = try? await session(timeout: timeout).data(for: request),
+              let http = response as? HTTPURLResponse else { return nil }
+        return (http.statusCode, JSONValue.parse(reply))
+    }
+
     /// Form POST to an OAuth token endpoint. Adds `expires_at` from `expires_in`, like the backend.
     static func postForm(_ url: URL, body: [String: String], timeout: TimeInterval = 8, now: Date = .now) async -> (status: Int, json: JSONValue?)? {
         var request = URLRequest(url: url)

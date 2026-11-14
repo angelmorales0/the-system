@@ -28,6 +28,10 @@ final class GameStore: ObservableObject {
     }
     private static let dayCueKey = "dayCueDayKey"
     @Published private(set) var verificationNote: String?
+    /// What the last write of the day's routine to Hevy did, for the line under the lifts. Nil before any write.
+    @Published private(set) var hevyRoutineNote: String? = UserDefaults.standard.string(forKey: GameStore.hevyRoutineNoteKey)
+    private static let hevyRoutineNoteKey = "hevyRoutineNote"
+    private var writingHevyRoutine = false
     @Published private(set) var clock = Date()
     @Published private(set) var dayClock: DayClock
     /// Stat levels for the Status page. 0 until a stat's data arrives.
@@ -76,6 +80,7 @@ final class GameStore: ObservableObject {
             + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check()
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
             + MonthlyQuests.check() + EndedDayRules.check() + WorkoutClaimRules.check() + RebuiltRowRules.check() + PlanAndLockRules.check()
+            + HevyRoutine.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         let ringProblems = DayClockRules.check()
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
@@ -257,6 +262,7 @@ final class GameStore: ObservableObject {
         clock = now
         persist()
         enforcePenalty()
+        writeHevyRoutine(now: now)
     }
 
     /// After the owner saves or removes a key in Status → Connections: read the services again.
@@ -704,6 +710,27 @@ final class GameStore: ObservableObject {
             self.statHistoriesLoaded = true
             self.recomputeStatLevels(now: now)
             self.persist()
+            // The Hevy history is here now: it names the player's own exercises and last weights.
+            self.writeHevyRoutine(now: now)
+        }
+    }
+
+    /// Writes today's lifts and stretches to Hevy as a routine, when they changed (`HevyRoutine`).
+    /// It waits for the Hevy history, so the routine holds the exercises the player uses.
+    private func writeHevyRoutine(now: Date) {
+        guard persistence == .standard, !writingHevyRoutine, statHistoriesLoaded, let inputs = statInputs?.inputs,
+              snapshot.bundle.dayKey == QuestDay.key(for: now) else { return }
+        let bundle = snapshot.bundle
+        let history = inputs.hevyWorkouts + dayData.hevy.workouts
+        writingHevyRoutine = true
+        Task { @MainActor [weak self] in
+            let note = await HevyRoutine.sync(bundle: bundle, history: history)
+            guard let self else { return }
+            self.writingHevyRoutine = false
+            if let note {
+                self.hevyRoutineNote = note
+                UserDefaults.standard.set(note, forKey: Self.hevyRoutineNoteKey)
+            }
         }
     }
 
