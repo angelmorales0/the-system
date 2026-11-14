@@ -12,6 +12,10 @@ struct Evidence: Codable, Hashable, Equatable {
     var recordings: [String]? = nil
     /// When that workout started; `timestamp` is its end. Nil for evidence that is not a workout.
     var sessionStart: Date? = nil
+    /// The sport family of that workout (`SportFamily`): run, strength, and so on. Two workouts of different
+    /// families are never one session by their time: a long gym recording can contain a run.
+    /// Nil for evidence that is not a workout, and on saves from before this field.
+    var family: String? = nil
 
     static let workoutPrefix = "workout:"
 
@@ -35,15 +39,24 @@ struct Evidence: Codable, Hashable, Equatable {
     }
 
     static func make(source: String, externalId: String, payload: String, timestamp: Date, recordings: [String]? = nil,
-                     sessionStart: Date? = nil) -> Evidence {
+                     sessionStart: Date? = nil, family: String? = nil) -> Evidence {
         Evidence(
             source: source,
             externalId: externalId,
             payloadHash: EvidenceHash.sha256(payload),
             timestamp: timestamp,
             recordings: recordings,
-            sessionStart: sessionStart
+            sessionStart: sessionStart,
+            family: family
         )
+    }
+
+    /// True when a workout of `family` at this time is the workout of this evidence: the same time
+    /// (`WorkoutDedupe.sameTime`), and not another sport family.
+    func isSession(start: Date, end: Date, family other: String?) -> Bool {
+        guard let session else { return false }
+        if let family, let other, family != other { return false }
+        return WorkoutDedupe.sameTime(session.start, session.end, start, end)
     }
 }
 

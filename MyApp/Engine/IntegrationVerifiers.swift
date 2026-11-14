@@ -268,7 +268,8 @@ private func workoutResult(_ matches: [CanonicalWorkout], quest: Quest, context:
             payload: "\(source)|\(workout.id)|\(context.dayKey)|\(Int(workout.movingTimeSec))",
             timestamp: workout.end,
             recordings: workout.members.map(\.id),
-            sessionStart: workout.start
+            sessionStart: workout.start,
+            family: workout.sportFamily.rawValue
         )
         // Already used under another source's id, or seen again through one source alone: still the same workout.
         if !context.claimedKeys.contains(evidence.reuseKey), !context.claims(workout) {
@@ -331,7 +332,8 @@ enum DistanceRule {
             payload: "\(source)|\(workout.id)|\(context.dayKey)|\(Int(meters))",
             timestamp: workout.end,
             recordings: workout.members.map(\.id),
-            sessionStart: workout.start
+            sessionStart: workout.start,
+            family: workout.sportFamily.rawValue
         )
         return .progress(current: min(kilometers(meters), quest.progress.target), evidence: evidence)
     }

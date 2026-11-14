@@ -56,8 +56,15 @@ enum HiddenQuests {
         // row shows the sum, not a part.
         guard quest.evidence.filter({ !$0.workoutIds.isEmpty }).count <= 1 else { return nil }
         let ids = quest.evidence.reduce(into: Set<String>()) { $0.formUnion($1.workoutIds) }
+        let sources = Set(ids.compactMap { $0.split(separator: ":").first.map(String.init) })
         // A later source can change the session's id, so any of its recordings finds it.
-        return workouts.first { workout in ids.contains(workout.id) || workout.members.contains { ids.contains($0.id) } }
+        // A source can hold a session in parts that two rows used, and another source can hold it whole: the
+        // workout is then more than this row's run. It is this row's only when the row holds each recording of it
+        // that its own sources made.
+        return workouts.first { workout in
+            guard ids.contains(workout.id) || workout.members.contains(where: { ids.contains($0.id) }) else { return false }
+            return workout.members.allSatisfy { !sources.contains($0.source) || ids.contains($0.id) }
+        }
     }
 
     /// A row that holds a run moved from a longer row ("No gym today" off) names that row's distance here.

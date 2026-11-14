@@ -159,15 +159,17 @@ extension GameSnapshot {
     /// A hand check or a potion is no real run, so such a row stays as it is. A 10K row was finished by 10 km.
     /// A 5K row can hold a shorter run, so the row or the day's data must show that its run reached 10 km.
     /// The switch can come before the day's data, so each pass that has the data does this too (`checkOpenRows`).
-    mutating func giveRealRunToAddedRow(integrations: DayIntegrationSnapshot?) {
+    @discardableResult
+    mutating func giveRealRunToAddedRow(integrations: DayIntegrationSnapshot?) -> Bool {
         let addedId = NoGymDay.addedId(bundle.dayKey)
         guard let added = bundle.quests.firstIndex(where: { $0.id == addedId && $0.status != .completed }),
               let ran = bundle.quests.firstIndex(where: { quest in
                   guard quest.kind == .daily, quest.id != addedId, TrainingDay.isRaceRun(quest), quest.status == .completed,
                         !quest.skippedWithPotion, !quest.evidence.isEmpty, quest.evidence.allSatisfy({ !$0.workoutIds.isEmpty }) else { return false }
                   return NoGymDay.isTenK(quest) || quest.progress.current >= 10 || NoGymDay.reachedTenK(quest.evidence, in: integrations)
-              }) else { return }
+              }) else { return false }
         moveFinish(from: ran, to: added, integrations: integrations)
+        return true
     }
 
     /// The other direction, when the setting goes off: a real 10K on the added row is the day's run while that run
@@ -188,9 +190,14 @@ extension GameSnapshot {
         let oldId = bundle.quests[from].id, newId = bundle.quests[to].id, dayKey = bundle.dayKey
         let target = bundle.quests[to].progress.target
         bundle.quests[to].status = .completed
-        // A finished run row can show its real distance, such as 15.2 km. It goes with the finish. The day's data
-        // gives it exactly: a 9.96 km run reads 10 on a 10K and 9.9 on a 5K.
-        bundle.quests[to].progress.current = max(target, bundle.quests[from].progress.current)
+        // The notes of the moved runs go with them, so the row that takes the finish knows its runs at once, at
+        // their longest reading, and the next pass changes nothing.
+        let moved = bundle.quests[from].evidence
+        let carried = progressLog.filter { note in note.dayKey == dayKey && note.questId == oldId && moved.contains { GameSnapshot.sameWorkout(note.evidence, $0) } }
+        // A finished run row can show its real distance, such as 15.2 km. It goes with the finish: the sum of the
+        // moved runs when their notes are there, so a 9.96 km run reads 10 on a 10K and 9.9 on a 5K.
+        let known = !carried.isEmpty && moved.allSatisfy { evidence in carried.contains { GameSnapshot.sameWorkout($0.evidence, evidence) } }
+        bundle.quests[to].progress.current = max(target, known ? DistanceRule.kilometers(carried.reduce(0) { $0 + $1.meters }) : bundle.quests[from].progress.current)
         bundle.quests[to].evidence = bundle.quests[from].evidence
         bundle.quests[to].skippedWithPotion = false
         if let meters = HiddenQuests.completingWorkout(for: bundle.quests[to], in: integrations?.workouts ?? [])?.distanceMeters {
@@ -208,6 +215,7 @@ extension GameSnapshot {
             evidenceLog[index].questId = newId
         }
         progressLog.removeAll { $0.dayKey == dayKey && $0.questId == newId }
+        progressLog.append(contentsOf: carried.map { ShownWorkout(dayKey: dayKey, questId: newId, evidence: $0.evidence, meters: $0.meters) })
         for index in hiddenUnlocks.indices where hiddenUnlocks[index].dayKey == dayKey && hiddenUnlocks[index].questId == oldId {
             hiddenUnlocks[index].questId = newId
         }

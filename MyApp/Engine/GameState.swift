@@ -280,7 +280,7 @@ struct GameSnapshot: Codable, Equatable {
             userConfirmed: userConfirmed,
             integrations: integrations,
             claimedWorkoutIds: others.reduce(into: Set<String>()) { $0.formUnion($1.evidence.workoutIds) },
-            claimedSessions: others.compactMap(\.evidence.session),
+            claimedSessions: others.map(\.evidence).filter { $0.session != nil },
             otherExercises: Set(bundle.quests.filter { $0.id != quest.id && $0.verification.method == .hevySets && $0.id != DailyStretch.questId }
                 .map { StrengthLevel.normalizedName($0.verification.params["exercise"]?.stringValue ?? $0.title) })
         )
@@ -322,6 +322,12 @@ struct GameSnapshot: Codable, Equatable {
         }
         noteRuns(integrations: integrations, now: now, skipping: skipping)
         assignRuns(skipping: skipping)
+        // The plan can give the day's run a finish that belongs on the added 10K, which had no note of those runs
+        // yet. It moves now, not in the next pass, and the open rows then show what is left.
+        if giveRealRunToAddedRow(integrations: integrations) {
+            noteRuns(integrations: integrations, now: now, skipping: skipping)
+            assignRuns(skipping: skipping)
+        }
     }
 
     /// A run row that real runs finished: no hand check and no potion.
@@ -352,7 +358,7 @@ struct GameSnapshot: Codable, Equatable {
             let fixed = fixedUses(for: quest)
             context.claimedKeys = Set(fixed.map(\.reuseKey))
             context.claimedWorkoutIds = fixed.reduce(into: Set<String>()) { $0.formUnion($1.workoutIds) }
-            context.claimedSessions = fixed.compactMap(\.session)
+            context.claimedSessions = fixed.filter { $0.session != nil }
             let verifier = VerifierRegistry.verifier(for: quest.verification.method)
             // One round for each workout of the day at most.
             rounds: for _ in 0...integrations.workouts.count {
@@ -369,26 +375,31 @@ struct GameSnapshot: Codable, Equatable {
                 noteRun(evidence, meters: meters, questId: quest.id)
                 context.claimedKeys.insert(evidence.reuseKey)
                 context.claimedWorkoutIds.formUnion(ids)
-                if let session = evidence.session { context.claimedSessions.append(session) }
+                if evidence.session != nil { context.claimedSessions.append(evidence) }
             }
         }
     }
 
     /// Notes a run that a run row can count. One workout has one note, whatever source named it. A reading from
-    /// the same recordings replaces the note (a run edited in its source). A reading from another source alone
-    /// keeps the longer one: two sources measure one run differently, and a pass can lack one of them.
+    /// the same recordings replaces the note (a run edited in its source, or parts that the data now joins to one
+    /// workout). A reading from another source alone keeps the longer one: two sources measure one run
+    /// differently, and a pass can lack one of them. When such a reading covers several notes (one source holds a
+    /// run in parts, another holds it whole), the parts stay: they say more, and rows can hold them one by one.
     /// The note is changed in place: the same data gives the same log.
     mutating func noteRun(_ evidence: Evidence, meters: Double, questId: String) {
         let dayKey = bundle.dayKey
         let same = { (other: ShownWorkout) in other.dayKey == dayKey && other.questId == questId && Self.sameWorkout(other.evidence, evidence) }
-        if let at = progressLog.firstIndex(where: same) {
-            let old = progressLog[at]
-            let known = evidence.workoutIds.isSuperset(of: old.evidence.workoutIds)
-            progressLog[at] = ShownWorkout(dayKey: dayKey, questId: questId, evidence: known || meters >= old.meters ? evidence : old.evidence,
-                                           meters: known ? meters : max(meters, old.meters))
-            progressLog.indices.reversed().filter { $0 > at && same(progressLog[$0]) }.forEach { progressLog.remove(at: $0) }
-        } else {
+        guard let at = progressLog.firstIndex(where: same) else {
             progressLog.append(ShownWorkout(dayKey: dayKey, questId: questId, evidence: evidence, meters: meters))
+            return
+        }
+        let covered = progressLog.filter(same)
+        let known = covered.allSatisfy { evidence.workoutIds.isSuperset(of: $0.evidence.workoutIds) }
+        if known {
+            progressLog[at] = ShownWorkout(dayKey: dayKey, questId: questId, evidence: evidence, meters: meters)
+            progressLog.indices.reversed().filter { $0 > at && same(progressLog[$0]) }.forEach { progressLog.remove(at: $0) }
+        } else if covered.count == 1, meters > progressLog[at].meters {
+            progressLog[at] = ShownWorkout(dayKey: dayKey, questId: questId, evidence: evidence, meters: meters)
         }
     }
 
@@ -405,27 +416,46 @@ struct GameSnapshot: Codable, Equatable {
     private mutating func assignRuns(skipping: Set<VerificationMethod>) {
         let dayKey = bundle.dayKey
         func notes(_ questId: String) -> [ShownWorkout] { progressLog.filter { $0.dayKey == dayKey && $0.questId == questId } }
+        let uses = evidenceLog.filter { $0.dayKey == dayKey }
+        let penalties = bundle.quests.filter { $0.kind == .penalty && DistanceRule.minimumMeters($0) != nil }
         let planned = bundle.quests.indices.filter { index in
             let quest = bundle.quests[index]
             guard DistanceRule.minimumMeters(quest) != nil, !skipping.contains(quest.verification.method) else { return false }
             if quest.status != .completed { return true }
+            guard ranForReal(quest) else { return false }
+            // A run that was done and counted before a penalty opened stays with its row: if the row gave it up
+            // for a longer run, that penalty could take it. This holds after the penalty is done too, so the rows
+            // do not change again when it closes.
+            if penalties.contains(where: { penalty in
+                penalty.id != quest.id && quest.evidence.contains { ($0.session?.start ?? .distantPast) < penalty.assignedAt }
+            }) { return false }
+            // Each run of the row has one note, and no other row holds a run of that note. Two sources can make
+            // one workout of two runs that two rows hold (parts in Strava, the whole in Apple Health): such rows
+            // keep what they have. Two runs of this row alone can be one note (the data joined its parts): the row
+            // then holds that one workout.
             let own = notes(quest.id)
-            return ranForReal(quest) && quest.evidence.allSatisfy { evidence in own.contains { Self.sameWorkout($0.evidence, evidence) } }
+            var matched: Set<Int> = []
+            for evidence in quest.evidence {
+                let hits = own.indices.filter { Self.sameWorkout(own[$0].evidence, evidence) }
+                guard hits.count == 1 else { return false }
+                matched.insert(hits[0])
+            }
+            return !matched.contains { at in uses.contains { $0.questId != quest.id && Self.sameWorkout($0.evidence, own[at].evidence) } }
         }
         guard !planned.isEmpty else { return }
         let plannedIds = Set(planned.map { bundle.quests[$0].id })
-        let uses = evidenceLog.filter { $0.dayKey == dayKey }
         let fixed = uses.filter { !plannedIds.contains($0.questId) }.map(\.evidence)
 
-        /// `keeping`: the finished rows keep their runs.
+        /// `keeping`: the finished rows keep their runs, as they are.
         func plan(keeping: Bool) -> [Int: [ShownWorkout]] {
             var taken = fixed
             var picks: [Int: [ShownWorkout]] = [:]
             if keeping {
                 for index in planned where bundle.quests[index].status == .completed {
                     let quest = bundle.quests[index]
-                    picks[index] = quest.evidence.compactMap { evidence in notes(quest.id).first { Self.sameWorkout($0.evidence, evidence) } }
-                    taken += quest.evidence
+                    let mine = notes(quest.id).filter { note in quest.evidence.contains { Self.sameWorkout(note.evidence, $0) } }
+                    picks[index] = mine
+                    taken += quest.evidence + mine.map(\.evidence)
                 }
             }
             for index in planned where picks[index] == nil {
@@ -460,18 +490,23 @@ struct GameSnapshot: Codable, Equatable {
         var picks = plan(keeping: false)
         // The first row whose state the new plan changes decides: it must be a row that is finished now.
         // A finished penalty row is never opened: its penalty is closed.
+        var kept: Set<Int> = []
         let opensPenalty = planned.contains { bundle.quests[$0].kind == .penalty && bundle.quests[$0].status == .completed && picks[$0] == nil }
-        if let changed = planned.first(where: { (bundle.quests[$0].status == .completed) != (picks[$0] != nil) }), picks[changed] == nil || opensPenalty {
+        let changed = planned.first { (bundle.quests[$0].status == .completed) != (picks[$0] != nil) }
+        if opensPenalty || changed.map({ picks[$0] == nil }) == true {
             picks = plan(keeping: true)
-        } else if opensPenalty {
-            picks = plan(keeping: true)
+            kept = Set(planned.filter { bundle.quests[$0].status == .completed })
         }
 
-        for index in planned {
+        for index in planned where !kept.contains(index) {
             let quest = bundle.quests[index]
             if let mine = picks[index] {
                 let evidence = mine.map(\.evidence)
                 if quest.status != .completed || Set(quest.evidence.map(\.payloadHash)) != Set(evidence.map(\.payloadHash)) {
+                    // The distance a moved run is measured against goes when the row holds none of its old runs.
+                    if !evidence.contains(where: { new in quest.evidence.contains { Self.sameWorkout($0, new) } }) {
+                        bundle.quests[index].verification.params[HiddenQuests.baseParam] = nil
+                    }
                     bundle.quests[index].evidence = evidence
                     evidenceLog.removeAll { $0.dayKey == dayKey && $0.questId == quest.id }
                     evidenceLog.append(contentsOf: evidence.map { EvidenceUse(dayKey: dayKey, questId: quest.id, evidence: $0) })
@@ -481,8 +516,11 @@ struct GameSnapshot: Codable, Equatable {
                 // of a run that comes later shows too.
                 bundle.quests[index].progress.current = max(quest.progress.target, DistanceRule.kilometers(mine.reduce(0) { $0 + $1.meters }))
             } else if quest.status == .completed {
-                // Its runs went to an earlier row. The hidden quest a run unlocked goes with the run.
-                let holder = planned.first { other in picks[other]?.contains { note in quest.evidence.contains { Self.sameWorkout($0, note.evidence) } } == true }
+                // Its runs went to an earlier row. The hidden quest a run unlocked goes with the run, but not to a
+                // penalty row: a penalty run unlocks nothing, so the unlock stays where it was earned.
+                let holder = planned.first { other in
+                    bundle.quests[other].kind != .penalty && picks[other]?.contains { note in quest.evidence.contains { Self.sameWorkout($0, note.evidence) } } == true
+                }
                 for at in hiddenUnlocks.indices where hiddenUnlocks[at].dayKey == dayKey && hiddenUnlocks[at].questId == quest.id {
                     if let holder { hiddenUnlocks[at].questId = bundle.quests[holder].id }
                 }
@@ -506,8 +544,8 @@ struct GameSnapshot: Codable, Equatable {
     /// One workout, by a shared recording or by its time: a second source gives the same run another id.
     static func sameWorkout(_ left: Evidence, _ right: Evidence) -> Bool {
         if !left.workoutIds.isDisjoint(with: right.workoutIds) { return true }
-        guard let first = left.session, let second = right.session else { return false }
-        return WorkoutDedupe.sameTime(first.start, first.end, second.start, second.end)
+        guard let second = right.session else { return false }
+        return left.isSession(start: second.start, end: second.end, family: right.family)
     }
 
     /// Applies a verifier result. A quest completes only once.
@@ -684,8 +722,8 @@ struct GameSnapshot: Codable, Equatable {
         let reused = evidenceLog.contains { use in
             guard use.dayKey == bundle.dayKey, use.questId != questId else { return false }
             if use.evidence.reuseKey == evidence.reuseKey || !use.evidence.workoutIds.isDisjoint(with: workoutIds) { return true }
-            guard let session, let other = use.evidence.session else { return false }
-            return WorkoutDedupe.sameTime(other.start, other.end, session.start, session.end)
+            guard let session else { return false }
+            return use.evidence.isSession(start: session.start, end: session.end, family: evidence.family)
         }
         if reused {
             return "That evidence was already used for another quest today."

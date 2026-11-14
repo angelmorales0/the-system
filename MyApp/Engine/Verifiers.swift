@@ -18,8 +18,8 @@ struct VerificationContext: Equatable {
     var integrations: DayIntegrationSnapshot = .empty(dayKey: "")
     /// Workout recording ids already claimed today by a different quest (`Evidence.workoutIds`).
     var claimedWorkoutIds: Set<String> = []
-    /// The times of the workouts already claimed today by a different quest (`Evidence.session`).
-    var claimedSessions: [DateInterval] = []
+    /// The workouts already claimed today by a different quest, for the match by time (`Evidence.isSession`).
+    var claimedSessions: [Evidence] = []
     /// The exercises of the day's other Hevy rows, as `StrengthLevel.normalizedName` gives them.
     /// A stand-in lift that has its own row counts for that row, not for the lift it can stand in for.
     var otherExercises: Set<String> = []
@@ -27,7 +27,7 @@ struct VerificationContext: Equatable {
     /// True when another quest already used this workout: one of its recordings, or a session at the same time.
     func claims(_ workout: CanonicalWorkout) -> Bool {
         if claimedWorkoutIds.contains(workout.id) || workout.members.contains(where: { claimedWorkoutIds.contains($0.id) }) { return true }
-        return claimedSessions.contains { WorkoutDedupe.sameTime($0.start, $0.end, workout.start, workout.end) }
+        return claimedSessions.contains { $0.isSession(start: workout.start, end: workout.end, family: workout.sportFamily.rawValue) }
     }
 }
 
