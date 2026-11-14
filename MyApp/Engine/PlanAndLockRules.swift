@@ -657,6 +657,43 @@ enum PlanAndLockRules {
             if status(onePart, dayId) != .completed || status(onePart, addedId) == .completed || partUses.count != 1 {
                 errors.append("a 5K that holds one part of a run should not give the whole run to the added 10K, got \(rowsText(onePart)) uses \(partUses.count)")
             }
+            // Apple Health joins a run that the 5K holds by its Strava recording: the row takes the new recording too,
+            // so it holds each recording of its run.
+            var joined = fiveK
+            let stravaOnly = recorded("strava", "join-s", meters: 6_000, after: 3_600), healthCopy = recorded("healthkit", "join-h", meters: 6_050, after: 3_600)
+            joined.checkOpenRows(integrations: dayData(strava: [stravaOnly]), now: passNow, skipping: passSkips)
+            joined.checkOpenRows(integrations: dayData(strava: [stravaOnly], health: [healthCopy]), now: passNow, skipping: passSkips)
+            let joinedIds = joined.bundle.quests[index].evidence.reduce(into: Set<String>()) { $0.formUnion($1.workoutIds) }
+            if !joinedIds.isSuperset(of: ["strava:join-s", "healthkit:join-h"]) || joined.evidenceLog.filter({ $0.dayKey == joined.bundle.dayKey }).count != 1 {
+                errors.append("a finished row should take the new recording of its run, got \(joinedIds.sorted())")
+            }
+            // A penalty row and the 5K hold the two Strava parts of one run, and Apple Health holds the run whole.
+            // "No gym today" on and off moves nothing and adds no km: the whole run is no row's own.
+            var split = GameSnapshot.fresh(catalog: catalog, now: morning)
+            split.player.penaltyOpen = true
+            split.rebuildBundle(catalog: catalog, now: morning)
+            if let at = split.bundle.quests.firstIndex(where: { $0.kind == .daily && TrainingDay.isRaceRun($0) }) {
+                split.bundle.quests[at].verification.params["minDistanceMeters"] = .number(5_000)
+                split.bundle.quests[at].progress.target = 5
+                let tenPart = WorkoutEvent(source: "strava", externalId: "two-a", sport: "Run", start: morning.addingTimeInterval(3_600),
+                                           end: morning.addingTimeInterval(6_600), movingTimeSec: 3_000, distanceMeters: 10_000)
+                let fivePart = WorkoutEvent(source: "strava", externalId: "two-b", sport: "Run", start: morning.addingTimeInterval(6_660),
+                                            end: morning.addingTimeInterval(8_400), movingTimeSec: 1_740, distanceMeters: 5_000)
+                let all = WorkoutEvent(source: "healthkit", externalId: "two-h", sport: "running", start: morning.addingTimeInterval(3_600),
+                                       end: morning.addingTimeInterval(8_400), movingTimeSec: 4_740, distanceMeters: 15_000)
+                let parts = dayData(strava: [tenPart, fivePart]), withWhole = dayData(strava: [tenPart, fivePart], health: [all])
+                split.checkOpenRows(integrations: parts, now: passNow, skipping: passSkips)
+                split.checkOpenRows(integrations: withWhole, now: passNow, skipping: passSkips)
+                let rowsBefore = rowsText(split)
+                _ = split.setNoGym(true, catalog: catalog, now: passNow, integrations: withWhole)
+                for _ in 0..<2 { split.checkOpenRows(integrations: withWhole, now: passNow, skipping: passSkips) }
+                let addedOpen = split.bundle.quests.first(where: \.isNoGymRun)?.status != .completed
+                _ = split.setNoGym(false, catalog: catalog, now: passNow, integrations: withWhole)
+                split.checkOpenRows(integrations: withWhole, now: passNow, skipping: passSkips)
+                if !addedOpen || rowsText(split) != rowsBefore || split.evidenceLog.filter({ $0.dayKey == split.bundle.dayKey }).count != 2 {
+                    errors.append("parts of one run on two rows should not move to the added 10K, got \(rowsText(split)) before \(rowsBefore)")
+                }
+            }
         } else {
             errors.append("a fresh day should hold a run")
         }
