@@ -131,6 +131,13 @@ final class GameStore: ObservableObject {
             snapshot.generatedBundle = snapshot.generatedBundle.map(GymSplit.withoutOldRows)
             // A day saved before the Stretching row, the exercise-only Training rule, or penalty rows gets them now.
             snapshot.bundle = snapshot.finished(TrainingDay.exerciseOnly(snapshot.bundle) ?? snapshot.bundle, catalog: catalog, now: .now)
+            // A one-time grant the player asked for on 2026-11-13: 5 Full Recovery tokens. The flag keeps it to one launch.
+            let grantKey = "grantFullRecovery-2026-11-13"
+            if !UserDefaults.standard.bool(forKey: grantKey) {
+                snapshot.player.fullRecoveryBank += 5
+                snapshot.saveToUserDefaults()
+                UserDefaults.standard.set(true, forKey: grantKey)
+            }
         }
         #if DEBUG
         // Launch with `-skipSplitDay squat` to skip that split day and plan today again from the next one.
