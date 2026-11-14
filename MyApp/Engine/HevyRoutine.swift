@@ -244,15 +244,18 @@ enum HevyRoutine {
                 "notes": exercise.note.map(JSONValue.string) ?? .null,
                 "sets": .array(exercise.sets.map { set in
                     let range = set.repsLow != nil && set.repsLow != set.repsHigh
-                    return .object([
+                    var fields: [String: JSONValue] = [
                         "type": .string("normal"),
                         "weight_kg": set.weightKg.map { .number(($0 * 100).rounded() / 100) } ?? .null,
                         "reps": range ? .null : set.repsLow.map { .number(Double($0)) } ?? .null,
                         "distance_meters": .null,
                         "duration_seconds": set.seconds.map { .number(Double($0)) } ?? .null,
                         "custom_metric": .null,
-                        "rep_range": range ? .object(["start": .number(Double(set.repsLow ?? 0)), "end": .number(Double(set.repsHigh ?? 0))]) : .null,
-                    ])
+                    ]
+                    // No "rep_range" key when there is no range. Hevy's update call refuses a null there
+                    // ("Expected object, received null", HTTP 400), although its documentation permits it.
+                    if range { fields["rep_range"] = .object(["start": .number(Double(set.repsLow ?? 0)), "end": .number(Double(set.repsHigh ?? 0))]) }
+                    return .object(fields)
                 }),
             ])
         }
@@ -527,6 +530,13 @@ enum HevyRoutine {
             }
         } else {
             errors.append("the bench press should be in the routine body")
+        }
+        // Hevy's update call refuses "rep_range": null. A set with no range has no such key, in the two calls.
+        let allSets = [true, false].flatMap { body(plan, create: $0)["routine"]?["exercises"]?.arrayValue ?? [] }.flatMap { $0["sets"]?.arrayValue ?? [] }
+        if allSets.isEmpty || allSets.contains(where: { $0["rep_range"] == .some(.null) })
+            || body(Plan(title: "t", exercises: [ExercisePlan(name: "n", templateId: "X", sets: [SetPlan(repsLow: 8, repsHigh: 8)])]), create: false)
+                .sortedString().contains("rep_range") {
+            errors.append("a set with no rep range should have no rep_range key")
         }
         // A hold is seconds for each set. A set holds only what its Hevy exercise takes.
         var holds = QuestBundle.empty
