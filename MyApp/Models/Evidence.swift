@@ -61,6 +61,31 @@ struct ShownWorkout: Codable, Equatable {
     var meters: Double
 }
 
+extension ShownWorkout {
+    private enum CodingKeys: String, CodingKey { case dayKey, questId, evidence, meters, shown }
+
+    /// An earlier build saved the km the row showed (`shown`), not the meters.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        dayKey = try container.decode(String.self, forKey: .dayKey)
+        questId = try container.decode(String.self, forKey: .questId)
+        evidence = try container.decode(Evidence.self, forKey: .evidence)
+        if let saved = try container.decodeIfPresent(Double.self, forKey: .meters) {
+            meters = saved
+        } else {
+            meters = try container.decode(Double.self, forKey: .shown) * 1000
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(dayKey, forKey: .dayKey)
+        try container.encode(questId, forKey: .questId)
+        try container.encode(evidence, forKey: .evidence)
+        try container.encode(meters, forKey: .meters)
+    }
+}
+
 enum EvidenceHash {
     static func sha256(_ text: String) -> String {
         SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()

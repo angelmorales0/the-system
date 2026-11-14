@@ -350,6 +350,84 @@ enum PlanAndLockRules {
             if shows(readings) != 7 || readings.bundle.quests[index].progress.current != 6.9 {
                 errors.append("a run keeps its longest reading when another source measures it shorter, got \(rowsText(readings))")
             }
+            // The same runs give the same rows, whenever the app read them. 3 km, 2.5 km, and 6 km: read one by
+            // one, the 5K is done by the first two, and the 6 km then gives all three to the penalty row, which
+            // comes first. The 5K is open again, as after one read of all three.
+            let parts = [recorded("strava", "part-3", meters: 3_000, after: 3_600), recorded("strava", "part-2", meters: 2_500, after: 14_400),
+                         recorded("strava", "part-6", meters: 6_000, after: 25_200)]
+            var oneByOne = fiveKDay, atOnce = fiveKDay
+            passes(&oneByOne, "one by one", [dayData(strava: [parts[0]]), dayData(strava: Array(parts.prefix(2)))])
+            let midway = done(oneByOne, dayId)
+            passes(&oneByOne, "one by one", [dayData(strava: parts)])
+            passes(&atOnce, "at once", [dayData(strava: parts)])
+            if !midway || oneByOne.player.penaltyOpen || done(oneByOne, dayId) || oneByOne.bundle.quests != atOnce.bundle.quests {
+                errors.append("runs read one by one should give the rows of one read, got \(rowsText(oneByOne)) and \(rowsText(atOnce))")
+            }
+            // A finished row changes a run for a longer one that comes later, so the next row gets the shorter one.
+            let swap = [recorded("strava", "swap-9", meters: 9_350, after: 3_600), recorded("strava", "swap-5", meters: 5_190, after: 14_400),
+                        recorded("healthkit", "swap-h", meters: 9_170, after: 25_200)]
+            var swapped = fiveKDay
+            passes(&swapped, "swap", [dayData(strava: Array(swap.prefix(2))), dayData(strava: Array(swap.prefix(2)), health: [swap[2]])])
+            if swapped.player.penaltyOpen || !done(swapped, dayId) || shows(swapped) != 18.5 {
+                errors.append("the penalty row should take the Health run and leave the Strava run to the 5K, got \(rowsText(swapped))")
+            }
+            // 7 km and 6 km finish the Penalty 10K together. The row shows 13 km, and no part of it is a run of
+            // its own for Beyond the Limit.
+            var thirteen = owes
+            let seven = recorded("strava", "sum-7", meters: 7_000, after: 3_600), six = recorded("strava", "sum-6", meters: 6_000, after: 14_400)
+            passes(&thirteen, "13 km", [dayData(strava: [seven, six])])
+            _ = thirteen.checkHiddenQuests(integrations: dayData(strava: [seven, six]), now: passNow)
+            if !done(thirteen, penalty.id) || shows(thirteen) != 13 || thirteen.beyondTheLimitToday != nil {
+                errors.append("a row that two runs finished should show their sum and unlock nothing, got \(rowsText(thirteen))")
+            }
+            // A run that was cut in its source from 6 km to 4 km counts 4 km: with a second 4 km run, 8 km.
+            var edited = owes
+            passes(&edited, "edited", [dayData(strava: [recorded("strava", "edit", meters: 6_000, after: 3_600)]),
+                                       dayData(strava: [recorded("strava", "edit", meters: 4_000, after: 3_600), recorded("strava", "edit-2", meters: 4_000, after: 14_400)])])
+            if done(edited, penalty.id) || shows(edited) != 8 {
+                errors.append("a run that was made shorter in its source should count its new length, got \(rowsText(edited))")
+            }
+            // One run in two sources is one run, also when the second device started 11 minutes late.
+            var lateStart = owes
+            let whole = WorkoutEvent(source: "healthkit", externalId: "late-h", sport: "running", start: morning.addingTimeInterval(3_600),
+                                     end: morning.addingTimeInterval(5_400), movingTimeSec: 1_800, distanceMeters: 5_000)
+            let late = WorkoutEvent(source: "strava", externalId: "late-s", sport: "Run", start: morning.addingTimeInterval(4_260),
+                                    end: morning.addingTimeInterval(5_400), movingTimeSec: 1_140, distanceMeters: 3_100)
+            passes(&lateStart, "late start", [dayData(strava: [], health: [whole]), dayData(strava: [late]), dayData(strava: [late], health: [whole])])
+            if done(lateStart, penalty.id) || shows(lateStart) != 5 {
+                errors.append("one run that a second device recorded from a late start should count one time, got \(rowsText(lateStart))")
+            }
+            // A stop and a new start in Strava, and one Apple Health recording of the whole run: 10 km, one time.
+            var whole10 = owes
+            let cover = WorkoutEvent(source: "healthkit", externalId: "cover", sport: "running", start: morning.addingTimeInterval(3_600),
+                                     end: morning.addingTimeInterval(7_200), movingTimeSec: 3_480, distanceMeters: 10_000)
+            passes(&whole10, "parts and whole", [dayData(strava: [falseStart, realRun], health: [cover])])
+            if !done(whole10, penalty.id) || whole10.bundle.quests[index].progress.current != 0 {
+                errors.append("two parts in Strava and the whole run in Apple Health should be one run of 10 km, got \(rowsText(whole10))")
+            }
+            // Strava holds 5 km and 5 km, Apple Health alone holds two more of 5 km. The penalty row takes the
+            // Health runs, so the day's 10K, which needs Strava, is finished too.
+            var four = owes
+            passes(&four, "four runs", [dayData(strava: [recorded("strava", "four-s1", meters: 5_000, after: 3_600), recorded("strava", "four-s2", meters: 5_000, after: 10_800)],
+                                                health: [recorded("healthkit", "four-h1", meters: 5_000, after: 18_000), recorded("healthkit", "four-h2", meters: 5_000, after: 25_200)])])
+            if !done(four, penalty.id) || !done(four, dayId) {
+                errors.append("of runs of one length the penalty row should take the ones Strava does not hold, got \(rowsText(four))")
+            }
+            // A penalty that opens after a run was done and counted does not take that run back.
+            var midDay = GameSnapshot.fresh(catalog: catalog, now: morning)
+            let early = dayData(strava: [recorded("strava", "early-10", meters: 10_020, after: 3_600)])
+            midDay.checkOpenRows(integrations: early, now: passNow, skipping: passSkips)
+            midDay.player.penaltyOpen = true
+            midDay.bundle = PenaltyQuests.ensure(in: midDay.bundle, open: true, band: midDay.trainingBand, catalog: catalog, now: passNow)
+            passes(&midDay, "penalty after the run", [early])
+            if !midDay.player.penaltyOpen || !midDay.bundle.quests.contains(where: { $0.kind == .daily && TrainingDay.isRaceRun($0) && $0.status == .completed }) {
+                errors.append("a penalty should not take back a run that was done and counted before it opened, got \(rowsText(midDay))")
+            }
+            // A note that an earlier build saved with the km it showed still loads.
+            let old = Data(#"{"dayKey":"2026-10-22","questId":"q","evidence":{"source":"strava","externalId":"workout:strava:x","payloadHash":"h","timestamp":0},"shown":7.2}"#.utf8)
+            if (try? JSONDecoder().decode(ShownWorkout.self, from: old))?.meters != 7_200 {
+                errors.append("a saved note with km should load as meters")
+            }
         } else {
             errors.append("a penalty day should hold a penalty row and the day's run")
         }
@@ -421,6 +499,28 @@ enum PlanAndLockRules {
             _ = direct.checkHiddenQuests(integrations: twelve, now: passNow)
             if status(paid, dayId) != .completed || paid.beyondTheLimitToday != nil || paid.gold != goldOn || direct.beyondTheLimitToday == nil {
                 errors.append("no gym off should pay no Beyond the Limit gold for a 12 km run done on the added 10K, got \(rowsText(paid)) gold \(goldOn) -> \(paid.gold)")
+            }
+            // The 5K takes a 6 km run on the gym day. "No gym today" goes on, and a 5 km run follows: the added 10K
+            // is done by the two runs and the 5K is open, as when the setting goes on first. Off gives the runs to
+            // the 5K, and on again gives them back.
+            let sixKm = recorded("strava", "sum-6", meters: 6_000, after: 3_600), fiveKm = recorded("strava", "sum-5", meters: 5_000, after: 14_400)
+            var later = fiveK
+            later.checkOpenRows(integrations: dayData(strava: [sixKm]), now: passNow, skipping: passSkips)
+            _ = later.setNoGym(true, catalog: catalog, now: passNow, integrations: dayData(strava: [sixKm]))
+            later.checkOpenRows(integrations: dayData(strava: [sixKm, fiveKm]), now: passNow, skipping: passSkips)
+            var onFirst = fiveK
+            _ = onFirst.setNoGym(true, catalog: catalog, now: passNow)
+            onFirst.checkOpenRows(integrations: dayData(strava: [sixKm, fiveKm]), now: passNow, skipping: passSkips)
+            if status(later, addedId) != .completed || status(later, dayId) == .completed || rowsText(later) != rowsText(onFirst) {
+                errors.append("runs before and after no gym on should give the day of no gym on first, got \(rowsText(later)) and \(rowsText(onFirst))")
+            }
+            _ = later.setNoGym(false, catalog: catalog, now: passNow, integrations: dayData(strava: [sixKm, fiveKm]))
+            later.checkOpenRows(integrations: dayData(strava: [sixKm, fiveKm]), now: passNow, skipping: passSkips)
+            let offDone = status(later, dayId) == .completed
+            _ = later.setNoGym(true, catalog: catalog, now: passNow, integrations: dayData(strava: [sixKm, fiveKm]))
+            later.checkOpenRows(integrations: dayData(strava: [sixKm, fiveKm]), now: passNow, skipping: passSkips)
+            if !offDone || status(later, addedId) != .completed || status(later, dayId) == .completed {
+                errors.append("no gym off and on again should give the two runs back to the added 10K, got \(rowsText(later))")
             }
         } else {
             errors.append("a fresh day should hold a run")

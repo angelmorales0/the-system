@@ -52,6 +52,9 @@ enum HiddenQuests {
 
     /// The workout that completed the quest. Only that workout can unlock the hidden quest.
     static func completingWorkout(for quest: Quest, in workouts: [CanonicalWorkout]) -> CanonicalWorkout? {
+        // A row that several runs finished together has no one workout: Beyond the Limit needs one run, and the
+        // row shows the sum, not a part.
+        guard quest.evidence.filter({ !$0.workoutIds.isEmpty }).count <= 1 else { return nil }
         let ids = quest.evidence.reduce(into: Set<String>()) { $0.formUnion($1.workoutIds) }
         // A later source can change the session's id, so any of its recordings finds it.
         return workouts.first { workout in ids.contains(workout.id) || workout.members.contains { ids.contains($0.id) } }
