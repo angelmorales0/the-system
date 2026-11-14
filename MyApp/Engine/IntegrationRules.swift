@@ -175,14 +175,14 @@ enum IntegrationRules {
         func set(_ type: String, _ reps: Int?, _ kg: Double?) -> HevySet { HevySet(type: type, reps: reps, weightKg: kg, rpe: nil) }
         let morning = HevyWorkout(id: "w1", title: "Push", start: start, end: start.addingTimeInterval(3600), exercises: [
             HevyExercise(title: "Bench Press (Barbell)", templateId: "BP", sets: [
-                set("warmup", 10, 40), set("normal", 5, 80), set("normal", 5, 80), set("normal", 3, 85), set("normal", 5, 80),
+                set("warmup", 10, 40), set("normal", 5, 80), set("normal", 3, 85), set("normal", nil, 85), set("normal", 5, 80),
             ]),
             HevyExercise(title: "Incline Bench Press (Dumbbell)", templateId: "IBP", sets: [set("normal", 8, 30), set("normal", 8, 30)]),
         ])
         var lifted = day
         lifted.hevy = HevyDayReading(available: true, configured: true, reason: "", dayKey: "2026-10-01", workouts: [morning])
         if case .progress(let current, _) = HevySetsVerifier().evaluate(quest: benchQuest, context: context(lifted, now: start)) {
-            if current != 3 { errors.append("Hevy should count 3 working bench sets of 5+ reps, got \(current)") }
+            if current != 3 { errors.append("Hevy should count 3 working bench sets, also the one under the rep target, and not a set with no rep, got \(current)") }
         } else {
             errors.append("3 of 4 bench sets should be progress")
         }
@@ -220,14 +220,14 @@ enum IntegrationRules {
         cable.hevy = HevyDayReading(available: true, configured: true, reason: "", dayKey: "2026-10-01", workouts: [
             HevyWorkout(id: "w3", title: "Back", start: start, end: start.addingTimeInterval(3600), exercises: [
                 HevyExercise(title: "Seated Cable Row - V Grip (Cable)", templateId: "SCR", sets: [set("normal", 10, 50), set("normal", 10, 50), set("normal", 10, 50)]),
-                HevyExercise(title: "Lat Pulldown (Cable)", templateId: "LPD", sets: [set("warmup", 10, 30), set("normal", 8, 60), set("normal", 8, 60), set("normal", 8, 60), set("normal", 2, 70)]),
+                HevyExercise(title: "Lat Pulldown (Cable)", templateId: "LPD", sets: [set("warmup", 10, 30), set("normal", 8, 60), set("normal", 8, 60), set("normal", 2, 70), set("normal", 0, 70)]),
             ]),
         ])
         if case .completed = HevySetsVerifier().evaluate(quest: rowQuest, context: context(cable, now: start)) {} else {
             errors.append("3 cable row sets should clear a Bent Over Row 3-set quest whatever the stack weight")
         }
         if case .progress(let current, _) = HevySetsVerifier().evaluate(quest: pullQuest, context: context(cable, now: start)) {
-            if current != 3 { errors.append("lat pulldowns should count 3 working sets of 3+ reps for pull-ups, got \(current)") }
+            if current != 3 { errors.append("lat pulldowns should count 3 working sets for pull-ups, also the one under the rep target, got \(current)") }
         } else {
             errors.append("3 of 4 lat pulldown sets should be pull-up progress")
         }
