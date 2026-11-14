@@ -72,6 +72,9 @@ struct PenaltyStart: Codable, Equatable {
     var dayKey: String
     var questId: String
     var counted: [Evidence]
+    /// When the penalty row was made. A new row of the same id (a penalty that was lifted and opened again) is
+    /// another penalty and gets its own list.
+    var madeAt: Date? = nil
 }
 
 /// A workout that an open run row can count: no row has used it. `meters` is its longest reading.

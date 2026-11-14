@@ -497,6 +497,20 @@ enum PlanAndLockRules {
             if freed.bundle.quests.first(where: \.isNoGymRun)?.status != .completed || shows(freed) != 11 {
                 errors.append("runs that the penalty gives up should finish the added 10K in the same pass, got \(rowsText(freed))")
             }
+            // A penalty is lifted and its row goes. The day's 10K is then done by a run, and a penalty opens again
+            // with a row of the same id: it is a new penalty, and that run was counted before it.
+            var again = owes
+            again.checkOpenRows(integrations: dayData(strava: []), now: passNow, skipping: passSkips)
+            again.player.penaltyOpen = false
+            again.bundle.quests.removeAll { $0.kind == .penalty }
+            let counted = dayData(strava: [recorded("strava", "again-10", meters: 10_300, after: 3_600)])
+            again.checkOpenRows(integrations: counted, now: passNow, skipping: passSkips)
+            again.player.penaltyOpen = true
+            again.bundle = PenaltyQuests.ensure(in: again.bundle, open: true, band: again.trainingBand, catalog: catalog, now: passNow.addingTimeInterval(60))
+            passes(&again, "penalty opened again", [counted])
+            if !again.player.penaltyOpen || !again.bundle.quests.contains(where: { $0.kind == .daily && TrainingDay.isRaceRun($0) && $0.status == .completed }) {
+                errors.append("a penalty that opens again should not take the run that was counted before it, got \(rowsText(again))")
+            }
             // A note that an earlier build saved with the km it showed still loads.
             let old = Data(#"{"dayKey":"2026-10-22","questId":"q","evidence":{"source":"strava","externalId":"workout:strava:x","payloadHash":"h","timestamp":0},"shown":7.2}"#.utf8)
             if (try? JSONDecoder().decode(ShownWorkout.self, from: old))?.meters != 7_200 {

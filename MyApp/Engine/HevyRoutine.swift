@@ -86,7 +86,8 @@ enum HevyRoutine {
                 // The plan's weight goes on the exercise that carried about that weight: a barbell weight does not
                 // go on the dumbbell exercise the player used last.
                 let own = pool.first { loaded($0.entry).contains { ($0.weightKg ?? 0) >= 0.8 * plannedKg } } ?? newest
-                return (own.id, plannedKg)
+                // On a band-assisted exercise Hevy reads the number as help: no weight there.
+                return (own.id, assistedOnly ? nil : plannedKg)
             }
             if !assistedOnly, let own = pool.first(where: { loaded($0.entry).contains(where: fits) }) {
                 return (own.id, loaded(own.entry).filter(fits).compactMap(\.weightKg).max())
@@ -155,7 +156,8 @@ enum HevyRoutine {
         // Hevy's types are words joined by "_": weight_reps, bodyweight_reps, weighted_bodyweight, duration, ...
         let words = Set(type.split(separator: "_").map(String.init))
         var copy = set
-        if !words.contains("reps") { copy.repsLow = nil; copy.repsHigh = nil }
+        // weighted_bodyweight and assisted_bodyweight count reps too.
+        if !words.contains("reps") && !words.contains("bodyweight") { copy.repsLow = nil; copy.repsHigh = nil }
         if !words.contains("duration") { copy.seconds = nil }
         if words.isDisjoint(with: ["weight", "weighted", "assisted"]) { copy.weightKg = nil }
         return copy
@@ -304,12 +306,13 @@ enum HevyRoutine {
         guard var plan = plan(for: bundle, history: history, templates: templates, types: types) else { return nil }
         // Hevy's list is read one time, for the types, and again for each new set of names that are not known.
         let missing = plan.unknown.joined(separator: "|")
-        if types.isEmpty || (!missing.isEmpty && defaults.string(forKey: missingKey) != missing) {
+        if !defaults.bool(forKey: typesKey + ".read") || (!missing.isEmpty && defaults.string(forKey: missingKey) != missing) {
             if let loaded = await loadTemplates(key: key, transport: transport) {
                 templates = loaded.ids
                 types = loaded.types
                 defaults.set(loaded.ids, forKey: templatesKey)
                 defaults.set(loaded.types, forKey: typesKey)
+                defaults.set(true, forKey: typesKey + ".read")
                 plan = self.plan(for: bundle, history: history, templates: templates, types: types) ?? plan
                 // The names Hevy's list does not hold: the list is not read again for them.
                 defaults.set(plan.unknown.joined(separator: "|"), forKey: missingKey)
@@ -336,6 +339,8 @@ enum HevyRoutine {
         }
         // No routine yet, or the player deleted it in Hevy.
         if id == nil || reply?.status == 404, let url = URL(string: "\(HevyClient.api)/v1/routines") {
+            // The stored id is gone. If the reply to the new routine is lost, the next write finds it by title.
+            defaults.removeObject(forKey: idKey)
             reply = await transport.send("POST", url, HevyClient.headers(key), body(plan, create: true))
             created = true
         }
@@ -434,7 +439,11 @@ enum HevyRoutine {
         let hangOnReps = HevyRoutine.plan(for: holds, history: [], templates: ["dead hang": "HANG"], types: ["HANG": "reps_only"])
         if hang?.exercises.first?.sets.map(\.seconds) != [60, 60, 60] || repRange(holds.quests[0]) != nil || hangOnReps?.exercises.first?.sets.first != SetPlan()
             || fitted(SetPlan(repsLow: 3, repsHigh: 5, weightKg: 40), to: "bodyweight_reps") != SetPlan(repsLow: 3, repsHigh: 5)
-            || fitted(SetPlan(repsLow: 3, repsHigh: 5, weightKg: 40), to: "weight_reps").weightKg != 40 {
+            || fitted(SetPlan(repsLow: 3, repsHigh: 5, weightKg: 40), to: "weight_reps").weightKg != 40
+            || fitted(SetPlan(repsLow: 3, repsHigh: 5, weightKg: 10), to: "weighted_bodyweight") != SetPlan(repsLow: 3, repsHigh: 5, weightKg: 10)
+            || fitted(SetPlan(repsLow: 3, repsHigh: 5, weightKg: 10), to: "assisted_bodyweight").repsLow != 3
+            || HevyRoutine.logged(name: "pull up", templateId: nil, load: .weighted, low: 3, high: 5, plannedKg: 10,
+                                  newestFirst: [logged("Pull Up (Assisted)", "ASSISTED", kg: 30, reps: 8, daysAgo: 1)])?.weightKg != nil {
             errors.append("a hold should be 60 seconds for each of its 3 sets, and a set should hold only what its exercise takes, got \(String(describing: hang))")
         }
         // Reps from a title: the number after the mark, a range with a hyphen or a dash, never seconds or meters.
@@ -502,7 +511,7 @@ extension HevyRoutine {
         /// Hevy, as far as this check needs it.
         final class Hevy {
             var routines: [(id: String, title: String)] = []
-            var listFails = false, sendFails = false, missing: Set<String> = [], refuse: Int? = nil, replyHasId = true
+            var listFails = false, sendFails = false, missing: Set<String> = [], refuse: Int? = nil, replyHasId = true, postReplyLost = false
             var calls: [String] = []
             var made = 0
         }
@@ -536,6 +545,7 @@ extension HevyRoutine {
                     hevy.made += 1
                     let id = "made-\(hevy.made)"
                     hevy.routines.append((id, title))
+                    if hevy.postReplyLost { return nil }
                     return (201, hevy.replyHasId ? .object(["routine": .array([.object(["id": .string(id)])])]) : .object([:]))
                 }
             )
@@ -605,6 +615,21 @@ extension HevyRoutine {
         _ = await write(hevy, defaults, other)
         if keptId != nil || hevy.made != 1 || hevy.calls.last != "PUT made-1" {
             errors.append("a reply with no id should not lead to a second routine, got \(hevy.calls) made \(hevy.made)")
+        }
+        UserDefaults().removePersistentDomain(forName: suite)
+
+        // The stored routine is gone, and the reply to the new one is lost: the old id is not kept, so the next
+        // write finds the new routine by its title and makes no second one.
+        (defaults, suite) = fresh("lost")
+        hevy = Hevy()
+        defaults.set("gone", forKey: idKey)
+        hevy.postReplyLost = true
+        _ = await write(hevy, defaults, bundle)
+        let lostId = defaults.string(forKey: idKey)
+        hevy.postReplyLost = false
+        _ = await write(hevy, defaults, bundle)
+        if lostId != nil || hevy.made != 1 || hevy.calls.last != "PUT made-1" || defaults.string(forKey: idKey) != "made-1" {
+            errors.append("a new routine whose reply is lost should not be made a second time, got \(hevy.calls) made \(hevy.made)")
         }
         UserDefaults().removePersistentDomain(forName: suite)
 

@@ -344,13 +344,20 @@ struct GameSnapshot: Codable, Equatable {
     /// done and counted before it, and it can never count those.
     private mutating func markPenaltyStarts() {
         let dayKey = bundle.dayKey
+        // A list of a row that is gone, or of an earlier row with the same id, is not this penalty's.
+        penaltyStarts.removeAll { start in
+            start.dayKey == dayKey && !bundle.quests.contains { $0.id == start.questId && $0.kind == .penalty && (start.madeAt == nil || start.madeAt == $0.assignedAt) }
+        }
         for quest in bundle.quests where quest.kind == .penalty && DistanceRule.minimumMeters(quest) != nil
             && !penaltyStarts.contains(where: { $0.dayKey == dayKey && $0.questId == quest.id }) {
+            // Only runs from before the row was made: when the list is written late (a save of an earlier build),
+            // a run that was done after the penalty opened is not "counted before" it.
             let counted = evidenceLog.filter { use in
                 use.dayKey == dayKey && use.questId != quest.id && !use.evidence.workoutIds.isEmpty
+                    && (use.evidence.session?.start ?? .distantPast) < quest.assignedAt
                     && bundle.quests.contains { $0.id == use.questId && $0.status == .completed }
             }.map(\.evidence)
-            penaltyStarts.append(PenaltyStart(dayKey: dayKey, questId: quest.id, counted: counted))
+            penaltyStarts.append(PenaltyStart(dayKey: dayKey, questId: quest.id, counted: counted, madeAt: quest.assignedAt))
         }
     }
 
