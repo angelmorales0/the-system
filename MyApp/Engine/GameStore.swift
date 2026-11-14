@@ -581,8 +581,15 @@ final class GameStore: ObservableObject {
         rearmPhoneCount()
         guard next.screenTimeToday != snapshot.screenTimeToday else { return }
         snapshot = next
+        sendScreenTimeAlerts()
         persist()
         enforcePenalty()
+    }
+
+    /// Notices at 50, 75, 90, 95, and 100 percent of the daily screen time cap.
+    private func sendScreenTimeAlerts() {
+        guard persistence == .standard, snapshot.bundle.quests.contains(where: { $0.id == ScreenTime.questId }) else { return }
+        ScreenTimeAlerts.update(day: snapshot.screenTimeToday)
     }
 
     private func rearmPhoneCount() {
@@ -666,6 +673,7 @@ final class GameStore: ObservableObject {
             // After today's screen time too, so only the new minutes add fatigue.
             next.applyFatigue(integrations: day, now: now)
             self.snapshot = next
+            self.sendScreenTimeAlerts()
             self.integrations = day
             self.integrationsDayKey = dayKey
             if settled.liftedPenalty {

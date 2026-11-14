@@ -3,6 +3,7 @@ import Foundation
 #if os(iOS)
 import DeviceActivity
 import FamilyControls
+import UserNotifications
 #endif
 
 /// The daily screen time quest: phone minutes from Screen Time, work minutes (the Mac) from the backend.
@@ -83,6 +84,59 @@ struct ScreenTimeDay: Codable, Equatable {
     var atCap: Bool { totalMinutes >= ScreenTime.totalCapMinutes && !overTotal }
     /// The only failure: the combined total more than 30 minutes over 8 h 20 m.
     var overTotal: Bool { totalMinutes > ScreenTime.failAfterMinutes }
+}
+
+/// Notices at 50, 75, 90, 95, and 100 percent of the 500-minute total cap. One notice per step per quest day.
+/// The app sends them when it reads new minutes. The Screen Time monitor sends them too, from the phone count and
+/// the Mac minutes the app saved last, so a notice still comes while the app is closed. Both write the same sent list.
+/// The monitor repeats these strings and the message text (`ScreenAlertMonitor`); change them together.
+enum ScreenTimeAlerts {
+    static let percents = [50, 75, 90, 95, 100]
+    /// Quest day → percents already sent.
+    static let sentKey = "screenTimeAlertsSent"
+    /// Quest day → ["work": Mac minutes, "overlap": measured overlap]. The monitor adds its phone count to these.
+    static let baseKey = "screenTimeAlertBase"
+
+    static func minutes(for percent: Int) -> Int { ScreenTime.totalCapMinutes * percent / 100 }
+
+    /// The highest step that `totalMinutes` reached and that was not sent. Lower steps it skipped are not sent.
+    static func due(totalMinutes: Int, sent: Set<Int>) -> Int? {
+        percents.filter { totalMinutes >= minutes(for: $0) }.max().flatMap { sent.contains($0) ? nil : $0 }
+    }
+
+    static func message(percent: Int, totalMinutes: Int) -> (title: String, body: String) {
+        let cap = ScreenTime.totalCapMinutes
+        if percent >= 100 {
+            return ("Screen Time: 100%", "You reached \(ScreenTime.clock(cap)) today. The quest fails past \(ScreenTime.clock(ScreenTime.failAfterMinutes)).")
+        }
+        return ("Screen Time: \(percent)%", "\(ScreenTime.clock(totalMinutes)) of \(ScreenTime.clock(cap)) used today. \(ScreenTime.clock(max(cap - totalMinutes, 0))) left.")
+    }
+
+    /// Saves the Mac minutes for the monitor, then sends the step that is due, if one is.
+    static func update(day: ScreenTimeDay, defaults: UserDefaults = PenaltyGroup.defaults) {
+        var base = defaults.dictionary(forKey: baseKey) as? [String: [String: Int]] ?? [:]
+        var row = ["work": day.workMinutes]
+        if let overlap = day.overlapMinutes { row["overlap"] = overlap }
+        base[day.dayKey] = row
+        for old in base.keys.sorted().dropLast(3) { base.removeValue(forKey: old) }
+        defaults.set(base, forKey: baseKey)
+
+        var sentDays = defaults.dictionary(forKey: sentKey) as? [String: [Int]] ?? [:]
+        let sent = Set(sentDays[day.dayKey] ?? [])
+        guard let percent = due(totalMinutes: day.totalMinutes, sent: sent) else { return }
+        sentDays[day.dayKey] = Array(sent.union(percents.filter { $0 <= percent })).sorted()
+        for old in sentDays.keys.sorted().dropLast(3) { sentDays.removeValue(forKey: old) }
+        defaults.set(sentDays, forKey: sentKey)
+        #if os(iOS)
+        let text = message(percent: percent, totalMinutes: day.totalMinutes)
+        let content = UNMutableNotificationContent()
+        content.title = text.title
+        content.body = text.body
+        content.sound = .default
+        // The same id as the monitor's notice, so a step that both send shows once.
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "screen-time-\(day.dayKey)-\(percent)", content: content, trigger: nil))
+        #endif
+    }
 }
 
 /// App Group storage shared with the Screen Time monitor. The monitor repeats these strings; change them together.
@@ -571,6 +625,12 @@ enum ScreenTimeRules {
         pending.applyScreenTime(phoneMinutes: nil, workMinutes: nil, overlapMinutes: 10)
         if pending.screenTimeToday.totalMinutes != 560 || pending.bundle.quests.first(where: { $0.id == ScreenTime.questId })?.status != .failed {
             errors.append("a measured overlap of 10 should make 90 + 480 total 560 and fail, got \(pending.screenTimeToday.totalMinutes)")
+        }
+        // Notices: the highest new step only, none twice, none under 50%.
+        if ScreenTimeAlerts.due(totalMinutes: 249, sent: []) != nil || ScreenTimeAlerts.due(totalMinutes: 250, sent: []) != 50
+            || ScreenTimeAlerts.due(totalMinutes: 460, sent: [50]) != 90 || ScreenTimeAlerts.due(totalMinutes: 460, sent: [50, 75, 90]) != nil
+            || ScreenTimeAlerts.due(totalMinutes: 475, sent: [50, 75, 90]) != 95 || ScreenTimeAlerts.due(totalMinutes: 520, sent: [50, 75, 90, 95]) != 100 {
+            errors.append("screen time notice steps wrong")
         }
         if ScreenTime.clock(280) != "4h 40m" || ScreenTime.clock(32) != "32m" || ScreenTime.clock(420) != "7h" {
             errors.append("screen time clock format wrong")

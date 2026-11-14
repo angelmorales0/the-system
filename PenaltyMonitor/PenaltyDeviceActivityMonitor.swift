@@ -153,6 +153,49 @@ enum PhoneScreenMonitor {
             days.removeValue(forKey: old)
         }
         defaults.set(days, forKey: daysKey)
+        // A false burst writes many steps in a few seconds. Real use reaches the step before at least 30 seconds earlier.
+        if let previous = times[String(minutes - 1)], now.timeIntervalSince1970 - previous >= 30,
+           PenaltyMonitorShields.questDayKey(for: now) == today {
+            ScreenAlertMonitor.check(phoneMinutes: minutes, dayKey: today, defaults: defaults)
+        }
+    }
+}
+
+/// Mirrors `ScreenTimeAlerts` in the app. Keep the strings, steps, and message text in step.
+/// Adds the phone count to the Mac minutes the app saved last, and sends the step of the cap that is due.
+enum ScreenAlertMonitor {
+    static let percents = [50, 75, 90, 95, 100]
+    static let sentKey = "screenTimeAlertsSent"
+    static let baseKey = "screenTimeAlertBase"
+    static let capMinutes = 500
+    static let failAfterMinutes = 530
+
+    nonisolated static func check(phoneMinutes: Int, dayKey: String, defaults: UserDefaults) {
+        let base = (defaults.dictionary(forKey: baseKey) as? [String: [String: Int]])?[dayKey] ?? [:]
+        let work = base["work"] ?? 0
+        // Same rule as `ScreenTimeDay.sharedMinutes`: with no measured overlap, every phone minute may be a Mac minute.
+        let shared = min(base["overlap"] ?? phoneMinutes, phoneMinutes, work)
+        let total = phoneMinutes + work - shared
+        var sentDays = defaults.dictionary(forKey: sentKey) as? [String: [Int]] ?? [:]
+        let sent = Set(sentDays[dayKey] ?? [])
+        guard let percent = percents.filter({ total >= capMinutes * $0 / 100 }).max(), !sent.contains(percent) else { return }
+        sentDays[dayKey] = Array(sent.union(percents.filter { $0 <= percent })).sorted()
+        for old in sentDays.keys.sorted().dropLast(3) { sentDays.removeValue(forKey: old) }
+        defaults.set(sentDays, forKey: sentKey)
+        let content = UNMutableNotificationContent()
+        content.title = "Screen Time: \(percent)%"
+        content.body = percent >= 100
+            ? "You reached \(clock(capMinutes)) today. The quest fails past \(clock(failAfterMinutes))."
+            : "\(clock(total)) of \(clock(capMinutes)) used today. \(clock(max(capMinutes - total, 0))) left."
+        content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "screen-time-\(dayKey)-\(percent)", content: content, trigger: nil))
+    }
+
+    /// Same format as `ScreenTime.clock` in the app.
+    nonisolated static func clock(_ minutes: Int) -> String {
+        let hours = minutes / 60, rest = minutes % 60
+        if hours == 0 { return "\(rest)m" }
+        return rest == 0 ? "\(hours)h" : "\(hours)h \(rest)m"
     }
 }
 
