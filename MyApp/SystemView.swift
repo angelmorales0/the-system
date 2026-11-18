@@ -7,6 +7,8 @@ struct SystemView: View {
     @State private var liftsExpanded = false
     /// The stretching row starts collapsed each launch.
     @State private var stretchExpanded = false
+    /// The gym split editor, opened from under the gym row.
+    @State private var editingSplit = false
 
     var body: some View {
         ZStack {
@@ -34,6 +36,9 @@ struct SystemView: View {
             }
         }
         .animation(.easeOut(duration: 0.25), value: store.pendingHiddenReveal?.id)
+        .sheet(isPresented: $editingSplit, onDismiss: { SystemSound.systemClose.play() }) {
+            NavigationStack { SplitEditorSheet(dayId: GymSplit.day(named: store.bundle.headerLine)?.id) }
+        }
     }
 
     private var questContent: some View {
@@ -101,6 +106,26 @@ struct SystemView: View {
                                 questRow(quest)
                                     .padding(.leading, 16)
                             }
+                            Button {
+                                SystemSound.systemOpen.play()
+                                editingSplit = true
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Text("EDIT SPLIT")
+                                        .font(.caption2.weight(.semibold))
+                                        .tracking(1)
+                                    Image(systemName: "slider.horizontal.3")
+                                        .font(.caption2)
+                                }
+                                .foregroundStyle(QuestLight.ink.opacity(0.8))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .frame(minHeight: 44)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.leading, 16)
+                            .accessibilityIdentifier("editSplitButton")
+                            .accessibilityHint("Opens the gym split, where you change sets and mark exercises optional")
                             // Where the workout is ready: the routine the app wrote to Hevy.
                             if let note = store.hevyRoutineNote {
                                 Text(note)
@@ -115,9 +140,9 @@ struct SystemView: View {
                 }
             }
 
-            if !store.optionalQuests.isEmpty {
+            if !otherOptionalQuests.isEmpty {
                 VStack(spacing: 1) {
-                    ForEach(store.optionalQuests) { questRow($0) }
+                    ForEach(otherOptionalQuests) { questRow($0) }
                 }
                 .padding(.top, 14)
             }
@@ -145,6 +170,7 @@ struct SystemView: View {
     }
 
     /// The goal list with the day's lifts folded into one row at the place of the first lift.
+    /// The optional lifts of the split fold in after the required ones.
     private var goalRows: [GoalRow] {
         let quests = store.goalQuests
         let lifts = quests.filter(isLift)
@@ -154,7 +180,7 @@ struct SystemView: View {
             if !isLift(quest) {
                 rows.append(.quest(quest))
             } else if quest.id == lifts[0].id {
-                rows.append(.lifts(lifts))
+                rows.append(.lifts(lifts + optionalLifts))
             }
         }
         return rows
@@ -165,6 +191,22 @@ struct SystemView: View {
         quest.kind == .daily && quest.id != DailyStretch.questId && TrainingDay.isStrength(quest)
     }
 
+    /// An optional gym exercise: the player may skip it. It asks no set, so its row reads `[0/0]`.
+    private func isOptionalLift(_ quest: Quest) -> Bool {
+        quest.kind == .optional && quest.id != DailyStretch.questId && TrainingDay.isStrength(quest)
+    }
+
+    /// The optional lifts that sit in the gym fold. With no fold, they stay in the optional list.
+    private var optionalLifts: [Quest] {
+        store.goalQuests.filter(isLift).count > 1 ? store.optionalQuests.filter(isOptionalLift) : []
+    }
+
+    /// The optional quests below the goal list: every optional quest that is not in the gym fold.
+    private var otherOptionalQuests: [Quest] {
+        let folded = Set(optionalLifts.map(\.id))
+        return store.optionalQuests.filter { !folded.contains($0.id) }
+    }
+
     /// "Bench Day" when the header names a split day, else "Gym".
     private var liftGroupTitle: String {
         GymSplit.day(named: store.bundle.headerLine)?.name ?? "Gym"
@@ -172,7 +214,9 @@ struct SystemView: View {
 
     /// The gym row counts sets, not finished exercises: each set that Hevy holds shows at once, so a lift with
     /// 2 of its 3 sets done already moves the row. The box fills when every exercise is done.
-    private func liftGroupRow(_ lifts: [Quest]) -> some View {
+    private func liftGroupRow(_ rows: [Quest]) -> some View {
+        // Optional lifts ask no set: they add nothing to the count, and the box fills without them.
+        let lifts = rows.filter { $0.kind != .optional }
         let done = lifts.filter { $0.status == .completed }.count
         let sets = lifts.map(\.liftSets)
         let setsDone = sets.reduce(0) { $0 + $1.done }, setsAsked = sets.reduce(0) { $0 + $1.total }
@@ -275,7 +319,7 @@ struct SystemView: View {
                     Text(quest.title)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                Text(store.rowLabel(for: quest))
+                Text(isOptionalLift(quest) ? "[\(quest.liftSets.done)/0]" : store.rowLabel(for: quest))
                     .monospacedDigit()
                     .fixedSize(horizontal: true, vertical: false)
                     .foregroundStyle(beyond ? QuestLight.cyan : ink)

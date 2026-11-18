@@ -112,6 +112,7 @@ final class GameStore: ObservableObject {
         let targets = persistence == .standard ? StatTargets.load() : StatTargets()
         var catalog = FallbackCatalog.bundled()
         catalog.strengthGoals = targets.custom
+        catalog.splitEdits = targets.split
         self.catalog = catalog
         self.generator = QuestGenerateClient.make(catalog: catalog)
         self.persistence = persistence
@@ -344,9 +345,41 @@ final class GameStore: ObservableObject {
         saveStatTargets(next)
     }
 
+    /// The split with the player's goals and edits, for the editor.
+    var editedRotation: [GymSplit.Day] { GymSplit.rotation(with: statTargets.custom, edits: statTargets.split) }
+
+    /// Saves the player's change to one exercise of one split day: its sets, or whether it is optional.
+    /// When today is that split day, today's open rows of the exercise change at once, and the Hevy routine follows.
+    /// A finished row stays as it is.
+    func editSplit(day id: String, exercise: String, sets: Int? = nil, optional: Bool? = nil, now: Date = .now) {
+        let key = GymSplit.editKey(day: id, exercise: exercise)
+        var next = statTargets
+        var edit = next.split[key] ?? GymSplit.SplitEdit()
+        if let sets { edit.sets = sets }
+        if let optional { edit.optional = optional }
+        // An edit back to the split's own values is no edit.
+        if let base = GymSplit.rotation(with: next.custom).first(where: { $0.id == id })?.exercises
+            .first(where: { GymSplit.editKey(day: id, exercise: $0.exercise) == key }) {
+            if edit.sets == base.sets { edit.sets = nil }
+            if edit.optional == base.optional { edit.optional = nil }
+        }
+        next.split[key] = edit == GymSplit.SplitEdit() ? nil : edit
+        guard next != statTargets else { return }
+        saveStatTargets(next)
+        guard !startedNewDay(now: now),
+              let day = GymSplit.plannedDay(of: snapshot.bundle, goals: next.custom, edits: next.split), day.id == id else { return }
+        var updated = snapshot
+        updated.bundle = GymSplit.applyingEdit(updated.bundle, day: day, exercise: exercise, band: updated.trainingBand)
+        updated.generatedBundle = updated.generatedBundle.map { GymSplit.applyingEdit($0, day: day, exercise: exercise, band: updated.trainingBand) }
+        guard updated != snapshot else { return }
+        snapshot = updated
+        persist()
+    }
+
     private func saveStatTargets(_ targets: StatTargets) {
         statTargets = targets
         catalog.strengthGoals = targets.custom
+        catalog.splitEdits = targets.split
         if persistence == .standard { statTargets.save() }
         recomputeStatLevels(now: .now, announce: false)
         persist()

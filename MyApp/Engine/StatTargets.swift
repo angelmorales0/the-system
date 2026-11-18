@@ -98,10 +98,13 @@ struct StatTargets: Codable, Equatable {
     var removed: [String: [String]] = [:]
     /// STR goals the player added, oldest first. A save from before this field loads with none.
     var custom: [CustomStrengthGoal] = []
+    /// The player's edits of the split, by `GymSplit.editKey`: sets and optional marks. A save from before loads with none.
+    var split: [String: GymSplit.SplitEdit] = [:]
 
     enum CodingKeys: String, CodingKey {
         case removed
         case custom
+        case split
     }
 
     func removed(for stat: Stat) -> Set<String> { Set(removed[stat.rawValue] ?? []) }
@@ -256,32 +259,32 @@ struct StatTargets: Codable, Equatable {
             errors.append("a stat with every target removed should be level 0")
         }
 
-        // Only the failing deadlift: removing it reaches the max level, and the level is recalculated.
+        // Only the failing overhead press: removing it reaches the max level, and the level is recalculated.
         var workouts = StrengthLevel.perfectWorkouts(now: now)
-        for index in workouts[0].exercises.indices where workouts[0].exercises[index].title == "Deadlift (Barbell)" {
-            workouts[0].exercises[index].sets = [StrengthLevel.workingSet(lb: 135, reps: 1)]
+        for index in workouts[0].exercises.indices where workouts[0].exercises[index].title == "Overhead Press (Barbell)" {
+            workouts[0].exercises[index].sets = [StrengthLevel.workingSet(lb: 95, reps: 1)]
         }
         let strength = StrengthLevel.evaluate(workouts: workouts, now: now)
-        let trimmed = strength.removing(["Deadlift"])
+        let trimmed = strength.removing(["Overhead press"])
         if strength.level >= StatLevel.maxLevel || trimmed.level != StatLevel.maxLevel {
-            errors.append("removing a failing deadlift should give the max level, got \(strength.level) → \(trimmed.level)")
+            errors.append("removing a failing overhead press should give the max level, got \(strength.level) → \(trimmed.level)")
         }
 
         // Toggle twice gives the first state back, and removed targets are kept per stat.
         var targets = StatTargets()
-        targets.toggle("Deadlift", in: .STR)
-        if !targets.isRemoved("Deadlift", from: .STR) || targets.isRemoved("Deadlift", from: .END) {
-            errors.append("toggle should remove Deadlift from STR only")
+        targets.toggle("Overhead press", in: .STR)
+        if !targets.isRemoved("Overhead press", from: .STR) || targets.isRemoved("Overhead press", from: .END) {
+            errors.append("toggle should remove Overhead press from STR only")
         }
-        targets.toggle("Deadlift", in: .STR)
+        targets.toggle("Overhead press", in: .STR)
         if targets != StatTargets() {
             errors.append("a second toggle should add the target back, got \(targets.removed)")
         }
 
         // A save from before custom goals still loads, with its removed targets and no custom goals.
-        let oldSave = Data(#"{"removed":{"STR":["Deadlift"],"END":["1-mile swim"]}}"#.utf8)
+        let oldSave = Data(#"{"removed":{"STR":["Overhead press"],"END":["1-mile swim"]}}"#.utf8)
         let decoded = try? JSONDecoder().decode(StatTargets.self, from: oldSave)
-        if decoded?.removed(for: .STR) != ["Deadlift"] || decoded?.isRemoved("1-mile swim", from: .END) != true || decoded?.custom != [] {
+        if decoded?.removed(for: .STR) != ["Overhead press"] || decoded?.isRemoved("1-mile swim", from: .END) != true || decoded?.custom != [] {
             errors.append("an old save should load with its removed targets and no custom goals, got \(String(describing: decoded))")
         }
         if (try? JSONDecoder().decode(StatTargets.self, from: Data("{}".utf8))) != StatTargets() {
@@ -292,7 +295,7 @@ struct StatTargets: Codable, Equatable {
         var mine = StatTargets()
         let hipThrust = CustomStrengthGoal(exercise: " Hip Thrust ", kind: .weightReps, targetLb: 225, targetReps: 5, day: "deadlift")
         if let problem = mine.add(hipThrust) {
-            errors.append("a hip thrust goal on Deadlift Day should be added, got \(problem)")
+            errors.append("a hip thrust goal on Lower Day should be added, got \(problem)")
         }
         if mine.custom.first?.exercise != "Hip Thrust" || mine.goal(for: "Hip Thrust") != "225 lb × 5" || mine.goal(for: "Squat") != goals["Squat"] {
             errors.append("a custom goal should be trimmed and read 225 lb × 5, got \(mine.custom.map(\.exercise)) \(String(describing: mine.goal(for: "Hip Thrust")))")
@@ -315,21 +318,21 @@ struct StatTargets: Codable, Equatable {
             errors.append("refused goals must not be saved, got \(mine.custom.map(\.exercise))")
         }
 
-        // Removing a built-in target and adding a custom goal together: Deadlift out, Hip Thrust in, 15 targets at 6.67.
-        mine.toggle("Deadlift", in: .STR)
+        // Removing a built-in target and adding a custom goal together: Overhead press out, Hip Thrust in, 14 targets at 7.14.
+        mine.toggle("Overhead press", in: .STR)
         let both = StrengthLevel.evaluate(workouts: [], custom: mine.custom, now: now).removing(mine.removed(for: .STR))
         let weights = both.requirements.map(\.weight)
-        if both.requirements.count != 15 || both.requirements.contains(where: { $0.category == "Deadlift" })
+        if both.requirements.count != 14 || both.requirements.contains(where: { $0.category == "Overhead press" })
             || !both.requirements.contains(where: { $0.category == "Hip Thrust" })
-            || weights.contains(where: { abs($0 - 100.0 / 15) > 0.001 }) {
-            errors.append("Deadlift removed and Hip Thrust added should give 15 targets at 6.67, got \(both.requirements.map { "\($0.category) \($0.weight)" })")
+            || weights.contains(where: { abs($0 - 100.0 / 14) > 0.001 }) {
+            errors.append("Overhead press removed and Hip Thrust added should give 14 targets at 7.14, got \(both.requirements.map { "\($0.category) \($0.weight)" })")
         }
         let levels = StatLevelSet.compute(codeforces: .disconnected(reason: ""), financeMonths: [], targets: mine, now: now)
         if levels.reports[.STR]?.requirements.contains(where: { $0.category == "Hip Thrust" }) != true {
             errors.append("the stat levels should score the custom goal")
         }
         mine.deleteCustom("Hip Thrust")
-        if !mine.custom.isEmpty || !mine.isRemoved("Deadlift", from: .STR) {
+        if !mine.custom.isEmpty || !mine.isRemoved("Overhead press", from: .STR) {
             errors.append("deleting a custom goal should keep the removed targets, got \(mine)")
         }
         return errors
@@ -342,6 +345,7 @@ extension StatTargets {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         removed = try container.decodeIfPresent([String: [String]].self, forKey: .removed) ?? [:]
         custom = try container.decodeIfPresent([CustomStrengthGoal].self, forKey: .custom) ?? []
+        split = try container.decodeIfPresent([String: GymSplit.SplitEdit].self, forKey: .split) ?? [:]
     }
 }
 

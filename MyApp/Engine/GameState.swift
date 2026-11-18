@@ -285,6 +285,8 @@ struct GameSnapshot: Codable, Equatable {
             claimedWorkoutIds: others.reduce(into: Set<String>()) { $0.formUnion($1.evidence.workoutIds) },
             claimedSessions: others.map(\.evidence).filter { $0.session != nil },
             otherExercises: Set(bundle.quests.filter { $0.id != quest.id && $0.verification.method == .hevySets && $0.id != DailyStretch.questId }
+                .map { StrengthLevel.normalizedName($0.verification.params["exercise"]?.stringValue ?? $0.title) }),
+            earlierExercises: Set(bundle.quests.prefix { $0.id != quest.id }.filter { $0.verification.method == .hevySets && $0.id != DailyStretch.questId }
                 .map { StrengthLevel.normalizedName($0.verification.params["exercise"]?.stringValue ?? $0.title) })
         )
     }
@@ -820,7 +822,7 @@ struct GameSnapshot: Codable, Equatable {
             now: now
         )
         // Offline, the day still follows the split: its exercises without loads.
-        let today = GymSplit.today(history: questHistory, dayKey: dayKey, goals: catalog.strengthGoals)
+        let today = GymSplit.today(history: questHistory, dayKey: dayKey, goals: catalog.strengthGoals, edits: catalog.splitEdits)
         var split = GymSplit.apply(today, to: catalogDay, band: decision.trainingBand, now: now)
         // The 50 km window is already full: a rest day from running. The lifts stay.
         // On a "No gym today" day `finished` then adds the one 10K that never counts.
@@ -833,7 +835,8 @@ struct GameSnapshot: Codable, Equatable {
     /// Adds the fixed rows: Screen Time, Stretching unless it is a spent rest day, then any open penalty.
     /// On a "No gym today" day, the lifts first give way to a second 10K. A day holds at most two workouts.
     func finished(_ bundle: QuestBundle, catalog: FallbackCatalog, now: Date) -> QuestBundle {
-        var day = GymSplit.cappingSets(TrainingDay.cappingWorkouts(noGymDayKey == bundle.dayKey ? NoGymDay.cardioOnly(bundle, now: now) : bundle))
+        let base = TrainingDay.cappingWorkouts(noGymDayKey == bundle.dayKey ? NoGymDay.cardioOnly(bundle, now: now) : bundle)
+        var day = GymSplit.cappingSets(base, day: GymSplit.plannedDay(of: base, goals: catalog.strengthGoals, edits: catalog.splitEdits))
         let restDay = day.mode == .fullRecovery && !signals.spendingFullRecovery && fullRecoveryDayKey != day.dayKey && restDue(on: day.dayKey)
         if restDay {
             day.headerLine = Self.restDayHeader

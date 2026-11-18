@@ -1,19 +1,21 @@
 import Foundation
 
 /// A 5-day split: upper, lower, upper, lower, then an arms day, built around the STR targets and 5 10Ks a week.
-/// Overhead press and bench press come once each, heavy. Chest and triceps get support work on Deadlift Day.
-/// Dead hangs come 3 times (Squat, Press, and Arms Day), never on Deadlift Day, so grip gets a day off between hard pulls.
+/// Sets: 2 for each exercise while the player gets back into lifting. Squats, lateral raises, and curls keep 3,
+/// and pull-ups keep 4, 4, and 3. The player can change the sets and mark a row optional in the app (`SplitEdit`).
+/// Overhead press and bench press come once each, heavy. Chest and triceps get support work on Lower Day.
+/// Dead hangs come 3 times (Squat, Press, and Arms Day), never on Lower Day, which has the farmer's walk for grip.
 /// Lateral raises and curls, the current focus, come 3 times a rotation (Bench, Press, and Arms Day), never on a leg day.
 /// Pull-ups, the main goal (20 strict reps), also come 3 times, each with its own job: volume on Bench Day,
 /// weighted strength on Press Day, and a max-effort set on Arms Day. Squats come once, heavy.
-/// Rows and the deadlift come once: the deadlift is the most tiring lift next to the running.
+/// Rows come once. The deadlift left the split: Lower Day keeps its hamstring, hip, chest, triceps, and grip work.
 /// Pistol squats and handstand push-ups are optional rows, done at home on a good day: one per day at most.
 /// Eight support exercises score no STR target: Romanian deadlift and calf raises on Squat Day for the running;
-/// incline dumbbell press, skull crushers, and a lying leg curl on Deadlift Day for chest, triceps, and hamstrings;
+/// incline dumbbell press, skull crushers, and a lying leg curl on Lower Day for chest, triceps, and hamstrings;
 /// face pulls on Arms Day for the shoulders; and hip adduction and abduction on both lower days.
 /// Toes-to-bar comes once, on Arms Day, to make room.
 /// The fifth day is upper body with no pressing, so it does not tire the chest before the next Bench Day.
-/// The two lower days are the only heavy leg days, two days apart, so the split stays inside the heavy-leg limits
+/// The two lower days are the only leg days, two days apart, so the split stays inside the heavy-leg limits
 /// next to the running. A third leg day would cost the runs more than it gives the lifts.
 /// Days run in order. A day moves on only after one of its lifts is done, so a missed day comes back next.
 enum GymSplit {
@@ -51,6 +53,9 @@ enum GymSplit {
         /// A goal the player added (see `CustomStrengthGoal`). Its `target` is the goal's STR target.
         var custom = false
 
+        /// The muscle group. Hevy sets of another split exercise of the same group count for this row (`standIn`).
+        var muscle: String? { GymSplit.muscle(of: exercise) }
+
         /// The hip rows sit outside the day limit, so a goal never needs their place and never takes it.
         var isHipRow: Bool { support && GymSplit.hipRows.contains { $0.exercise == exercise } }
     }
@@ -86,60 +91,60 @@ enum GymSplit {
     }
 
     static let bench = Day(id: "bench", name: "Bench Day", focus: "Upper body: chest, back, side delts, biceps", lowerBody: false, exercises: [
-        lift("Bench Press", .main, 3, 3...5, target: "Bench press", aliases: StrengthLevel.bench.aliases),
-        lift("Bent Over Row", .main, 3, 5...8, target: "Barbell row", aliases: StrengthLevel.row.aliases),
+        lift("Bench Press", .main, 2, 3...5, target: "Bench press", aliases: StrengthLevel.bench.aliases),
+        lift("Bent Over Row", .main, 2, 5...8, target: "Barbell row", aliases: StrengthLevel.row.aliases),
         lift("Pull Up", .accessory, 4, 3...10, target: "Pull-ups", aliases: StrengthLevel.pullUps.aliases, note: pullUpVolume),
-        lift("Chest Dip", .accessory, 3, 5...8, target: "Weighted dips", aliases: StrengthLevel.dips.aliases),
+        lift("Chest Dip", .accessory, 2, 5...8, target: "Weighted dips", aliases: StrengthLevel.dips.aliases),
         lift("Lateral Raise", .accessory, 3, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
         lift("Bicep Curl", .accessory, 3, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
     ])
 
     static let squat = Day(id: "squat", name: "Squat Day", focus: "Lower body: squat, single-leg work, hamstrings, calves, and hips", lowerBody: true, exercises: [
         lift("Squat", .main, 3, 1...5, target: "Squat", aliases: StrengthLevel.squat.aliases),
-        // Sets count both legs: 2 per leg.
-        lift("Bulgarian Split Squat", .accessory, 3, 8...12, target: "Bulgarian split squat", aliases: StrengthLevel.bulgarianSplitSquat.aliases),
-        support("Romanian Deadlift", 3, 8...10, muscle: "Hamstrings", aliases: ["romanian deadlift", "rdl"],
+        // Sets count both legs: 1 per leg.
+        lift("Bulgarian Split Squat", .accessory, 2, 8...12, target: "Bulgarian split squat", aliases: StrengthLevel.bulgarianSplitSquat.aliases),
+        support("Romanian Deadlift", 2, 8...10, muscle: "Hamstrings", aliases: ["romanian deadlift", "rdl"],
                 note: "Hamstrings and glutes for the running. Moderate weight, 2-3 reps in reserve; this is not a heavy deadlift."),
-        support("Standing Calf Raise", 3, 10...15, muscle: "Calves", aliases: ["standing calf raise", "calf raise", "seated calf raise"],
+        support("Standing Calf Raise", 2, 10...15, muscle: "Calves", aliases: ["standing calf raise", "calf raise", "seated calf raise"],
                 note: "Calves and Achilles for the running. Slow, full range, a pause at the bottom."),
     ] + hipRows + [
-        hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
+        hold("Dead Hang", 2, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
         // Optional and last: done at home on a good day, so the gym session stays short next to the running.
-        lift("Pistol Squat", .accessory, 3, 3...10, target: "Pistol squats", aliases: StrengthLevel.pistolAliases, optional: true,
+        lift("Pistol Squat", .accessory, 2, 3...10, target: "Pistol squats", aliases: StrengthLevel.pistolAliases, optional: true,
              note: "Optional. Do them at home only if your legs feel good. Skipping them never misses the day."),
     ])
 
     static let press = Day(id: "press", name: "Press Day", focus: "Upper body: shoulders, back, chest, biceps", lowerBody: false, exercises: [
-        lift("Overhead Press", .main, 3, 1...5, target: "Overhead press", aliases: StrengthLevel.overheadPress.aliases),
+        lift("Overhead Press", .main, 2, 1...5, target: "Overhead press", aliases: StrengthLevel.overheadPress.aliases),
         lift("Pull Up", .main, 4, 3...5, target: "Pull-ups", aliases: StrengthLevel.pullUps.aliases, note: pullUpStrength),
         lift("Lateral Raise", .accessory, 3, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
         lift("Bicep Curl", .accessory, 3, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
-        hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
+        hold("Dead Hang", 2, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
         // Optional and last, like the pistol squats: done at home if there is time.
-        lift("Handstand Push Up", .accessory, 3, 1...5, target: "Handstand push-ups", aliases: StrengthLevel.handstandPushUps.aliases, optional: true,
+        lift("Handstand Push Up", .accessory, 2, 1...5, target: "Handstand push-ups", aliases: StrengthLevel.handstandPushUps.aliases, optional: true,
              note: "Optional. Do them at home if you have time. Skipping them never misses the day."),
     ])
 
-    static let deadlift = Day(id: "deadlift", name: "Deadlift Day", focus: "Lower body: deadlift, hamstrings, and hips, plus chest, triceps, and grip", lowerBody: true, exercises: [
-        lift("Deadlift", .main, 3, 1...5, target: "Deadlift", aliases: StrengthLevel.deadlift.aliases),
+    /// Was Deadlift Day. The id stays "deadlift", so the saved days and goals still find it.
+    static let deadlift = Day(id: "deadlift", name: "Lower Day", focus: "Lower body: hamstrings and hips, plus chest, triceps, and grip", lowerBody: true, exercises: [
         // Chest and triceps, three days before the next Bench Day, with Arms Day (no pressing) between.
-        support("Incline Bench Press", 3, 8...12, muscle: "Chest", aliases: ["incline bench press", "incline dumbbell press"],
+        support("Incline Bench Press", 2, 8...12, muscle: "Chest", aliases: ["incline bench press", "incline dumbbell press"],
                 note: "Dumbbells, 30-45° incline. Upper chest, which the flat bench misses. 1-2 reps in reserve."),
-        support("Skullcrusher", 3, 8...12, muscle: "Triceps", aliases: ["skullcrusher", "skull crusher", "lying triceps extension"],
+        support("Skullcrusher", 2, 8...12, muscle: "Triceps", aliases: ["skullcrusher", "skull crusher", "lying triceps extension"],
                 note: "Triceps long head, the biggest part of the upper arm. EZ bar or dumbbells, elbows still."),
-        support("Lying Leg Curl", 3, 8...12, muscle: "Hamstrings", aliases: ["lying leg curl", "seated leg curl", "leg curl", "nordic hamstring curl", "nordic curl"],
+        support("Lying Leg Curl", 2, 8...12, muscle: "Hamstrings", aliases: ["lying leg curl", "seated leg curl", "leg curl", "nordic hamstring curl", "nordic curl"],
                 note: "Knee-flexion hamstring work, which the hinge lifts miss. Runners need it to protect the hamstrings."),
     ] + hipRows + [
-        hold("Farmers Walk", 3, seconds: 60, target: "Farmer's carry", aliases: StrengthLevel.farmerAliases),
+        hold("Farmers Walk", 2, seconds: 60, target: "Farmer's carry", aliases: StrengthLevel.farmerAliases),
     ])
 
     static let arms = Day(id: "arms", name: "Arms Day", focus: "Pull-ups first while fresh, then side delts, biceps, grip, and core. No pressing", lowerBody: false, exercises: [
         lift("Pull Up", .accessory, 3, 3...20, target: "Pull-ups", aliases: StrengthLevel.pullUps.aliases, note: pullUpMax),
         lift("Lateral Raise", .accessory, 3, 8...12, target: "Lateral raise", aliases: StrengthLevel.lateralRaise.aliases),
         lift("Bicep Curl", .accessory, 3, 8...12, target: "Dumbbell curl", aliases: StrengthLevel.curl.aliases),
-        lift("Toes To Bar", .accessory, 3, 5...10, target: "Toes-to-bar", aliases: StrengthLevel.toesToBar.aliases),
-        hold("Dead Hang", 3, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
-        support("Face Pull", 3, 12...15, muscle: "Rear delts", aliases: ["face pull"],
+        lift("Toes To Bar", .accessory, 2, 5...10, target: "Toes-to-bar", aliases: StrengthLevel.toesToBar.aliases),
+        hold("Dead Hang", 2, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
+        support("Face Pull", 2, 12...15, muscle: "Rear delts", aliases: ["face pull"],
                 note: "Rear delts and rotator cuff, to balance the pressing and lateral raises. Light, controlled reps."),
     ])
 
@@ -158,28 +163,58 @@ enum GymSplit {
     }
 
     /// Cuts each open lift row that asks for more sets down to the limit: a plan the planner wrote, or a day saved
-    /// before the limit. A finished row stays as it is. A timed row keeps its seconds per set.
-    static func cappingSets(_ bundle: QuestBundle) -> QuestBundle {
+    /// before the limit. On a split day the limit is the split's own sets, with the player's edits. A finished row
+    /// stays as it is. A timed row keeps its seconds per set. An open row of the split day also takes the split's
+    /// optional mark, so a row the player marked optional never misses the day.
+    static func cappingSets(_ bundle: QuestBundle, day: Day? = nil) -> QuestBundle {
         var copy = bundle
         for index in copy.quests.indices {
             let quest = copy.quests[index]
             guard quest.verification.method == .hevySets, quest.id != DailyStretch.questId, quest.status != .completed,
                   let sets = quest.verification.params["sets"]?.doubleValue, sets > 0 else { continue }
-            let limit = Double(maxSets(for: quest.verification.params["exercise"]?.stringValue ?? quest.title))
+            let planned = day.flatMap { exercise(of: quest, in: $0) }
+            if let planned, quest.kind == .daily || quest.kind == .optional {
+                copy.quests[index].kind = planned.optional ? .optional : .daily
+            }
+            let limit = Double(planned?.sets ?? maxSets(for: quest.verification.params["exercise"]?.stringValue ?? quest.title))
             guard sets > limit else { continue }
-            var row = quest
-            row.verification.params["sets"] = .number(limit)
-            if let seconds = quest.verification.params["minDurationSec"]?.doubleValue {
-                row.verification.params["minDurationSec"] = .number(seconds / sets * limit)
+            copy.quests[index] = withSets(copy.quests[index], Int(limit))
+        }
+        return copy
+    }
+
+    /// The row with a new number of sets. The seconds of a timed row and the title follow.
+    static func withSets(_ quest: Quest, _ count: Int) -> Quest {
+        guard let sets = quest.verification.params["sets"]?.doubleValue, sets > 0 else { return quest }
+        let limit = Double(count)
+        var row = quest
+        row.verification.params["sets"] = .number(limit)
+        if let seconds = quest.verification.params["minDurationSec"]?.doubleValue {
+            row.verification.params["minDurationSec"] = .number(seconds / sets * limit)
+        }
+        row.progress.target = quest.progress.target / sets * limit
+        row.progress.current = min(quest.progress.current, row.progress.target)
+        for mark in ["×", "x"] {
+            if let range = row.title.range(of: "\(Int(sets))\(mark)") {
+                row.title.replaceSubrange(range, with: "\(count)\(mark)")
+                break
             }
-            row.progress.target = quest.progress.target / sets * limit
-            row.progress.current = min(quest.progress.current, row.progress.target)
-            for mark in ["×", "x"] {
-                if let range = row.title.range(of: "\(Int(sets))\(mark)") {
-                    row.title.replaceSubrange(range, with: "\(Int(limit))\(mark)")
-                    break
-                }
-            }
+        }
+        return row
+    }
+
+    /// Puts an edit on today's open rows of that exercise: the sets the split now asks (one fewer for a main lift on
+    /// a yellow or red day), and the optional mark. A finished row stays as it is.
+    static func applyingEdit(_ bundle: QuestBundle, day: Day, exercise name: String, band: ReadinessBand) -> QuestBundle {
+        guard let planned = day.exercises.first(where: { StrengthLevel.normalizedName($0.exercise) == StrengthLevel.normalizedName(name) }) else { return bundle }
+        var copy = bundle
+        for index in copy.quests.indices {
+            let quest = copy.quests[index]
+            guard quest.verification.method == .hevySets, quest.id != DailyStretch.questId, quest.status != .completed,
+                  quest.kind == .daily || quest.kind == .optional, exercise(of: quest, in: day) == planned else { continue }
+            let sets = planned.role == .main && band != .green ? max(1, planned.sets - 1) : planned.sets
+            var row = withSets(quest, sets)
+            row.kind = planned.optional ? .optional : .daily
             copy.quests[index] = row
         }
         return copy
@@ -198,8 +233,72 @@ enum GymSplit {
     /// Arms Day ends the rotation: it is upper body with no pressing, so the next Bench Day starts fresh.
     static let rotation = [bench, squat, press, deadlift, arms]
 
+    /// A day saved before a rename still has its old name: Deadlift Day is Lower Day now.
+    static let oldNames = ["Deadlift Day": "deadlift"]
+
     static func day(named name: String) -> Day? {
-        rotation.first { $0.name == name }
+        rotation.first { $0.name == name } ?? oldNames[name].flatMap { day(id: $0) }
+    }
+
+    // MARK: - Muscle groups
+
+    /// Each split exercise by muscle group, with its other names. Hevy sets of one exercise of a group count for a row
+    /// of another exercise of the same group, when that exercise has no row of its own today (see `HevySetsVerifier`).
+    static let muscleGroups: [(muscle: String, names: [String])] = [
+        ("Chest", ["bench press", "incline bench press", "incline dumbbell press"] + StrengthLevel.dips.aliases),
+        ("Back", StrengthLevel.row.aliases + StrengthLevel.pullUps.aliases),
+        ("Shoulders", StrengthLevel.overheadPress.aliases + StrengthLevel.lateralRaise.aliases + StrengthLevel.handstandPushUps.aliases + ["face pull"]),
+        ("Biceps", StrengthLevel.curl.aliases),
+        ("Triceps", ["skullcrusher", "skull crusher", "lying triceps extension"]),
+        ("Quads", StrengthLevel.squat.aliases + StrengthLevel.bulgarianSplitSquat.aliases + StrengthLevel.pistolAliases),
+        ("Hamstrings", ["romanian deadlift", "rdl", "lying leg curl", "seated leg curl", "leg curl", "nordic hamstring curl", "nordic curl"]),
+        ("Calves", ["standing calf raise", "calf raise", "seated calf raise"]),
+        ("Adductors", ["hip adduction"]),
+        ("Abductors", ["hip abduction"]),
+        ("Grip", StrengthLevel.hangAliases + StrengthLevel.farmerAliases),
+        ("Abs", StrengthLevel.toesToBar.aliases),
+    ]
+
+    /// The muscle group of an exercise name, with or without the equipment. Nil for a name outside the split.
+    static func muscle(of name: String) -> String? {
+        let key = StrengthLevel.normalizedName(name)
+        return muscleGroups.first { $0.names.contains(key) }?.muscle
+    }
+
+    // MARK: - The player's edits
+
+    /// The player's change to one exercise of one day: its sets, and whether it is optional. Nil keeps the split's own.
+    struct SplitEdit: Codable, Equatable {
+        var sets: Int?
+        var optional: Bool?
+    }
+
+    static func editKey(day: String, exercise: String) -> String { "\(day)|\(StrengthLevel.normalizedName(exercise))" }
+
+    /// The sets the editor offers for an exercise: 1 up to the set limit.
+    static func setRange(for exercise: String) -> ClosedRange<Int> { 1...maxSets(for: exercise) }
+
+    /// The day with the player's edits on its exercises. An edit of an exercise that left the day does nothing.
+    static func editing(_ day: Day, _ edits: [String: SplitEdit]) -> Day {
+        guard !edits.isEmpty else { return day }
+        var copy = day
+        for index in copy.exercises.indices {
+            guard let edit = edits[editKey(day: day.id, exercise: copy.exercises[index].exercise)] else { continue }
+            if let sets = edit.sets { copy.exercises[index].sets = min(max(sets, 1), maxSets(for: copy.exercises[index].exercise)) }
+            if let optional = edit.optional { copy.exercises[index].optional = optional }
+        }
+        return copy
+    }
+
+    /// The split day of a bundle, with the player's goals and edits. Nil when the header names no split day.
+    static func plannedDay(of bundle: QuestBundle, goals: [CustomStrengthGoal], edits: [String: SplitEdit]) -> Day? {
+        day(named: bundle.headerLine).map { editing(adding(goals, to: $0), edits) }
+    }
+
+    /// The split exercise that a lift row trains, by the row's exercise name.
+    static func exercise(of quest: Quest, in day: Day) -> Exercise? {
+        let name = StrengthLevel.normalizedName(quest.verification.params["exercise"]?.stringValue ?? quest.title)
+        return day.exercises.first { names(of: $0).contains(name) }
     }
 
     static func day(id: String) -> Day? {
@@ -209,11 +308,11 @@ enum GymSplit {
     /// The next day in the rotation after the newest past day whose lifts were started, with the player's own goals on it.
     /// A split day the player skipped counts like a done day here, so the split moves past it.
     /// `history` is newest first. With no lifting yet, the split starts at Bench Day.
-    static func today(history: [QuestDayRecord], dayKey: String, goals: [CustomStrengthGoal] = []) -> Day {
+    static func today(history: [QuestDayRecord], dayKey: String, goals: [CustomStrengthGoal] = [], edits: [String: SplitEdit] = [:]) -> Day {
         // A skip is written on the newest past record, after that record's own day, so it comes first.
         let last = history.lazy.filter { $0.dayKey < dayKey }.compactMap { $0.skippedSplitDay ?? doneSplitDay($0) }.first
-        guard let last, let index = rotation.firstIndex(where: { $0.id == last }) else { return adding(goals, to: rotation[0]) }
-        return adding(goals, to: rotation[(index + 1) % rotation.count])
+        guard let last, let index = rotation.firstIndex(where: { $0.id == last }) else { return editing(adding(goals, to: rotation[0]), edits) }
+        return editing(adding(goals, to: rotation[(index + 1) % rotation.count]), edits)
     }
 
     /// The split day this record trained: it has a split day and one of its lifts is done.
@@ -224,8 +323,8 @@ enum GymSplit {
     // MARK: - Custom goals
 
     /// The rotation with the player's own goals on their days.
-    static func rotation(with goals: [CustomStrengthGoal]) -> [Day] {
-        rotation.map { adding(goals, to: $0) }
+    static func rotation(with goals: [CustomStrengthGoal], edits: [String: SplitEdit] = [:]) -> [Day] {
+        rotation.map { editing(adding(goals, to: $0), edits) }
     }
 
     /// Puts each custom goal of this day on it, oldest goal first, as a scored STR exercise.
@@ -236,7 +335,7 @@ enum GymSplit {
     /// last support exercise still on the day. A goal never cuts a scored STR target, a focus target, an optional row,
     /// or another custom goal. A day with no free place and no support exercise left has no room:
     /// `StatTargets.add` refuses the goal and the sheet tells the player. Today every day is full, so the room is
-    /// Squat Day 2, Deadlift Day 3, Arms Day 1, Bench Day 0, and Press Day 0.
+    /// Squat Day 2, Lower Day 5, Arms Day 1, Bench Day 0, and Press Day 0.
     static func adding(_ goals: [CustomStrengthGoal], to day: Day) -> Day {
         var copy = day
         for goal in goals where goal.day == day.id {
@@ -277,25 +376,25 @@ enum GymSplit {
     }
 
     /// The split row of a custom goal: an accessory that trains toward the goal.
-    /// Weight × reps: 3 sets in double progression from the goal's reps up to 4 more.
-    /// Reps: a max-effort set, then sets at about 60%. Holds: 3 holds at half the goal time.
+    /// Weight × reps: 2 sets in double progression from the goal's reps up to 4 more.
+    /// Reps: a max-effort set, then a set at about 60%. Holds: 2 holds at half the goal time.
     static func exercise(for goal: CustomStrengthGoal) -> Exercise {
         let name = goal.exercise
         switch goal.kind {
         case .weightReps:
             let low = min(max(goal.targetReps, 1), 20)
-            return Exercise(exercise: name, aliases: [goal.alias], role: .accessory, sets: 3, minReps: low, maxReps: low + 4, target: goal.category,
+            return Exercise(exercise: name, aliases: [goal.alias], role: .accessory, sets: 2, minReps: low, maxReps: low + 4, target: goal.category,
                             note: "Your goal: \(goal.goal). Double progression: add reps until every set reaches \(low + 4), then add the smallest weight step and go back to \(low).",
                             custom: true)
         case .reps:
             let target = max(goal.targetReps, 1)
-            return Exercise(exercise: name, aliases: [goal.alias], role: .accessory, sets: maxSets(for: name), minReps: max(1, target / 4), maxReps: target, target: goal.category,
-                            note: "Your goal: \(goal.goal). First set as many strict reps as you can, stopping 1 rep short of failure. Then \(maxSets(for: name) - 1) sets at about 60% of that number.",
+            return Exercise(exercise: name, aliases: [goal.alias], role: .accessory, sets: 2, minReps: max(1, target / 4), maxReps: target, target: goal.category,
+                            note: "Your goal: \(goal.goal). First set as many strict reps as you can, stopping 1 rep short of failure. Then 1 set at about 60% of that number.",
                             custom: true)
         case .hold:
             let seconds = min(goal.targetSeconds, max(10, (goal.targetSeconds / 2).rounded()))
-            return Exercise(exercise: name, aliases: [goal.alias], role: .accessory, sets: 3, minReps: 0, maxReps: 0, secondsPerSet: seconds, target: goal.category,
-                            note: "Your goal: \(goal.goal). Hold 3 sets of \(Int(seconds)) sec. Add 5 sec to each set once all 3 feel easy.",
+            return Exercise(exercise: name, aliases: [goal.alias], role: .accessory, sets: 2, minReps: 0, maxReps: 0, secondsPerSet: seconds, target: goal.category,
+                            note: "Your goal: \(goal.goal). Hold 2 sets of \(Int(seconds)) sec. Add 5 sec to each set once both feel easy.",
                             custom: true)
         }
     }
@@ -333,16 +432,18 @@ enum GymSplit {
     }
 
     /// Takes a row the split no longer has off a day that was saved before the split changed.
-    /// The light squat left Deadlift Day; a saved Deadlift Day still had its row. A row with sets done stays.
+    /// The light squat and then the deadlift left Deadlift Day, which is Lower Day now; a saved day still had their rows.
+    /// A row with sets done stays. A saved day under the old name gets the new name.
     static func withoutOldRows(_ bundle: QuestBundle) -> QuestBundle {
-        guard bundle.headerLine == deadlift.name else { return bundle }
+        guard bundle.headerLine == deadlift.name || oldNames[bundle.headerLine] == deadlift.id else { return bundle }
         var copy = bundle
+        copy.headerLine = deadlift.name
         // The planner writes its own ids and names ("Squat (Barbell)"), so the exercise decides, not the id.
-        let squats = Set((StrengthLevel.squat.aliases + ["Squat"]).map(StrengthLevel.normalizedName))
+        let gone = Set((StrengthLevel.squat.aliases + ["Squat", "Deadlift"]).map(StrengthLevel.normalizedName))
         copy.quests.removeAll {
             guard $0.verification.method == .hevySets, !$0.id.hasSuffix("_goal"),
                   let exercise = $0.verification.params["exercise"]?.stringValue else { return false }
-            return squats.contains(StrengthLevel.normalizedName(exercise)) && $0.status == .pending && $0.progress.current == 0 && $0.evidence.isEmpty
+            return gone.contains(StrengthLevel.normalizedName(exercise)) && $0.status == .pending && $0.progress.current == 0 && $0.evidence.isEmpty
         }
         return copy
     }
@@ -440,7 +541,7 @@ enum GymSplit {
         let expectedDays: [String: Int] = [
             "Lateral raise": 3, "Dumbbell curl": 3, "Toes-to-bar": 1,
             "Pull-ups": 3, "Dead hang": 3, "Squat": 1, "Overhead press": 1, "Barbell row": 1,
-            "Deadlift": 1, "Bench press": 1, "Weighted dips": 1, "Handstand push-ups": 1,
+            "Bench press": 1, "Weighted dips": 1, "Handstand push-ups": 1,
             "Bulgarian split squat": 1, "Pistol squats": 1, "Farmer's carry": 1,
         ]
         for target in targets {
@@ -456,7 +557,7 @@ enum GymSplit {
 
         // A fresh game starts at Bench Day, and the catalog day uses its exercises.
         var snapshot = GameSnapshot.fresh(catalog: catalog, now: now)
-        if snapshot.bundle.headerLine != "Bench Day" || !snapshot.bundle.quests.contains(where: { $0.title == "Bench Press 3×3-5" }) {
+        if snapshot.bundle.headerLine != "Bench Day" || !snapshot.bundle.quests.contains(where: { $0.title == "Bench Press 2×3-5" }) {
             errors.append("a fresh game should start on Bench Day, got \(snapshot.bundle.headerLine) \(snapshot.bundle.quests.map(\.title))")
         }
         if !snapshot.bundle.quests.contains(where: { NoGymDay.isTenK($0) }) || snapshot.bundle.quests.last?.id != DailyStretch.questId {
@@ -489,7 +590,7 @@ enum GymSplit {
         finishDay(&snapshot, lift: true, dayOffset: 4)
         finishDay(&snapshot, lift: true, dayOffset: 5)
         if snapshot.bundle.headerLine != "Arms Day" {
-            errors.append("after Deadlift Day the split should move to Arms Day, got \(snapshot.bundle.headerLine)")
+            errors.append("after Lower Day the split should move to Arms Day, got \(snapshot.bundle.headerLine)")
         }
         finishDay(&snapshot, lift: true, dayOffset: 6)
         if snapshot.bundle.headerLine != "Bench Day" {
@@ -521,7 +622,7 @@ enum GymSplit {
         let supportDays = rotation.flatMap { day in day.exercises.filter(\.support).map { "\(day.id): \($0.exercise)" } }
         if supportDays != ["squat: Romanian Deadlift", "squat: Standing Calf Raise", "squat: Hip Adduction", "squat: Hip Abduction",
                            "deadlift: Incline Bench Press", "deadlift: Skullcrusher", "deadlift: Lying Leg Curl", "deadlift: Hip Adduction", "deadlift: Hip Abduction", "arms: Face Pull"] {
-            errors.append("support exercises should be RDL, calf raises, and the hip rows on Squat Day; incline press, skull crushers, leg curls, and the hip rows on Deadlift Day; face pulls on Arms Day, got \(supportDays)")
+            errors.append("support exercises should be RDL, calf raises, and the hip rows on Squat Day; incline press, skull crushers, leg curls, and the hip rows on Lower Day; face pulls on Arms Day, got \(supportDays)")
         }
         if rotation.flatMap(\.exercises).contains(where: { $0.support && targets.contains($0.target) }) {
             errors.append("a support exercise must not claim an STR target")
@@ -544,13 +645,17 @@ enum GymSplit {
             errors.append("pull-ups should be volume on Bench, weighted on Press, and max effort first on Arms Day, got \(pullUps.map { "\($0.0) \($0.1.role)" })")
         }
 
-        // Yellow takes one set off the main lift only; the support rows keep their sets.
-        let yellow = apply(deadlift, to: catalog.makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), band: .yellow, now: now)
-        if yellow.quests.first(where: { $0.title.hasPrefix("Deadlift") })?.title != "Deadlift 2×1-5"
-            || !yellow.quests.contains(where: { $0.title == "Incline Bench Press 3×8-12" }) || yellow.quests.contains(where: { $0.title.hasPrefix("Squat") }) {
+        // Yellow takes one set off the main lift only; the other rows keep their sets.
+        let yellow = apply(squat, to: catalog.makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), band: .yellow, now: now)
+        if yellow.quests.first(where: { $0.title.hasPrefix("Squat") })?.title != "Squat 2×1-5"
+            || !yellow.quests.contains(where: { $0.title == "Romanian Deadlift 2×8-10" }) {
             errors.append("yellow should take a set off the main lift only, got \(yellow.quests.map(\.title))")
         }
-        if yellow.quests.first(where: { $0.title.hasPrefix("Farmers Walk") })?.verification.params["minDurationSec"]?.doubleValue != 180 {
+        let lower = apply(deadlift, to: catalog.makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), band: .yellow, now: now)
+        if lower.headerLine != "Lower Day" || lower.quests.contains(where: { ($0.verification.params["exercise"]?.stringValue ?? "").hasPrefix("Deadlift") }) {
+            errors.append("Lower Day should have no deadlift, got \(lower.quests.map(\.title))")
+        }
+        if lower.quests.first(where: { $0.title.hasPrefix("Farmers Walk") })?.verification.params["minDurationSec"]?.doubleValue != 120 {
             errors.append("a timed exercise should check total seconds")
         }
 
@@ -565,6 +670,93 @@ enum GymSplit {
             errors.append("turning no gym off should bring back Bench Day, got \(noGym.bundle.headerLine)")
         }
         errors += customGoalChecks(catalog: catalog, now: now)
+        errors += editChecks(catalog: catalog, now: now)
+        return errors
+    }
+
+    /// The player's edits, the optional mark, the day saved under the old name, and the muscle groups.
+    private static func editChecks(catalog: FallbackCatalog, now: Date) -> [String] {
+        var errors: [String] = []
+        // Sets: 2 for each exercise; squats, lateral raises, and curls 3; pull-ups 4, 4, and 3.
+        for day in rotation {
+            for exercise in day.exercises {
+                let three = ["Squat", "Lateral raise", "Dumbbell curl"].contains(exercise.target)
+                let expected = exercise.target == "Pull-ups" ? (day.id == "arms" ? 3 : 4) : three ? 3 : 2
+                if exercise.sets != expected {
+                    errors.append("\(exercise.exercise) on \(day.name) should have \(expected) sets, got \(exercise.sets)")
+                }
+            }
+        }
+        if rotation.flatMap(\.exercises).contains(where: { StrengthLevel.normalizedName($0.exercise) == "deadlift" }) {
+            errors.append("the split should have no deadlift")
+        }
+        // An edit changes the sets inside the limit and marks a row optional; the day keeps its other rows.
+        let edits = [editKey(day: "arms", exercise: "Face Pull"): SplitEdit(sets: 3, optional: true),
+                     editKey(day: "arms", exercise: "Toes To Bar"): SplitEdit(sets: 9, optional: nil)]
+        let edited = editing(arms, edits)
+        let facePull = edited.exercises.first { $0.exercise == "Face Pull" }
+        if facePull?.sets != 3 || facePull?.optional != true || edited.exercises.first(where: { $0.exercise == "Toes To Bar" })?.sets != 3
+            || edited.exercises.count != arms.exercises.count || editing(bench, edits) != bench {
+            errors.append("an edit should set 3 sets and optional on Face Pull, cap Toes To Bar at 3, and change no other day")
+        }
+        if setRange(for: "Pull Up") != 1...4 || setRange(for: "Face Pull") != 1...3 {
+            errors.append("the editor should offer 1-4 sets for pull-ups and 1-3 for the rest")
+        }
+        // Today's open row takes the edit; a finished row stays; the optional row never misses the day.
+        let armsDay = apply(arms, to: catalog.makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), band: .green, now: now)
+        var changed = applyingEdit(armsDay, day: edited, exercise: "Face Pull", band: .green)
+        let row = changed.quests.first { $0.title.hasPrefix("Face Pull") }
+        if row?.kind != .optional || row?.title != "Face Pull 3×12-15" || row?.verification.params["sets"]?.doubleValue != 3 {
+            errors.append("an edit should make today's Face Pull row optional with 3 sets, got \(String(describing: row))")
+        }
+        let capped = cappingSets(armsDay, day: edited)
+        if capped.quests.first(where: { $0.title.hasPrefix("Face Pull") })?.kind != .optional {
+            errors.append("a saved day should take the optional mark of the split")
+        }
+        var skippedPull = GameSnapshot.fresh(catalog: catalog, now: now)
+        skippedPull.bundle = changed
+        for index in skippedPull.bundle.quests.indices where skippedPull.bundle.quests[index].kind != .optional {
+            skippedPull.bundle.quests[index].status = .completed
+        }
+        if skippedPull.missesRequiredSet {
+            errors.append("skipping a row the player marked optional should not miss the day")
+        }
+        if let index = changed.quests.firstIndex(where: { $0.title.hasPrefix("Toes To Bar") }) {
+            changed.quests[index].status = .completed
+            let done = changed.quests[index]
+            if applyingEdit(changed, day: editing(arms, [editKey(day: "arms", exercise: "Toes To Bar"): SplitEdit(sets: 1)]), exercise: "Toes To Bar", band: .green)
+                .quests[index] != done {
+                errors.append("an edit should not change a finished row")
+            }
+        }
+        // The edits reach today's day and the saved targets.
+        var targets = StatTargets()
+        targets.split = edits
+        if let data = try? JSONEncoder().encode(targets), (try? JSONDecoder().decode(StatTargets.self, from: data))?.split != edits {
+            errors.append("the split edits should survive a save")
+        }
+        if today(history: [], dayKey: "2026-10-05", edits: [editKey(day: "bench", exercise: "Chest Dip"): SplitEdit(sets: 1)])
+            .exercises.first(where: { $0.exercise == "Chest Dip" })?.sets != 1 {
+            errors.append("today's split day should carry the edits")
+        }
+
+        // A day saved as Deadlift Day: it is Lower Day now, and its untouched deadlift row goes.
+        var saved = apply(deadlift, to: catalog.makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), band: .green, now: now)
+        let clean = saved
+        saved.headerLine = "Deadlift Day"
+        saved.quests.insert(quest(for: lift("Deadlift", .main, 3, 1...5, target: "Deadlift", aliases: []), band: .green, dayKey: "2026-10-05", now: now), at: 0)
+        if withoutOldRows(saved) != clean || day(named: "Deadlift Day")?.id != "deadlift" {
+            errors.append("a saved Deadlift Day should become Lower Day without its deadlift row")
+        }
+
+        // Muscle groups: every split exercise has one, and the same-group rows match.
+        for exercise in rotation.flatMap(\.exercises) where exercise.muscle == nil {
+            errors.append("\(exercise.exercise) should have a muscle group")
+        }
+        if muscle(of: "Incline Bench Press (Dumbbell)") != "Chest" || muscle(of: "Bench Press") != "Chest"
+            || muscle(of: "Lateral Raise") != muscle(of: "Face Pull") || muscle(of: "Lat Pulldown") != nil || muscle(of: "Deadlift") != nil {
+            errors.append("the muscle groups should join incline and flat bench, and lateral raises with face pulls")
+        }
         return errors
     }
 
@@ -575,50 +767,52 @@ enum GymSplit {
         let hipThrust = CustomStrengthGoal(exercise: "Hip Thrust", kind: .weightReps, targetLb: 225, targetReps: 5, day: "deadlift")
         let lSit = CustomStrengthGoal(exercise: "L-Sit", kind: .hold, targetSeconds: 30, day: "arms")
 
-        // Deadlift Day has one free place: the first goal is added, and every exercise of the day stays.
-        // The second goal takes the place of the last support exercise.
+        // Lower Day has two free places: the first two goals are added, and every exercise of the day stays.
+        // The third goal takes the place of the last support exercise.
         let withThrust = adding([hipThrust], to: deadlift)
         let names = withThrust.exercises.map(\.exercise)
-        if names != ["Deadlift", "Incline Bench Press", "Skullcrusher", "Lying Leg Curl", "Hip Adduction", "Hip Abduction", "Farmers Walk", "Hip Thrust"]
+        if names != ["Incline Bench Press", "Skullcrusher", "Lying Leg Curl", "Hip Adduction", "Hip Abduction", "Farmers Walk", "Hip Thrust"]
             || withThrust.exercises.first(where: \.custom)?.target != "Hip Thrust" {
-            errors.append("Hip Thrust should be added to Deadlift Day, got \(names)")
+            errors.append("Hip Thrust should be added to Lower Day, got \(names)")
         }
         let second = CustomStrengthGoal(exercise: "Glute Bridge", kind: .reps, targetReps: 15, day: "deadlift")
-        if replaced(by: hipThrust, goals: []) != nil || replaced(by: second, goals: [hipThrust])?.exercise != "Lying Leg Curl" {
-            errors.append("the sheet should say the first goal replaces nothing and the second replaces the Lying Leg Curl")
+        let third = CustomStrengthGoal(exercise: "Back Extension", kind: .reps, targetReps: 15, day: "deadlift")
+        if replaced(by: hipThrust, goals: []) != nil || replaced(by: second, goals: [hipThrust]) != nil
+            || replaced(by: third, goals: [hipThrust, second])?.exercise != "Lying Leg Curl" {
+            errors.append("the sheet should say the first two goals replace nothing and the third replaces the Lying Leg Curl")
         }
         if rotation(with: [hipThrust]).filter({ $0.id != "deadlift" }) != rotation.filter({ $0.id != "deadlift" }) {
             errors.append("a goal should change only its own day")
         }
         let row = exercise(for: hipThrust)
-        if row.role != .accessory || row.minReps != 5 || row.maxReps != 9 || row.sets != 3 || row.note == nil || row.support {
-            errors.append("a weight × reps goal should be a 3×5-9 accessory with a note, got \(row)")
+        if row.role != .accessory || row.minReps != 5 || row.maxReps != 9 || row.sets != 2 || row.note == nil || row.support {
+            errors.append("a weight × reps goal should be a 2×5-9 accessory with a note, got \(row)")
         }
         let hold = exercise(for: lSit)
-        if hold.secondsPerSet != 15 || hold.note == nil {
-            errors.append("a 30 sec hold goal should train 3 holds of 15 sec, got \(hold)")
+        if hold.secondsPerSet != 15 || hold.sets != 2 || hold.note == nil {
+            errors.append("a 30 sec hold goal should train 2 holds of 15 sec, got \(hold)")
         }
 
         // Full-day rule: never more than the day limit, never a scored or focus target cut, and no room means refused.
-        let three = ["Glute Bridge", "Back Extension", "Nordic Curl"].map {
+        let three = ["Glute Bridge", "Back Extension", "Nordic Curl", "Good Morning"].map {
             CustomStrengthGoal(exercise: $0, kind: .reps, targetReps: 15, day: "deadlift")
         }
         let packed = adding([hipThrust] + three, to: deadlift)
         let scored = deadlift.exercises.filter { !$0.support }.map(\.target)
         if countedRows(packed.exercises) > maxExercisesPerDay || packed.exercises.filter(\.support) != hipRows
             || !Set(scored).isSubset(of: packed.exercises.map(\.target))
-            || Set(packed.exercises.filter(\.custom).map(\.exercise)) != ["Back Extension", "Glute Bridge", "Hip Thrust", "Nordic Curl"] {
-            errors.append("Deadlift Day should take 4 goals, one in its free place and 3 in place of its support exercises, got \(packed.exercises.map(\.exercise))")
+            || Set(packed.exercises.filter(\.custom).map(\.exercise)) != ["Back Extension", "Glute Bridge", "Good Morning", "Hip Thrust", "Nordic Curl"] {
+            errors.append("Lower Day should take 5 goals, two in its free places and 3 in place of its support exercises, got \(packed.exercises.map(\.exercise))")
         }
         if room(on: deadlift, goals: [hipThrust] + three) != 0 || room(on: bench, goals: []) != 0 || room(on: squat, goals: []) != 2 {
             errors.append("room should be 0 on a full day, 0 on Bench Day, and 2 on Squat Day")
         }
         var targets = StatTargets()
         for goal in [hipThrust] + three where targets.add(goal) != nil {
-            errors.append("\(goal.exercise) should fit on Deadlift Day")
+            errors.append("\(goal.exercise) should fit on Lower Day")
         }
-        if targets.add(CustomStrengthGoal(exercise: "Reverse Hyper", kind: .reps, targetReps: 15, day: "deadlift")) == nil || targets.custom.count != 4 {
-            errors.append("a fifth goal on a full Deadlift Day should be refused")
+        if targets.add(CustomStrengthGoal(exercise: "Reverse Hyper", kind: .reps, targetReps: 15, day: "deadlift")) == nil || targets.custom.count != 5 {
+            errors.append("a sixth goal on a full Lower Day should be refused")
         }
         for day in rotation(with: targets.custom) {
             if countedRows(day.exercises) > maxExercisesPerDay {
@@ -635,10 +829,10 @@ enum GymSplit {
             errors.append("a goal with a support exercise's name should replace that exercise")
         }
 
-        // Auto picks the day of that body half with the most room: Deadlift Day for lower body, Arms Day for upper body.
+        // Auto picks the day of that body half with the most room: Lower Day for lower body, Arms Day for upper body.
         if autoDay(lowerBody: true, goals: [])?.id != "deadlift" || autoDay(lowerBody: false, goals: [])?.id != "arms"
             || autoDay(lowerBody: true, goals: targets.custom)?.id != "squat" || autoDay(lowerBody: false, goals: [lSit]) != nil {
-            errors.append("auto should pick Deadlift Day, Arms Day, then Squat Day, and nil when no upper day has room")
+            errors.append("auto should pick Lower Day, Arms Day, then Squat Day, and nil when no upper day has room")
         }
 
         // A skip counts today's split day as done yesterday and moves today to the next day, one time only.
@@ -696,7 +890,7 @@ enum GymSplit {
             errors.append("Bench Day lifts before a Full Recovery token should move the split to Squat Day, got \(rested.bundle.headerLine)")
         }
 
-        // The offline day, the context, and the mock generator all carry the goal on Deadlift Day.
+        // The offline day, the context, and the mock generator all carry the goal on Lower Day.
         var snapshot = GameSnapshot.fresh(catalog: catalog, now: now)
         let pressDone = QuestRecord(title: "Overhead Press 3×1-5", kind: .daily, stat: .STR, method: .hevySets, params: [:],
                                     target: 4, done: 4, unit: "sets", status: .completed)
@@ -706,8 +900,8 @@ enum GymSplit {
         goalCatalog.strengthGoals = [hipThrust]
         snapshot.rebuildBundle(catalog: goalCatalog, now: now)
         let titles = snapshot.bundle.quests.map(\.title)
-        if snapshot.bundle.headerLine != "Deadlift Day" || !titles.contains("Hip Thrust 3×5-9") || !titles.contains(where: { $0.hasPrefix("Lying Leg Curl") }) {
-            errors.append("the offline Deadlift Day should train Hip Thrust next to its own exercises, got \(snapshot.bundle.headerLine) \(titles)")
+        if snapshot.bundle.headerLine != "Lower Day" || !titles.contains("Hip Thrust 2×5-9") || !titles.contains(where: { $0.hasPrefix("Lying Leg Curl") }) {
+            errors.append("the offline Lower Day should train Hip Thrust next to its own exercises, got \(snapshot.bundle.headerLine) \(titles)")
         }
         var kept = StatTargets()
         _ = kept.add(hipThrust)
@@ -715,7 +909,7 @@ enum GymSplit {
         let target = context.goals?.strength.first { $0.category == "Hip Thrust" }
         if context.split?.today.exercises.contains(where: { $0.exercise == "Hip Thrust" && $0.custom }) != true
             || target?.targetLb != 225 || target?.targetReps != 5 || target?.custom != true || target?.aliases != ["hip thrust"]
-            || target?.splitDay != "Deadlift Day" || target?.goal != "225 lb × 5" {
+            || target?.splitDay != "Lower Day" || target?.goal != "225 lb × 5" {
             errors.append("the context should carry Hip Thrust as a strength target and on today's split day, got \(String(describing: target))")
         }
         let mock = MockQuestGenerateClient(catalog: catalog).bundle(for: context, now: now)
@@ -732,7 +926,7 @@ enum GymSplit {
         let verification = VerificationContext(now: now, dayKey: mock.dayKey, assignedAt: now, manualConfirmsToday: 0, claimedKeys: [],
                                                timerElapsedSec: nil, userConfirmed: false, integrations: lifted)
         if case .completed = HevySetsVerifier().evaluate(quest: thrustRow, context: verification) {} else {
-            errors.append("the Hevy check should complete Hip Thrust 3×5-9 from 3 sets of \"Hip Thrust (Barbell)\"")
+            errors.append("the Hevy check should complete Hip Thrust 2×5-9 from 3 sets of \"Hip Thrust (Barbell)\"")
         }
         return errors
     }

@@ -181,7 +181,27 @@ enum IntegrationRules {
         ])
         var lifted = day
         lifted.hevy = HevyDayReading(available: true, configured: true, reason: "", dayKey: "2026-10-01", workouts: [morning])
-        if case .progress(let current, _) = HevySetsVerifier().evaluate(quest: benchQuest, context: context(lifted, now: start)) {
+        // Incline bench is chest too: with no row of its own today, its 2 sets count for the bench row.
+        if case .completed = HevySetsVerifier().evaluate(quest: benchQuest, context: context(lifted, now: start)) {} else {
+            errors.append("incline bench sets should count for bench press when incline has no row today")
+        }
+        // A stand-in by muscle group fills only the first row of its group today: a chest row above takes it.
+        var below = context(lifted, now: start)
+        below.earlierExercises = ["chest dip"]
+        let onlyBench = HevyDayReading(available: true, configured: true, reason: "", dayKey: "2026-10-01", workouts: [HevyWorkout(
+            id: "w9", title: "Push", start: start, end: start.addingTimeInterval(3600),
+            exercises: [HevyExercise(title: "Incline Bench Press (Dumbbell)", templateId: "IBP", sets: [set("normal", 8, 30)])])])
+        below.integrations.hevy = onlyBench
+        if HevySetsVerifier().evaluate(quest: benchQuest, context: below) != .unchanged {
+            errors.append("a muscle-group stand-in should count only for the first row of its group")
+        }
+        // With its own row today, the incline counts for that row only. The checks below have that row.
+        func benchContext(_ integrations: DayIntegrationSnapshot) -> VerificationContext {
+            var made = context(integrations, now: start)
+            made.otherExercises = ["incline bench press"]
+            return made
+        }
+        if case .progress(let current, _) = HevySetsVerifier().evaluate(quest: benchQuest, context: benchContext(lifted)) {
             if current != 3 { errors.append("Hevy should count 3 working bench sets, also the one under the rep target, and not a set with no rep, got \(current)") }
         } else {
             errors.append("3 of 4 bench sets should be progress")
@@ -190,12 +210,12 @@ enum IntegrationRules {
             HevyExercise(title: "Bench Press (Smith Machine)", templateId: "BPS", sets: [set("normal", 6, 70)]),
         ])
         lifted.hevy.workouts.append(evening)
-        let benchDone = HevySetsVerifier().evaluate(quest: benchQuest, context: context(lifted, now: start))
+        let benchDone = HevySetsVerifier().evaluate(quest: benchQuest, context: benchContext(lifted))
         if case .completed(let evidence) = benchDone {
             if evidence.source != "hevy" || !evidence.externalId.contains("bench press") {
                 errors.append("Hevy completion should cite the exercise, got \(evidence.externalId)")
             }
-            var claimed = context(lifted, now: start)
+            var claimed = benchContext(lifted)
             claimed.claimedKeys = [evidence.reuseKey]
             if case .failed = HevySetsVerifier().evaluate(quest: benchQuest, context: claimed) {
             } else {

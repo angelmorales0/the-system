@@ -8,7 +8,7 @@ enum StrengthLevel {
     static let windowDays = 180
     /// A set within 0.5% of the target weight passes, so 102.5 kg counts as 225 lb but 100 kg (220.5 lb) does not.
     static let weightTolerance = 0.005
-    static let weight = 100.0 / 15
+    static let weight = 100.0 / 14
 
     /// One barbell or dumbbell lift scored by weight × reps.
     struct Lift: Equatable {
@@ -41,7 +41,6 @@ enum StrengthLevel {
 
     // Floors are a common untrained start (an empty bar or a light dumbbell); targets are the max level rules.
     static let squat = Lift(category: "Squat", aliases: ["squat"], floorLb: 95, targetLb: 315, targetReps: 1)
-    static let deadlift = Lift(category: "Deadlift", aliases: ["deadlift"], floorLb: 135, targetLb: 405, targetReps: 1)
     static let bench = Lift(category: "Bench press", aliases: ["bench press"], floorLb: 95, targetLb: 225, targetReps: 3)
     /// Barbell presses only. "Shoulder press" is usually a dumbbell or machine press, so it does not count.
     static let overheadPress = Lift(category: "Overhead press", aliases: ["overhead press", "strict press"], floorLb: 45, targetLb: 155, targetReps: 1)
@@ -52,7 +51,7 @@ enum StrengthLevel {
     static let bulgarianSplitSquat = Lift(category: "Bulgarian split squat", aliases: ["bulgarian split squat", "bulgarian split squats"], floorLb: 15, targetLb: 80, targetReps: 8)
     /// Added weight only: two plates (90 lb) on a belt for 5 reps. Bodyweight dips count as 0 lb added.
     static let dips = Lift(category: "Weighted dips", aliases: ["dip", "dips", "chest dip", "chest dips", "triceps dip", "triceps dips", "tricep dip", "tricep dips", "weighted dip", "weighted dips"], floorLb: 0, targetLb: 90, targetReps: 5, addedWeight: true)
-    static let lifts = [squat, deadlift, bench, overheadPress, row, lateralRaise, curl, bulgarianSplitSquat, dips]
+    static let lifts = [squat, bench, overheadPress, row, lateralRaise, curl, bulgarianSplitSquat, dips]
 
     /// Strict pull-ups only. Chin-ups use a supinated grip and do not count.
     static let pullUps = RepRule(category: "Pull-ups", aliases: ["pull up", "pull ups", "pullup", "pullups"], targetReps: 20)
@@ -92,7 +91,7 @@ enum StrengthLevel {
     }
 
     /// Gives each custom requirement the average built-in weight, then scales every weight so they add to 100.
-    /// 15 built-in targets at 6.67 and one custom goal: 16 targets at 6.25. Two custom goals: 17 at 5.88.
+    /// 14 built-in targets at 7.14 and one custom goal: 15 targets at 6.67. Two custom goals: 16 at 6.25.
     static func withCustom(_ builtIn: [StatRequirement], _ custom: [StatRequirement]) -> [StatRequirement] {
         guard !custom.isEmpty, !builtIn.isEmpty else { return builtIn + custom }
         let average = builtIn.reduce(0) { $0 + $1.weight } / Double(builtIn.count)
@@ -118,7 +117,6 @@ enum StrengthLevel {
     private static func builtInRequirements(_ recent: [HevyWorkout]) -> [StatRequirement] {
         [
             lift(squat, recent),
-            lift(deadlift, recent),
             lift(bench, recent),
             lift(overheadPress, recent),
             lift(row, recent),
@@ -325,7 +323,6 @@ enum StrengthLevel {
     static func perfectWorkouts(now: Date) -> [HevyWorkout] {
         [workout([
             HevyExercise(title: "Squat (Barbell)", sets: [workingSet(lb: 315, reps: 1)]),
-            HevyExercise(title: "Deadlift (Barbell)", sets: [workingSet(lb: 405, reps: 1)]),
             HevyExercise(title: "Bench Press (Barbell)", sets: [workingSet(lb: 225, reps: 3)]),
             HevyExercise(title: "Overhead Press (Barbell)", sets: [workingSet(lb: 155, reps: 1)]),
             HevyExercise(title: "Bent Over Row (Barbell)", sets: [workingSet(lb: 225, reps: 3)]),
@@ -346,7 +343,6 @@ enum StrengthLevel {
     static func floorWorkouts(now: Date) -> [HevyWorkout] {
         [workout([
             HevyExercise(title: "Squat (Barbell)", sets: [workingSet(lb: 95, reps: 1)]),
-            HevyExercise(title: "Deadlift (Barbell)", sets: [workingSet(lb: 135, reps: 1)]),
             HevyExercise(title: "Bench Press (Barbell)", sets: [workingSet(lb: 95, reps: 3)]),
             HevyExercise(title: "Overhead Press (Barbell)", sets: [workingSet(lb: 45, reps: 1)]),
             HevyExercise(title: "Bent Over Row (Barbell)", sets: [workingSet(lb: 95, reps: 3)]),
@@ -369,8 +365,8 @@ enum StrengthLevel {
             errors.append("perfect workouts should reach the max level and score 100, got level \(report.level) score \(report.score), failing: "
                 + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
         }
-        if report.requirements.count != 15 {
-            errors.append("STR should have 15 requirements, got \(report.requirements.count)")
+        if report.requirements.count != 14 {
+            errors.append("STR should have 14 requirements, got \(report.requirements.count)")
         }
         let totalWeight = report.requirements.reduce(0) { $0 + $1.weight }
         if abs(totalWeight - 100) > 0.001 {
@@ -424,7 +420,12 @@ enum StrengthLevel {
             errors += StatLevelReport.zeroCheck(evaluate(workouts: workouts, now: now), noData: [category], "line \(line)")
         }
 
-        failsOnly("Deadlift", edited("Deadlift (Barbell)", sets: [workingSet(lb: 315, reps: 1)]))
+        failsOnly("Squat", edited("Squat (Barbell)", sets: [workingSet(lb: 275, reps: 1)]))
+        // The deadlift left the split: it is no STR target, and a logged deadlift changes nothing.
+        if report.requirements.contains(where: { $0.category == "Deadlift" })
+            || evaluate(workouts: perfect.map { var w = $0; w.exercises.append(HevyExercise(title: "Deadlift (Barbell)", sets: [workingSet(lb: 135, reps: 1)])); return w }, now: now).score != report.score {
+            errors.append("the deadlift should not be an STR target")
+        }
         failsOnly("Pull-ups", edited("Pull Up", sets: [workingSet(reps: 12)]))
         failsOnly("Dead hang", edited("Dead Hang", sets: [workingSet(seconds: 90)]))
 
@@ -501,14 +502,14 @@ enum StrengthLevel {
             errors.append("\"Pull-Up (Weighted)\" should match pull-ups")
         }
 
-        // Custom goals: each one gets the average built-in weight (100/15), then every weight scales back to 100.
-        // One goal: 16 targets at 6.25. Two goals: 17 targets at 5.88.
+        // Custom goals: each one gets the average built-in weight (100/14), then every weight scales back to 100.
+        // One goal: 15 targets at 6.67. Two goals: 16 targets at 6.25.
         let hipThrust = CustomStrengthGoal(exercise: "Hip Thrust", kind: .weightReps, targetLb: 225, targetReps: 5, day: "deadlift")
         let lSit = CustomStrengthGoal(exercise: "L-Sit", kind: .hold, targetSeconds: 30, day: "arms")
         let muscleUp = CustomStrengthGoal(exercise: "Muscle Up", kind: .reps, targetReps: 10, day: "arms")
         for goals in [[hipThrust], [hipThrust, lSit]] {
             let custom = evaluate(workouts: perfect, custom: goals, now: now)
-            let count = 15 + goals.count
+            let count = 14 + goals.count
             let weights = custom.requirements.map(\.weight)
             if weights.count != count || abs(weights.reduce(0, +) - 100) > 0.001
                 || weights.contains(where: { abs($0 - 100 / Double(count)) > 0.001 }) {
@@ -523,7 +524,7 @@ enum StrengthLevel {
         var missedGoal = perfect
         missedGoal[0].exercises.append(HevyExercise(title: "Muscle-Up", sets: [workingSet(reps: 4)]))
         let missed = evaluate(workouts: missedGoal, custom: [hipThrust, lSit, muscleUp], now: now)
-        if missed.isMaxLevel || Set(missed.failing.map(\.category)) != ["Hip Thrust", "L-Sit", "Muscle Up"] || missed.counted.count != 18
+        if missed.isMaxLevel || Set(missed.failing.map(\.category)) != ["Hip Thrust", "L-Sit", "Muscle Up"] || missed.counted.count != 17
             || missed.requirements.first(where: { $0.category == "Muscle Up" })?.hasData != true {
             errors.append("a logged custom goal under target should fail and count, got \(missed.level) failing \(missed.failing.map(\.category))")
         }

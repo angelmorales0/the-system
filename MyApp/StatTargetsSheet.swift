@@ -63,6 +63,12 @@ struct StatTargetsSheet: View {
                 }
 
                 if stat == .STR {
+                    NavigationLink {
+                        SplitEditorSheet(dayId: GymSplit.day(named: store.bundle.headerLine)?.id)
+                    } label: {
+                        boxLabel("EDIT GYM SPLIT")
+                    }
+                    .buttonStyle(.plain)
                     QuestSectionTitle(text: "Your goals")
                     addGoal
                 }

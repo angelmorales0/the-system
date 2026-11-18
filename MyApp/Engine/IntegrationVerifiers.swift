@@ -121,9 +121,14 @@ struct HevySetsVerifier: Verifier {
             // A gym without the bar or the rig: the stand-in counts for the quest. Its weight is a cable stack,
             // not comparable to a barbell or added weight, so only its reps are checked.
             // A stand-in that has its own row today (a custom goal such as Hammer Curl) counts for that row only.
+            // Another split exercise of the same muscle group counts too, for the first row of that group today.
+            let muscle = GymSplit.muscle(of: exercise)
+            let firstOfMuscle = muscle != nil && !context.earlierExercises.contains { GymSplit.muscle(of: $0) == muscle }
             let standIns = workout.exercises.filter { entry in
                 let name = StrengthLevel.normalizedName(entry.title)
-                return !matching.contains(entry) && !context.otherExercises.contains(name) && Self.isStandIn(name, for: exercise)
+                guard !matching.contains(entry), !context.otherExercises.contains(name), name != exercise else { return false }
+                if minDuration == nil, Self.isStandIn(name, for: exercise) { return true }
+                return firstOfMuscle && GymSplit.muscle(of: name) == muscle
             }
             func working(_ set: HevySet) -> Bool {
                 guard set.isWorking else { return false }
@@ -134,7 +139,7 @@ struct HevySetsVerifier: Verifier {
                 guard working(set) else { return false }
                 guard let minWeight, minDuration == nil else { return true }
                 return (set.weightKg ?? 0) + 0.001 >= minWeight
-            } + (minDuration == nil ? standIns.flatMap(\.sets).filter(working) : [])
+            } + standIns.flatMap(\.sets).filter(working)
             guard !sets.isEmpty else { continue }
             total += minDuration != nil ? sets.reduce(0) { $0 + ($1.durationSec ?? 0) } : Double(sets.count)
             workoutIds.append(workout.id)

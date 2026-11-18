@@ -69,13 +69,15 @@ enum ContextBuilder {
                 screenTime: screenTimeToday ? "ok" : "unavailable"
             ),
             recentQuestTitles: snapshot.recentQuestTitles.prefix(8).map { redact($0) },
-            constraints: constraints(noGym: snapshot.noGymDayKey == dayKey),
+            constraints: constraints(noGym: snapshot.noGymDayKey == dayKey,
+                                     optionalLifts: GymSplit.today(history: snapshot.questHistory, dayKey: dayKey, goals: targets.custom, edits: targets.split)
+                                        .exercises.filter(\.optional).count),
             recentDays: snapshot.questHistory.prefix(QuestDayRecord.keepDays).map { redacted($0) },
             goals: goals(targets: targets, bodyMass: bodyMass),
             split: MorningSplit(
                 name: GymSplit.name,
                 rotation: GymSplit.rotation.map(\.name),
-                today: GymSplit.today(history: snapshot.questHistory, dayKey: dayKey, goals: targets.custom),
+                today: GymSplit.today(history: snapshot.questHistory, dayKey: dayKey, goals: targets.custom, edits: targets.split),
                 lastDone: GymSplit.lastDone(history: snapshot.questHistory)
             ),
             rest: rest(snapshot: snapshot, dayKey: dayKey, readiness: readinessToday)
@@ -205,9 +207,12 @@ enum ContextBuilder {
         return formatter.string(from: date)
     }
 
-    private static func constraints(noGym: Bool) -> MorningConstraints {
+    /// Each optional row of today's split day may be optional: a row the player marked optional moves from the
+    /// required count to the optional count, so the day's total stays the same.
+    private static func constraints(noGym: Bool, optionalLifts: Int = 0) -> MorningConstraints {
         var constraints = MorningConstraints.standard
         constraints.noGymToday = noGym
+        constraints.maxOptionalQuests = max(constraints.maxOptionalQuests, optionalLifts)
         return constraints
     }
 }

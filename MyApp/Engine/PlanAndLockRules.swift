@@ -140,7 +140,7 @@ enum PlanAndLockRules {
             errors.append("a run checked by hand should count toward the run window")
         }
 
-        // The template: a blocked leg day with a full run window keeps the day with a light squat, and Deadlift Day keeps every lift.
+        // The template: a blocked leg day with a full run window keeps the day with a light squat, and Lower Day keeps every lift.
         var body = QuestPlanner.setting(QuestPlanner.sampleRequest(), ["player", "localDate"], to: .string("2026-10-22"))
         body = QuestPlanner.setting(body, ["constraints", "maxRequiredQuests"], to: .number(Double(MorningConstraints.standard.maxRequiredQuests)))
         func split(_ day: GymSplit.Day) -> JSONValue {
@@ -160,8 +160,8 @@ enum PlanAndLockRules {
         let oneRun = TrainingHistory.runWindow((1...4).map { .object(["km": .number(10), "daysAgo": .number(Double($0)), "counts": .string("10K")]) }, goalKm: 50, legDay: true)
         dead = QuestPlanner.setting(dead, ["trainingHistory"], to: .object(["lifts": .object([:]), "strengthSessions": .array([]), "runWindow": oneRun]))
         let deadPlan = QuestPlanner.titles(QuestPlanner.sanitize(QuestPlanner.templateBundle(dead), dead))
-        if deadPlan.count != 8 || !deadPlan.contains(where: { $0.hasPrefix("Farmers Walk") }) {
-            errors.append("the template should keep every Deadlift Day lift next to its 10K, got \(deadPlan)")
+        if deadPlan.count != 7 || !deadPlan.contains(where: { $0.hasPrefix("Farmers Walk") }) || deadPlan.contains(where: { $0.hasPrefix("Deadlift") }) {
+            errors.append("the template should keep every Lower Day lift next to its 10K, got \(deadPlan)")
         }
 
         // "No gym today": the added 10K stands for the lifts, so it takes no hand check and the run potion leaves it.
@@ -796,7 +796,8 @@ enum PlanAndLockRules {
             errors.append("a list should drop only the elements it cannot read")
         }
 
-        // The set limit: 3 for every lift and 4 for pull-ups, also for a plan or a saved day that asks for more.
+        // The set limit: the split day's own sets (2, 3 for curls and lateral raises, 4 for pull-ups on Bench Day),
+        // also for a plan or a saved day that asks for more.
         var wide = GameSnapshot.fresh(catalog: catalog, now: morning)
         for index in wide.bundle.quests.indices where wide.bundle.quests[index].verification.method == .hevySets && wide.bundle.quests[index].id != DailyStretch.questId {
             wide.bundle.quests[index].verification.params["sets"] = .number(5)
@@ -805,12 +806,14 @@ enum PlanAndLockRules {
         }
         wide.bundle = wide.finished(wide.bundle, catalog: catalog, now: morning)
         let capped = wide.bundle.quests.filter { $0.verification.method == .hevySets && $0.id != DailyStretch.questId }
+        let benchDay = GymSplit.plannedDay(of: wide.bundle, goals: [], edits: [:])
         let wrong = capped.filter { row in
-            let limit = GymSplit.maxSets(for: row.verification.params["exercise"]?.stringValue ?? "")
+            let limit = benchDay.flatMap { GymSplit.exercise(of: row, in: $0)?.sets } ?? GymSplit.maxSets(for: row.verification.params["exercise"]?.stringValue ?? "")
             return row.verification.params["sets"]?.doubleValue != Double(limit) || row.progress.target != Double(limit) || !row.title.contains("\(limit)×8")
         }
-        if capped.isEmpty || !wrong.isEmpty || capped.first(where: { $0.title.hasPrefix("Pull Up") })?.progress.target != 4 {
-            errors.append("a day should hold at most 3 sets a lift and 4 for pull-ups, got \(wrong.map(\.title))")
+        if capped.isEmpty || !wrong.isEmpty || capped.first(where: { $0.title.hasPrefix("Pull Up") })?.progress.target != 4
+            || capped.first(where: { $0.title.hasPrefix("Bench Press") })?.progress.target != 2 || benchDay?.name != "Bench Day" {
+            errors.append("a day should hold the split's sets: 2 for bench, 4 for pull-ups, got \(wrong.map(\.title))")
         }
         // The gym row adds up sets: a lift with 2 of 3 sets counts 2, a timed row counts its share, a done row all.
         var twoSets = lift("Bench Press", sets: 3)

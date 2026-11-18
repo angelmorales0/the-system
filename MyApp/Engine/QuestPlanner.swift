@@ -120,9 +120,9 @@ enum QuestPlanner {
     - trainingHistory.sources says which feeds were unavailable. With no data, start conservatively.
 
     Progression (pick loads from the logged sets, never guess):
-    - Main lifts (squat, deadlift, bench press, overhead press, barbell row, pull-ups, dips): one top set at RPE 8, then 2 back-off sets at about 90% of the top set (3 sets in all; pull-ups may have 4). No lift has more than 3 sets, and pull-ups no more than 4: the backend rejects more. If the last session's top set reached its reps at RPE 8 or lower, add 2.5 kg for upper-body lifts and 5 kg for squat and deadlift. At RPE 9, repeat the weight. At RPE 10 or a missed rep, drop 5%.
+    - Main lifts (squat, bench press, overhead press, barbell row, pull-ups, dips): one top set at RPE 8, then back-off sets at about 90% of the top set. Each exercise has its "sets" in split.today: never write more sets than that number; the app rejects more. If the last session's top set reached its reps at RPE 8 or lower, add 2.5 kg for upper-body lifts and 5 kg for squat. At RPE 9, repeat the weight. At RPE 10 or a missed rep, drop 5%.
     - Accessories (lateral raise, curls, Bulgarian split squat, and other lifts): double progression in an 8-12 rep range. Add reps until every set reaches 12, then add the smallest weight step and go back to 8.
-    - The split has 5 days: Bench Day, Squat Day, Press Day, Deadlift Day, Arms Day. It trains pull-ups 3 times a rotation with three jobs (volume on Bench Day, weighted strength on Press Day, a max-effort set first on Arms Day); lateral raises and curls 3 times (Bench, Press, and Arms Day); dead hangs 3 times (Squat, Press, and Arms Day); squats twice (heavy and light); and bench press, overhead press, rows, deadlift, and toes-to-bar once. Arms Day has no pressing. Pistol squats on Squat Day and handstand push-ups on Press Day are optional. Support exercises ("support": true: Romanian deadlift and calf raises on Squat Day; incline dumbbell press, skull crushers, and lying leg curl on Deadlift Day; face pulls on Arms Day) train what the running, shoulders, chest, and triceps need; their target is a muscle, not a strength target. Keep them unless readiness or recovery calls for cuts, and cut them before the strength targets.
+    - The split has 5 days: Bench Day, Squat Day, Press Day, Lower Day, Arms Day. It trains pull-ups 3 times a rotation with three jobs (volume on Bench Day, weighted strength on Press Day, a max-effort set first on Arms Day); lateral raises and curls 3 times (Bench, Press, and Arms Day); dead hangs 3 times (Squat, Press, and Arms Day); and squats, bench press, overhead press, rows, and toes-to-bar once. There is no deadlift. Arms Day has no pressing. Exercises with "optional": true are optional; the player picks them in the app. Support exercises ("support": true: Romanian deadlift and calf raises on Squat Day; incline dumbbell press, skull crushers, and lying leg curl on Lower Day; face pulls on Arms Day) train what the running, shoulders, chest, and triceps need; their target is a muscle, not a strength target. Keep them unless readiness or recovery calls for cuts, and cut them before the strength targets.
     - No data yet: if trainingHistory.lifts has no entry for an exercise, write only sets and minReps, with no minWeightKg and no weight in the title (e.g. "Squat 3x3-5"). The player picks the weight and logs it in Hevy. In the narrative, say to pick a weight that leaves about 2 reps in reserve at the top of the range. From the first logged session on, set loads from the log.
     - Write exact loads once an exercise has history. Title: "Squat 3x5 @ 265 lb". Params: exercise (the Hevy name without equipment, e.g. "Squat"), sets, minReps, minWeightKg (the working weight in kg, rounded down to 2.5 kg). Unit "sets".
 
@@ -133,7 +133,7 @@ enum QuestPlanner {
     - Use each exercise's Hevy name from trainingHistory.lifts when the player has logged it under one of its aliases; otherwise use split.today exercise.
     - An exercise with "custom": true is the player's own goal (its target is in goals.strength and trainingHistory.strengthTargets). The app put it on this day in place of a support exercise. Treat it as a strength target: cut support exercises before it, and follow its note.
     - You may drop other accessories or a set when readiness or recovery calls for it, but keep the goals.focus exercises. Do not add exercises from other days.
-    - If splitAdvice says today's heavy lift would break the heavy-leg limits, do what it says. "Make today a run-only day": write no lifts and headerLine "Training"; the same split day comes back next time. "Make every squat and deadlift row light": keep the split day and its headerLine, and write each squat and deadlift row with more than 6 reps and under 80% of its best e1RM.
+    - If splitAdvice says today's heavy lift would break the heavy-leg limits, do what it says. "Make today a run-only day": write no lifts and headerLine "Training"; the same split day comes back next time. "Make every squat and deadlift row light": keep the split day and its headerLine, and write each squat row with more than 6 reps and under 80% of its best e1RM.
 
     Rest days (the player spends them, you never pick one):
     - rest.available is false, so restToday must be false and restReason must be "". A rest day the player spends replaces your plan.
@@ -311,7 +311,8 @@ enum QuestPlanner {
                 let plannedSets = planned["sets"]?.intValue.flatMap { $0 == 0 ? nil : $0 } ?? 1
                 if sets > Double((plannedSets + 1) / 2) { problems.append("\(quest["title"]?.stringValue ?? "None") has too many sets for a deload day") }
             }
-            let limit = GymSplit.maxSets(for: exercise)
+            // The split's own sets, with the player's edits. An exercise outside the split keeps the set limit.
+            let limit = planned?["sets"]?.intValue.flatMap { $0 > 0 ? $0 : nil } ?? GymSplit.maxSets(for: exercise)
             if let sets = params?["sets"]?.doubleValue, sets > Double(limit) {
                 problems.append("\(quest["title"]?.stringValue ?? "None") has more than \(limit) sets")
             }
@@ -715,7 +716,7 @@ enum QuestPlanner {
             rows = rows.filter { $0["stat"]?.stringValue != "STR" }
         }
         if mode == "performance_training", noGym { rows = noGymQuests(rows, day: day, mode: mode) }
-        // The day's own limits, so a full split day with a run keeps every lift (Deadlift Day has 8 and a 10K).
+        // The day's own limits, so a full split day with a run keeps every lift (Lower Day has 7 and a 10K).
         let limits = MorningConstraints.standard
         let maxRequired = context["constraints"]?["maxRequiredQuests"]?.intValue ?? limits.maxRequiredQuests
         let maxOptional = context["constraints"]?["maxOptionalQuests"]?.intValue ?? limits.maxOptionalQuests

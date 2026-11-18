@@ -23,6 +23,9 @@ struct VerificationContext: Equatable {
     /// The exercises of the day's other Hevy rows, as `StrengthLevel.normalizedName` gives them.
     /// A stand-in lift that has its own row counts for that row, not for the lift it can stand in for.
     var otherExercises: Set<String> = []
+    /// The exercises of the Hevy rows above this one today, in the same form. A muscle-group stand-in counts for the
+    /// first row of its group only, so one set never fills two rows.
+    var earlierExercises: Set<String> = []
 
     /// True when another quest already used this workout: one of its recordings, or a session at the same time.
     func claims(_ workout: CanonicalWorkout) -> Bool {
