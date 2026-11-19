@@ -100,7 +100,7 @@ final class GameStore: ObservableObject {
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check() + MacScreenClient.check()
             + HiddenQuestRules.check() + RecoveryHolidayRules.check() + ShopRules.check()
             + DailyStretch.check() + StretchSplit.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
-            + NoGymDayRules.check() + PenaltyDecay.check() + RestRules.check() + RestScore.check() + SecretStore.check() + SecretSeed.check() + ConnectionStatusStore.check() + ConnectionAlerts.check()
+            + NoGymDayRules.check() + PenaltyDecay.check() + RestRules.check() + RestScore.check() + SecretStore.check() + SecretSeed.check() + ConnectionStatusStore.check() + ConnectionAlerts.check() + LootRules.check()
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MonkeytypeClient.check() + MercuryClient.check()
             + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check()
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
@@ -140,6 +140,18 @@ final class GameStore: ObservableObject {
         case .standard:
             snapshot = GameSnapshot.loadFromUserDefaults() ?? GameSnapshot.fresh(catalog: catalog)
             snapshot.habits.homeEvents = HomeEvents.load()
+            #if DEBUG
+            // Launch with `-lootPreview YES` to fill the inventory with sample items and one drop card.
+            if UserDefaults.standard.bool(forKey: "lootPreview") || ProcessInfo.processInfo.environment["LOOT_PREVIEW"] == "1" {
+                for (index, item) in (LootCatalog.items.filter { !$0.chestOnly }.prefix(14)).enumerated() {
+                    snapshot.inventory.counts[item.id] = index % 3 + 1
+                }
+                snapshot.inventory.counts[LootCatalog.chest.id] = 2
+                if ProcessInfo.processInfo.environment["OPEN_INVENTORY"] != "1" {
+                    snapshot.grantDrop(LootCatalog.items[0], key: "preview", source: "Bench Day")
+                }
+            }
+            #endif
             snapshot.refreshIfNeeded(catalog: catalog)
             snapshot.claimQueuedRecoveryForToday(catalog: catalog, now: .now)
             snapshot.bundle = GymSplit.withoutOldRows(snapshot.bundle)
@@ -412,6 +424,37 @@ final class GameStore: ObservableObject {
         var next = snapshot
         next.setLogNote(text)
         guard next != snapshot else { return }
+        snapshot = next
+        persist()
+    }
+
+    /// Sells an item: one, or all of it. Returns the gold earned.
+    @discardableResult
+    func sellItem(_ id: String, all: Bool) -> Int {
+        var next = snapshot
+        let earned = next.sellItem(id, count: all ? nil : 1)
+        guard earned > 0 else { return 0 }
+        snapshot = next
+        cue(.purchase)
+        persist()
+        return earned
+    }
+
+    /// Opens one Sealed Chest. Its item shows on its card.
+    func openChest() {
+        var next = snapshot
+        guard !next.openChest().isEmpty else { return }
+        snapshot = next
+        cue(.reward)
+        persist()
+    }
+
+    /// The drop card the player has not seen yet.
+    var pendingDrop: LootDrop? { snapshot.inventory.pending.first }
+
+    func acknowledgeDrop() {
+        var next = snapshot
+        next.acknowledgeDrop()
         snapshot = next
         persist()
     }
@@ -739,15 +782,15 @@ final class GameStore: ObservableObject {
 
     func refreshForToday(now: Date = .now) {
         let previousDay = snapshot.bundle.dayKey
-        let previousGold = snapshot.gold
+        let previousItems = snapshot.inventory.pending.count
         var next = snapshot
         if persistence == .standard { next.habits.homeEvents = HomeEvents.load() }
         next.refreshIfNeeded(catalog: catalog, now: now)
         snapshot = next
         if snapshot.bundle.dayKey != previousDay {
             verificationNote = nil
-            // Yesterday's gold is paid at rollover; that cue outranks the plain arrival.
-            cue(snapshot.gold > previousGold ? .reward : .newDay)
+            // Yesterday's perfect-day item is given at rollover; that cue outranks the plain arrival.
+            cue(snapshot.inventory.pending.count > previousItems ? .reward : .newDay)
         }
         dayClock = DayClock.resolve(current: dayClock, now: now)
         advanceTimers(now: now)
@@ -1247,6 +1290,12 @@ final class GameStore: ObservableObject {
     }
 
     private func persist() {
+        // Every change passes here: a quest finished or a Pass marked since the last save drops its item now.
+        var next = snapshot
+        if next.collectDrops() > 0 {
+            snapshot = next
+            cue(.reward)
+        }
         guard persistence == .standard else { return }
         snapshot.saveToUserDefaults()
         dayClock.save()

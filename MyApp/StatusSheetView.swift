@@ -11,6 +11,7 @@ struct StatusSheetView: View {
     @State private var showShop = false
     @State private var showBeliefs = false
     @State private var showContracts = false
+    @State private var showInventory = false
     /// The systems view comes first; the levels are one tap away.
     @State private var showLevels = false
 
@@ -33,6 +34,8 @@ struct StatusSheetView: View {
                                 SystemsPanel(tracks: store.systemsTracks) { store.setHandMark($0, $1, passed: $2) }
                                 StatusFrame {
                                     VStack(spacing: 0) {
+                                        statusLink("INVENTORY") { showInventory = true; SystemSound.systemOpen.play() }
+                                        Rectangle().fill(QuestLight.ink.opacity(0.25)).frame(height: 0.5)
                                         statusLink("CONTRACTS") { showContracts = true; SystemSound.systemOpen.play() }
                                         Rectangle().fill(QuestLight.ink.opacity(0.25)).frame(height: 0.5)
                                         statusLink("BELIEFS") { showBeliefs = true; SystemSound.systemOpen.play() }
@@ -81,6 +84,9 @@ struct StatusSheetView: View {
         .sheet(isPresented: $showContracts, onDismiss: { SystemSound.systemClose.play() }) {
             ContractsSheet()
         }
+        .sheet(isPresented: $showInventory, onDismiss: { SystemSound.systemClose.play() }) {
+            InventorySheet()
+        }
         // A penalty covers every page, and a new day replaces the quests a sheet was opened for. Close the sheets,
         // so no setting, token, or potion is used above the penalty screen or on a day the player did not choose it for.
         .onChange(of: store.openPenaltyQuest?.id) { _, penalty in
@@ -114,6 +120,7 @@ struct StatusSheetView: View {
         showShop = false
         showBeliefs = false
         showContracts = false
+        showInventory = false
     }
 }
 

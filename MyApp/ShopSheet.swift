@@ -75,9 +75,7 @@ struct ShopSheet: View {
                     .foregroundStyle(SystemTheme.muted)
             }
             .accessibilityElement(children: .combine)
-            if let reward = snapshot.lastGoldReward {
-                note("+\(reward.amount.formatted()) gold yesterday.")
-            }
+            note("Quests drop items. Sell them in the Inventory for gold.")
         }
     }
 

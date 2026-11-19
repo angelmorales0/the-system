@@ -135,13 +135,12 @@ extension GameSnapshot {
         return !required.isEmpty && required.allSatisfy { $0.status == .completed && !$0.skippedWithPotion }
     }
 
-    /// Pays the day that is ending. Runs once per day from `refreshIfNeeded`.
+    /// Rewards the day that is ending. Runs once per day from `refreshIfNeeded`. Since 2026-11-18 a day pays in items:
+    /// each finished quest drops one (see `Loot`), and a perfect day adds one better item. Gold comes from selling them.
     mutating func awardDayGold() {
         lastGoldReward = nil
         guard isPerfectDay else { return }
-        let amount = Gold.reward(for: bundle.dayKey)
-        gold += amount
-        lastGoldReward = GoldReward(dayKey: bundle.dayKey, amount: amount)
+        grantPerfectDayItem(dayKey: bundle.dayKey)
     }
 
     mutating func buyFullRecovery() -> String {
@@ -279,18 +278,18 @@ enum ShopRules {
             return errors + ["could not build shop dates"]
         }
 
-        // A perfect day pays gold once. A missed day pays nothing.
+        // A perfect day gives its bonus item once, and no gold. A missed day gives no bonus.
         var perfect = GameSnapshot.fresh(catalog: catalog, now: dayOne)
         finishRequired(&perfect, now: dayOne)
         let dayKey = perfect.bundle.dayKey
         perfect.refreshIfNeeded(catalog: catalog, now: dayTwo)
         perfect.refreshIfNeeded(catalog: catalog, now: dayTwo.addingTimeInterval(600))
-        if perfect.gold != Gold.reward(for: dayKey) || perfect.lastGoldReward?.dayKey != dayKey {
-            errors.append("a perfect day should pay \(Gold.reward(for: dayKey)) gold once, got \(perfect.gold)")
+        if perfect.gold != 0 || perfect.inventory.droppedKeys.filter({ $0.hasPrefix("\(dayKey)|perfect") }).count != 1 {
+            errors.append("a perfect day should give one bonus item and no gold, got gold \(perfect.gold)")
         }
         var missed = GameSnapshot.fresh(catalog: catalog, now: dayOne)
         missed.refreshIfNeeded(catalog: catalog, now: dayTwo)
-        if missed.gold != 0 || missed.lastGoldReward != nil {
+        if missed.gold != 0 || missed.inventory.droppedKeys.contains(where: { $0.contains("|perfect") }) {
             errors.append("a missed day should pay no gold, got \(missed.gold)")
         }
 

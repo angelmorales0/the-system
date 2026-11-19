@@ -71,7 +71,8 @@ struct LateSettle: Equatable {
     /// A late result opened a penalty. The Screen Time row no longer does (2026-11-18).
     var openedPenalty = false
     var rebuiltToday = false
-    var gold = 0
+    /// The late result made the day perfect, and its bonus item was given.
+    var perfectItem = false
 }
 
 extension QuestBundle {
@@ -166,11 +167,8 @@ extension GameSnapshot {
                 let required = past.bundle.quests.filter { $0.kind != .optional && $0.id != ScreenTime.questId }
                 let perfect = !required.isEmpty && required.allSatisfy { $0.status == .completed && !$0.skippedWithPotion }
                     && !potionLog.contains { $0.dayKey == dayKey }
-                if perfect, ended.paidGold == 0 {
-                    settle.gold = Gold.reward(for: dayKey)
-                    gold += settle.gold
-                    ended.paidGold = settle.gold
-                    lastGoldReward = GoldReward(dayKey: dayKey, amount: settle.gold)
+                if perfect, grantPerfectDayItem(dayKey: dayKey) {
+                    settle.perfectItem = true
                 }
             }
             // Lifts or stretches done late move their rotation. Today is planned again from it, and finished work stays.
@@ -248,10 +246,10 @@ enum EndedDayRules {
         }
         let settled = late.settleEndedDay(integrations: data(strava: [run]), catalog: catalog, now: dayTwo)
         if !settled.liftedPenalty || late.player.penaltyOpen || !PenaltyQuests.rows(in: late.bundle).isEmpty || late.endedDay != nil
-            || late.questHistory.first?.missedRequired != false || settled.gold != Gold.reward(for: keyOne) || late.gold != settled.gold {
+            || late.questHistory.first?.missedRequired != false || !settled.perfectItem || !late.inventory.droppedKeys.contains(where: { $0.hasPrefix("\(keyOne)|perfect") }) {
             errors.append("a run found in the ended day's own data should lift its penalty, fix its record, and pay the day, got \(settled)")
         }
-        if late.settleEndedDay(integrations: data(strava: [run]), catalog: catalog, now: dayTwo) != LateSettle() || late.gold != settled.gold {
+        if late.settleEndedDay(integrations: data(strava: [run]), catalog: catalog, now: dayTwo) != LateSettle() {
             errors.append("an ended day should settle once")
         }
 
@@ -303,7 +301,7 @@ enum EndedDayRules {
         finish(&mac) { $0.id != ScreenTime.questId }
         mac.refreshIfNeeded(catalog: catalog, now: dayTwo)
         let paid = mac.gold
-        if mac.player.penaltyOpen || paid != Gold.reward(for: keyOne) || mac.endedDay?.missed != false {
+        if mac.player.penaltyOpen || !mac.inventory.droppedKeys.contains(where: { $0.hasPrefix("\(keyOne)|perfect") }) || mac.endedDay?.missed != false {
             errors.append("a day that passed with Mac minutes should be paid and kept for the Macs' last read")
         }
         var waiting = mac
@@ -327,11 +325,11 @@ enum EndedDayRules {
         finish(&both) { !TrainingDay.isRaceRun($0) && $0.id != ScreenTime.questId }
         both.refreshIfNeeded(catalog: catalog, now: dayTwo)
         let ranLate = both.settleEndedDay(integrations: data(strava: [run]), mac: LateMacRead(trackerSet: true), catalog: catalog, now: dayTwo)
-        if !ranLate.liftedPenalty || ranLate.gold == 0 || both.endedDay?.missed != false {
+        if !ranLate.liftedPenalty || !ranLate.perfectItem || both.endedDay?.missed != false {
             errors.append("a late run should complete the day while it still waits for the Macs, got \(ranLate)")
         }
         let macLate = both.settleEndedDay(integrations: data(strava: [run]), mac: LateMacRead(trackerSet: true, answered: true, workMinutes: 840), catalog: catalog, now: dayTwo)
-        if macLate.openedPenalty || both.player.penaltyOpen || both.gold == 0 {
+        if macLate.openedPenalty || both.player.penaltyOpen || !both.inventory.droppedKeys.contains(where: { $0.hasPrefix("\(keyOne)|perfect") }) {
             errors.append("Mac minutes over the limit should not fail a day that a late run completed, got \(macLate) gold \(both.gold)")
         }
 

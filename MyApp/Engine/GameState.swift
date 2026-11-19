@@ -58,8 +58,10 @@ struct GameSnapshot: Codable, Equatable {
     var gold: Int = 0
     /// Potions used, oldest first. Prices, cooldowns, and stat excuses read this.
     var potionLog: [PotionUse] = []
-    /// Gold from the last day that ended. Nil when that day earned none.
+    /// Gold from the last day that ended. Nil when that day earned none. Since 2026-11-18 a day pays in items, so it stays nil.
     var lastGoldReward: GoldReward?
+    /// Items from quests and chests. They are sold for gold in the inventory.
+    var inventory = InventoryState()
     /// Nil until the first integration refresh. Then `HitPoints` moves it on every refresh.
     var hitPoints: HitPointState?
     /// Nil until the first integration refresh. Then `Fatigue` moves it on every refresh.
@@ -89,6 +91,8 @@ struct GameSnapshot: Codable, Equatable {
         let key = QuestDay.key(for: now)
         // Flying west across midnight moves the local date back. Keep the later day, so it is not judged twice.
         guard key > bundle.dayKey else { return }
+        // The ending day's quests drop their items before its rows are replaced.
+        collectDrops()
         grantHolidayRecovery(previousKey: bundle.dayKey, key: key)
         settleScreenTime()
         settleHomeBy()
@@ -918,7 +922,7 @@ extension GameSnapshot {
         case hiddenUnlocks
         case noGymDayKey, noGymPlanDayKey, plannerRestDayKey, plannerRestReason, restDayKeys
         case questHistory, screenTime, stretchChecks
-        case gold, potionLog, lastGoldReward
+        case gold, potionLog, lastGoldReward, inventory
         case hitPoints, fatigue, endedDay
         case habits
     }
@@ -952,6 +956,7 @@ extension GameSnapshot {
         gold = try container.decodeIfPresent(Int.self, forKey: .gold) ?? 0
         potionLog = try container.decodeIfPresent(LossyArray<PotionUse>.self, forKey: .potionLog)?.elements ?? []
         lastGoldReward = try container.decodeIfPresent(GoldReward.self, forKey: .lastGoldReward)
+        inventory = try container.decodeIfPresent(InventoryState.self, forKey: .inventory) ?? InventoryState()
         hitPoints = try container.decodeIfPresent(HitPointState.self, forKey: .hitPoints)
         fatigue = try container.decodeIfPresent(FatigueState.self, forKey: .fatigue)
         endedDay = try container.decodeIfPresent(EndedDay.self, forKey: .endedDay)
@@ -987,6 +992,7 @@ extension GameSnapshot {
         try container.encode(gold, forKey: .gold)
         try container.encode(potionLog, forKey: .potionLog)
         try container.encodeIfPresent(lastGoldReward, forKey: .lastGoldReward)
+        try container.encode(inventory, forKey: .inventory)
         try container.encodeIfPresent(hitPoints, forKey: .hitPoints)
         try container.encodeIfPresent(fatigue, forKey: .fatigue)
         try container.encodeIfPresent(endedDay, forKey: .endedDay)
