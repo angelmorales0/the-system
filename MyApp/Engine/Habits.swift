@@ -440,11 +440,6 @@ enum SystemsView {
             if list.allSatisfy({ $0.status == .completed }) { return .done }
             return key == today && !list.contains(where: { $0.status == .failed }) ? .none : .missed
         }
-        let morning = keys.map { key -> Mark in
-            if game.habits.morningDoneDays.contains(key) { return .done }
-            if game.restDue(on: key) || key == today { return .none }
-            return game.habits.morningDoneDays.isEmpty || key < (game.habits.morningDoneDays.min() ?? key) ? .none : .missed
-        }
         // Mercury sends this week's eat-out charges only: a day of this week with a charge is red, one without is cyan.
         let weekKey = RestDays.weekKey(of: today)
         let charges = game.finance.flatMap { RestDays.weekKey(of: $0.dayKey) == weekKey ? $0.eatOutWeek : nil }
@@ -457,9 +452,7 @@ enum SystemsView {
         let coffee = keys.map { key -> Mark in caffeine[key].map { $0 <= 0 ? .done : .missed } ?? .none }
         let logged = keys.map { key -> Mark in game.habits.log[key] != nil ? .done : .none }
         return [
-            Track(name: "Morning workout", marks: morning),
             Track(name: "Home by 9 pm", marks: keys.map { mark($0) { $0.method == .homeBy } }),
-            Track(name: "Gym day", marks: keys.map { mark($0) { $0.stat == .STR && $0.method == .hevySets && $0.kind == .daily } }),
             Track(name: "Screen Time", marks: keys.map { mark($0) { $0.method == .screenTimeLimit } }),
             Track(name: "No eating out", marks: eatOut, dayKeys: keys, editable: true),
             Track(name: "No caffeine", marks: coffee),
@@ -786,11 +779,13 @@ enum HabitRules {
         }
         // Systems view: 28 days a habit, and a streak that ends today or yesterday.
         var tracked = GameSnapshot.fresh(catalog: catalog, now: monday)
-        tracked.habits.morningDoneDays = [QuestDay.key(byAddingDays: -2, to: tracked.bundle.dayKey), QuestDay.key(byAddingDays: -1, to: tracked.bundle.dayKey)]
+        tracked.habits.log = [QuestDay.key(byAddingDays: -2, to: tracked.bundle.dayKey): "a", QuestDay.key(byAddingDays: -1, to: tracked.bundle.dayKey): "b"]
         let tracks = SystemsView.tracks(tracked, caffeine: [tracked.bundle.dayKey: 0])
-        if tracks.count != 7 || tracks.contains(where: { $0.marks.count != SystemsView.days }) || tracks.first?.streak != 2
+        if tracks.map(\.name) != ["Home by 9 pm", "Screen Time", "No eating out", "No caffeine", "Log written"]
+            || tracks.contains(where: { $0.marks.count != SystemsView.days })
+            || tracks.first(where: { $0.name == "Log written" })?.streak != 2
             || tracks.first(where: { $0.name == "No caffeine" })?.marks.last != .done {
-            errors.append("the systems view should show 7 habits of 28 days with a 2-day morning streak, got \(tracks.map { "\($0.name) \($0.streak)" })")
+            errors.append("the systems view should show 5 habits of 28 days with a 2-day log streak, got \(tracks.map { "\($0.name) \($0.streak)" })")
         }
 
         // No eating out: a red day for each day of this week with a charge, cyan for the others, dim with no data.
