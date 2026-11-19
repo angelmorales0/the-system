@@ -69,6 +69,8 @@ struct GameSnapshot: Codable, Equatable {
     /// The last day that ended with a required quest open, or with a Screen Time row that a Mac can still fail,
     /// until its own data is read once more (see `EndedDay`).
     var endedDay: EndedDay?
+    /// The always-on habit rules and their records.
+    var habits = HabitState()
 
     static func fresh(
         catalog: FallbackCatalog,
@@ -803,6 +805,8 @@ struct GameSnapshot: Codable, Equatable {
             ytdGoalUsd: reading.ytdGoalUsd,
             settled: reading.settled
         )
+        finance?.eatOutWeek = reading.eatOutWeek
+        finance?.weekDiscretionaryUsd = reading.weekDiscretionaryUsd
     }
 
     mutating func rebuildBundle(catalog: FallbackCatalog, now: Date) {
@@ -915,6 +919,7 @@ extension GameSnapshot {
         case questHistory, screenTime, stretchChecks
         case gold, potionLog, lastGoldReward
         case hitPoints, fatigue, endedDay
+        case habits
     }
 
     init(from decoder: Decoder) throws {
@@ -950,6 +955,7 @@ extension GameSnapshot {
         hitPoints = try container.decodeIfPresent(HitPointState.self, forKey: .hitPoints)
         fatigue = try container.decodeIfPresent(FatigueState.self, forKey: .fatigue)
         endedDay = try container.decodeIfPresent(EndedDay.self, forKey: .endedDay)
+        habits = (try? container.decodeIfPresent(HabitState.self, forKey: .habits)) ?? HabitState()
     }
 
     func encode(to encoder: Encoder) throws {
@@ -985,6 +991,7 @@ extension GameSnapshot {
         try container.encodeIfPresent(hitPoints, forKey: .hitPoints)
         try container.encodeIfPresent(fatigue, forKey: .fatigue)
         try container.encodeIfPresent(endedDay, forKey: .endedDay)
+        try container.encode(habits, forKey: .habits)
     }
 }
 

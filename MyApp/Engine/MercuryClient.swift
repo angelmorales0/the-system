@@ -97,6 +97,9 @@ enum MercuryClient {
     // Undecided defaults, not a locked budget.
     static let dailySoftCapUsd = 40.0
     static let weeklySoftCapUsd = 280.0
+    /// Eating out: about one meal with friends a week. Restaurants and FoodDelivery count.
+    static let eatOutWeeklyCapUsd = 40.0
+    static let eatOutCategories: Set<String> = ["Restaurants", "FoodDelivery"]
     static let balanceHardFloorUsd = 500.0
     static let paceNormal = 0.75
     static let paceCaution = 1.00
@@ -403,12 +406,35 @@ enum MercuryClient {
         }
         let state = paceState(discretionaryToday: discretionaryToday, discretionary7d: discretionary7d,
                               availableBalance: lowestAvailable(accounts), fraction: dayFraction(day, now: now))
-        return MercuryDayReading(
+        let week = weekSpend(transactions, day: day, settings: settings)
+        var reading = MercuryDayReading(
             available: true, configured: true, reason: "", dayKey: day,
             discretionarySpendUsd: round2(discretionaryToday), necessarySpendUsd: round2(necessaryToday), capUsd: dailySoftCapUsd,
             paceState: state, ytdIncomeUsd: round2(income), ytdGoalUsd: ytdGoalUsd, discretionary7dUsd: round2(discretionary7d),
             underCap: discretionaryToday <= dailySoftCapUsd + 0.001, settled: isSettled(day, now: now, settleHour: settings.hour), synced: true
         )
+        reading.eatOutWeek = week.eatOut
+        reading.weekDiscretionaryUsd = round2(week.discretionary)
+        return reading
+    }
+
+    /// The quest week (Monday on) that holds `day`: its eat-out charges, oldest first, and its discretionary spend.
+    /// An eat-out charge is a discretionary charge in Restaurants or FoodDelivery. A category mapped to necessary does not count.
+    static func weekSpend(_ transactions: [JSONValue], day: String, settings: MercurySettings) -> (eatOut: [EatOutCharge], discretionary: Double) {
+        let start = RestDays.weekKey(of: day)
+        var eatOut: [EatOutCharge] = []
+        var discretionary = 0.0
+        for txn in transactions where txn.objectValue != nil {
+            let date = when(txn)
+            guard start <= date, date <= day, let amount = amount(txn),
+                  classify(txn, overrides: settings.overrides, incomePattern: settings.incomeCounterpartyRegex) == "discretionary" else { continue }
+            discretionary += abs(amount)
+            guard eatOutCategories.contains(categoryName(txn)) else { continue }
+            // The card charge time: Mercury creates the transaction when the card is charged and posts it later.
+            let time = [txn["createdAt"]?.stringValue, txn["postedAt"]?.stringValue].compactMap { $0.flatMap(OnDeviceTime.parse) }.first
+            eatOut.append(EatOutCharge(dayKey: date, at: time ?? QuestDay.date(from: date) ?? Date(timeIntervalSince1970: 0), usd: round2(abs(amount))))
+        }
+        return (eatOut.sorted { $0.at < $1.at }, discretionary)
     }
 
     static func snapshot(ledger: MercuryLedger, day: String, settings: MercurySettings, now: Date) -> MercuryDayReading {
@@ -527,6 +553,16 @@ enum MercuryClient {
         if classify(grocery, overrides: [:]) != "necessary" { errors.append("grocery should be necessary") }
         if classify(dinner, overrides: [:]) != "discretionary" { errors.append("restaurants should be discretionary") }
         if classify(dinner, overrides: ["Restaurants": "necessary"]) != "necessary" { errors.append("a category override should win") }
+        // The quest week (Monday 2026-09-28 on): eat-out charges by their card time, and all discretionary spend.
+        var delivery = txn("f", -30, "debitCardTransaction", "2026-10-02T03:00:00Z", "FoodDelivery")
+        delivery = .object((delivery.objectValue ?? [:]).merging(["createdAt": .string("2026-10-01T23:00:00Z")]) { $1 })
+        let shoes = txn("s", -60, "debitCardTransaction", "2026-09-29T20:00:00Z", "Clothing")
+        let lastWeek = txn("o", -25, "debitCardTransaction", "2026-09-26T20:00:00Z", "Restaurants")
+        let week = weekSpend([grocery, dinner, delivery, shoes, lastWeek], day: "2026-10-01", settings: MercurySettings())
+        if week.eatOut.map(\.usd) != [18, 30] || week.discretionary != 108
+            || week.eatOut.last?.at != OnDeviceTime.parse("2026-10-01T23:00:00Z") {
+            errors.append("the week should hold this week's eat-out charges by card time and $108 discretionary, got \(week)")
+        }
         let payroll = txn("p", 8000, "incomingDomesticWire", "2026-06-01T15:00:00Z", name: "Payroll")
         let transfer = txn("t", 500, "internalTransfer", "2026-06-02T15:00:00Z")
         let interest = txn("i", 3, "interestPayment", "2026-06-03T15:00:00Z")

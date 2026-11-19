@@ -140,6 +140,12 @@ struct SystemView: View {
                 }
             }
 
+            // The week's money, on the quest screen so it is seen every day: eating out and all discretionary spend.
+            if let week = store.snapshot.eatOutWeek {
+                MoneyRows(week: week)
+                    .padding(.top, 10)
+            }
+
             if !otherOptionalQuests.isEmpty {
                 VStack(spacing: 1) {
                     ForEach(otherOptionalQuests) { questRow($0) }
@@ -383,6 +389,58 @@ private enum GoalRow: Identifiable {
         case .quest(let quest): quest.id
         case .lifts: "gym_lifts"
         }
+    }
+}
+
+/// This week's eating out against its $40 cap, with a bar, and the week's discretionary spend against $280.
+/// Yellow from 75%, red from 100%. Over the eat-out cap, a penalty opens 8 hours after the charge that went over.
+private struct MoneyRows: View {
+    let week: EatOut.Week
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 11) {
+                Text("Eating out")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("[\(FinanceLevel.usd(week.spentUsd))/\(FinanceLevel.usd(week.capUsd))]")
+                    .monospacedDigit()
+                    .foregroundStyle(color(week.share))
+                    .shadow(color: color(week.share).opacity(0.6), radius: 5)
+            }
+            .font(.subheadline)
+            .foregroundStyle(QuestLight.ink)
+            .shadow(color: QuestLight.cyan.opacity(0.6), radius: 5)
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(QuestLight.ink.opacity(0.15))
+                    Capsule().fill(color(week.share)).frame(width: proxy.size.width * min(max(week.share, 0), 1))
+                        .shadow(color: color(week.share).opacity(0.7), radius: 4)
+                }
+            }
+            .frame(height: 5)
+            HStack(spacing: 14) {
+                if let spend = week.discretionaryUsd {
+                    let share = spend / MercuryClient.weeklySoftCapUsd
+                    Text("Spend this week \(FinanceLevel.usd(spend))/\(FinanceLevel.usd(MercuryClient.weeklySoftCapUsd))")
+                        .foregroundStyle(share >= 0.75 ? color(share) : QuestLight.ink.opacity(0.75))
+                }
+                if week.overAt != nil {
+                    Text("Over the cap: penalty")
+                        .foregroundStyle(QuestLight.penalty)
+                }
+                Spacer(minLength: 0)
+            }
+            .font(.caption.monospacedDigit())
+            .padding(.leading, 12)
+        }
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Eating out this week")
+        .accessibilityValue("\(FinanceLevel.usd(week.spentUsd)) of \(FinanceLevel.usd(week.capUsd))")
+    }
+
+    private func color(_ share: Double) -> Color {
+        share >= 1 ? QuestLight.penalty : share >= 0.75 ? Color.yellow : QuestLight.ink
     }
 }
 

@@ -155,6 +155,10 @@ nonisolated struct MercuryDayReading: Codable, Equatable {
     var underCap: Bool
     var settled: Bool
     var synced: Bool
+    /// Restaurants and FoodDelivery charges of the quest week (Monday on) that holds `dayKey`. Nil on an old save.
+    var eatOutWeek: [EatOutCharge]? = nil
+    /// Discretionary spend of the same quest week, eat-out included.
+    var weekDiscretionaryUsd: Double? = nil
 
     static func disconnected(dayKey: String, reason: String) -> MercuryDayReading {
         MercuryDayReading(
@@ -176,8 +180,18 @@ nonisolated struct MercuryDayReading: Codable, Equatable {
     }
 }
 
+/// One eat-out charge: its Mercury day, the time of the charge, and its dollars.
+nonisolated struct EatOutCharge: Codable, Equatable {
+    var dayKey: String
+    var at: Date
+    var usd: Double
+}
+
 /// Stored finance summary. The radar FIN number is quest XP plus a small projection, not a balance.
 struct FinanceSnapshot: Codable, Equatable {
+    /// The eat-out charges and the discretionary spend of the quest week, for the Money row and the eat-out cap.
+    var eatOutWeek: [EatOutCharge]? = nil
+    var weekDiscretionaryUsd: Double? = nil
     var dayKey: String
     var discretionarySpendUsd: Double
     var necessarySpendUsd: Double

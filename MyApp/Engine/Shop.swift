@@ -26,13 +26,20 @@ enum Gold {
 }
 
 /// One potion per stat that has a forced daily quest. INT has none: reading is never forced.
+/// Rule skips are extra items: each one skips one always-on rule for one day (see `isRuleSkip`).
 /// You buy a potion at the moment you drink it. A day that uses any potion pays no gold.
+/// Every item has a 36-hour cooldown.
 enum Potion: String, Codable, CaseIterable, Equatable {
     case gildedIndulgence, nightfall, idleHours, ironblood, secondWind, quicksilver
+    /// Today's eat-out charges do not count toward the weekly eat-out cap.
+    case banquetSeal
+
+    /// A rule skip, not the stat's potion: it clears no quest.
+    var isRuleSkip: Bool { self == .banquetSeal }
 
     var stat: Stat {
         switch self {
-        case .gildedIndulgence: .FIN
+        case .gildedIndulgence, .banquetSeal: .FIN
         case .nightfall: .REC
         case .idleHours: .FOC
         case .ironblood: .STR
@@ -42,7 +49,7 @@ enum Potion: String, Codable, CaseIterable, Equatable {
     }
 
     init?(stat: Stat) {
-        guard let potion = Potion.allCases.first(where: { $0.stat == stat }) else { return nil }
+        guard let potion = Potion.allCases.first(where: { $0.stat == stat && !$0.isRuleSkip }) else { return nil }
         self = potion
     }
 
@@ -54,6 +61,7 @@ enum Potion: String, Codable, CaseIterable, Equatable {
         case .ironblood: "Ironblood Draught"
         case .secondWind: "Second Wind Tonic"
         case .quicksilver: "Quicksilver Vial"
+        case .banquetSeal: "Banquet Seal"
         }
     }
 
@@ -66,6 +74,7 @@ enum Potion: String, Codable, CaseIterable, Equatable {
         case .ironblood: "Skips today's lifts."
         case .secondWind: "Skips today's run."
         case .quicksilver: "Skips today's stretch."
+        case .banquetSeal: "Today's eat-out charges do not count toward the \(FinanceLevel.usd(MercuryClient.eatOutWeeklyCapUsd)) weekly cap."
         }
     }
 
@@ -77,17 +86,13 @@ enum Potion: String, Codable, CaseIterable, Equatable {
         case .idleHours: 6_000
         case .ironblood, .secondWind: 3_600
         case .quicksilver: 1_200
+        // About half of a perfect week's gold (7 × 1,200).
+        case .banquetSeal: 4_200
         }
     }
 
-    /// Days after a use before this potion can be used again. Nil means no limit.
-    var cooldownDays: Int? {
-        switch self {
-        case .gildedIndulgence: 30
-        case .nightfall, .idleHours: 14
-        case .ironblood, .secondWind, .quicksilver: nil
-        }
-    }
+    /// Time after a use before the same item can be used again. The same for every item.
+    static let cooldown: TimeInterval = 36 * 60 * 60
 
     /// These potions clear the stat's open daily quests, so they need one. FIN has no daily quest.
     var needsQuest: Bool { self == .ironblood || self == .secondWind || self == .quicksilver }
@@ -101,6 +106,10 @@ enum Potion: String, Codable, CaseIterable, Equatable {
 struct PotionUse: Codable, Equatable {
     var dayKey: String
     var potion: Potion
+    /// When it was used. Nil on a save from before the 36-hour cooldown: the start of its quest day counts.
+    var usedAt: Date? = nil
+
+    var time: Date? { usedAt ?? QuestDay.start(of: dayKey) }
 }
 
 /// Days and dollars that potions remove from the FOC, REC, and FIN scores.
@@ -166,20 +175,19 @@ extension GameSnapshot {
         return Int((price / 10).rounded()) * 10
     }
 
-    /// Open daily quests the potion would clear today.
+    /// Open daily quests the potion would clear today. A rule skip clears none.
     func potionTargets(_ potion: Potion) -> [Quest] {
-        guard bundle.mode != .fullRecovery else { return [] }
+        guard bundle.mode != .fullRecovery, !potion.isRuleSkip else { return [] }
         // The 10K that "No gym today" added stands for the lifts. The run potion skips the day's run, not that one.
         return bundle.quests.filter { $0.kind == .daily && $0.stat == potion.stat && $0.status != .completed && !$0.isNoGymRun }
     }
 
     /// Why the potion cannot be used now, or nil when it can.
-    func potionBlocker(_ potion: Potion) -> String? {
+    func potionBlocker(_ potion: Potion, now: Date = .now) -> String? {
         if player.penaltyOpen { return "The shop is closed during a penalty." }
         if potionUsedToday { return "One potion per day. You already used one today." }
-        if let cooldown = potion.cooldownDays, let last = uses(of: potion, sinceDaysAgo: cooldown).last {
-            let ready = QuestDay.key(byAddingDays: cooldown, to: last.dayKey)
-            return "\(potion.name) is on cooldown until \(ready)."
+        if let ready = potionReady(potion), ready > now {
+            return "\(potion.name) is on cooldown until \(ready.formatted(date: .abbreviated, time: .shortened))."
         }
         let targets = potionTargets(potion)
         if potion.needsQuest && targets.isEmpty {
@@ -194,9 +202,14 @@ extension GameSnapshot {
         return nil
     }
 
+    /// When the item's 36-hour cooldown ends, or nil when it was never used.
+    func potionReady(_ potion: Potion) -> Date? {
+        potionLog.filter { $0.potion == potion }.compactMap(\.time).max().map { $0.addingTimeInterval(Potion.cooldown) }
+    }
+
     /// Buys and drinks one potion. Clears the stat's open quests and records the excuse.
-    mutating func usePotion(_ potion: Potion) -> String {
-        if let blocker = potionBlocker(potion) { return blocker }
+    mutating func usePotion(_ potion: Potion, now: Date = .now) -> String {
+        if let blocker = potionBlocker(potion, now: now) { return blocker }
         let price = potionPrice(potion)
         gold -= price
         for quest in potionTargets(potion) {
@@ -207,7 +220,7 @@ extension GameSnapshot {
             bundle.quests[index] = row
             runningTimers.removeAll { $0.questId == quest.id }
         }
-        potionLog.append(PotionUse(dayKey: bundle.dayKey, potion: potion))
+        potionLog.append(PotionUse(dayKey: bundle.dayKey, potion: potion, usedAt: now))
         // One use per day at most, so 400 entries cover more than a year of excuses.
         potionLog = Array(potionLog.suffix(400))
         return "\(potion.name) used for \(price) gold. Today pays no gold. \(gold) gold left."
@@ -226,7 +239,7 @@ extension GameSnapshot {
             case .gildedIndulgence:
                 let month = String(use.dayKey.prefix(7))
                 excuses.spendUsdByMonth[month, default: 0] += Potion.indulgenceUsd
-            case .ironblood, .secondWind, .quicksilver:
+            case .ironblood, .secondWind, .quicksilver, .banquetSeal:
                 break
             }
         }
@@ -240,7 +253,7 @@ enum ShopRules {
         if Gold.perfectDayRange.lowerBound * 10 < Gold.fullRecoveryPrice {
             errors.append("10 perfect days must always afford one Full Recovery")
         }
-        if Potion(stat: .INT) != nil || Potion.allCases.count != Stat.allCases.count - 1 {
+        if Potion(stat: .INT) != nil || Potion.allCases.filter({ !$0.isRuleSkip }).count != Stat.allCases.count - 1 {
             errors.append("every stat except INT needs exactly one potion")
         }
 
@@ -332,15 +345,28 @@ enum ShopRules {
         // Cooldowns, the penalty lock, and stat excuses.
         var excuse = GameSnapshot.fresh(catalog: catalog, now: dayOne)
         excuse.gold = 100_000
-        _ = excuse.usePotion(.nightfall)
+        _ = excuse.usePotion(.nightfall, now: dayOne)
         let excuses = excuse.potionExcuses
         if !excuses.recoveryDayKeys.contains(dayKey) || !excuses.recoveryDayKeys.contains(QuestDay.key(byAddingDays: 1, to: dayKey)) {
             errors.append("Insomniac's Elixir should excuse the night and the next morning from REC")
         }
         finishRequired(&excuse, now: dayOne)
         excuse.refreshIfNeeded(catalog: catalog, now: dayTwo)
-        if excuse.potionBlocker(.nightfall)?.contains("cooldown") != true {
-            errors.append("Insomniac's Elixir should be on a 14-day cooldown, got \(String(describing: excuse.potionBlocker(.nightfall)))")
+        // Every item has a 36-hour cooldown: blocked a day later, free again after 36 hours.
+        if excuse.potionBlocker(.nightfall, now: dayTwo)?.contains("cooldown") != true
+            || excuse.potionBlocker(.nightfall, now: dayOne.addingTimeInterval(Potion.cooldown + 60)) != nil {
+            errors.append("Insomniac's Elixir should be on a 36-hour cooldown, got \(String(describing: excuse.potionBlocker(.nightfall, now: dayTwo)))")
+        }
+        // A use saved before the cooldown time was kept counts from the start of its quest day.
+        var old = excuse
+        old.potionLog = [PotionUse(dayKey: dayKey, potion: .ironblood)]
+        if old.potionReady(.ironblood) != QuestDay.start(of: dayKey)?.addingTimeInterval(Potion.cooldown) {
+            errors.append("an old potion use should count from the start of its day")
+        }
+        // The eat-out skip is a rule skip: FIN, 4,200 gold, and it clears no quest.
+        if Potion.banquetSeal.basePrice != 4_200 || !Potion.banquetSeal.isRuleSkip || !excuse.potionTargets(.banquetSeal).isEmpty
+            || Potion(stat: .FIN) != .gildedIndulgence {
+            errors.append("Banquet Seal should be a 4,200 gold FIN rule skip that clears no quest")
         }
         excuse.player.penaltyOpen = true
         if excuse.potionBlocker(.gildedIndulgence)?.contains("penalty") != true || !excuse.buyFullRecovery().contains("penalty") {

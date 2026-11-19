@@ -94,7 +94,7 @@ final class GameStore: ObservableObject {
             + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check()
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
             + MonthlyQuests.check() + EndedDayRules.check() + WorkoutClaimRules.check() + RebuiltRowRules.check() + PlanAndLockRules.check()
-            + HevyRoutine.check()
+            + HevyRoutine.check() + HabitRules.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         // The write to Hevy is checked with replies made in the check: it calls no server.
         Task { @MainActor in
@@ -272,7 +272,7 @@ final class GameStore: ObservableObject {
     func usePotion(_ potion: Potion, now: Date = .now) {
         guard !startedNewDay(now: now) else { return }
         var next = snapshot
-        let message = next.usePotion(potion)
+        let message = next.usePotion(potion, now: now)
         let drunk = next.potionLog.count > snapshot.potionLog.count
         snapshot = next
         verificationNote = message
@@ -710,16 +710,20 @@ final class GameStore: ObservableObject {
             self.statInputs = (remote.codeforces, remote.monkeytype, remote.financeMonths, bodyMass, focusDays, self.statInputs?.inputs ?? StatInputs())
             self.recomputeStatLevels(now: now)
             next.applyMonthlyPenalty(board: self.monthlyBoard, catalog: self.catalog, now: now)
+            let eatOutPenalty = next.applyEatOutCap(catalog: self.catalog, now: now)
             // After today's readiness, so a red recovery hits HP and sets the regeneration speed.
             next.applyHitPoints(integrations: day, maxHP: HitPoints.maxHP(for: self.statLevels), now: now)
             // After today's screen time too, so only the new minutes add fatigue.
             next.applyFatigue(integrations: day, now: now)
             self.snapshot = next
             self.sendScreenTimeAlerts()
+            if self.persistence == .standard, let week = next.eatOutWeek { EatOutAlerts.update(week: week) }
             self.integrations = day
             self.integrationsDayKey = dayKey
             if settled.liftedPenalty {
                 self.verificationNote = "The last quest day was completed. The penalty is lifted."
+            } else if eatOutPenalty {
+                self.verificationNote = "Eating out went over \(FinanceLevel.usd(EatOut.capUsd)) this week. A penalty is open."
             } else if settled.openedPenalty {
                 self.verificationNote = "The Macs' screen time put the last quest day over the limit. A penalty is open."
             }

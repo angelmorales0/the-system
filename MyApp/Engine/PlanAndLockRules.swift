@@ -781,12 +781,12 @@ enum PlanAndLockRules {
             errors.append("a stand-in should count for the lift, but not when it has its own row today")
         }
 
-        // The repeat price holds on the first day a 30-day potion is free again.
+        // The repeat price holds 30 days later, when the 36-hour cooldown is long over.
         var shop = GameSnapshot.fresh(catalog: catalog, now: morning)
         shop.gold = 1_000_000
-        _ = shop.usePotion(.gildedIndulgence)
+        _ = shop.usePotion(.gildedIndulgence, now: morning)
         shop.bundle.dayKey = QuestDay.key(byAddingDays: Potion.repeatWindowDays, to: shop.bundle.dayKey)
-        if shop.potionBlocker(.gildedIndulgence) != nil || shop.potionPrice(.gildedIndulgence) != Potion.gildedIndulgence.basePrice * 3 / 2 {
+        if shop.potionBlocker(.gildedIndulgence, now: morning.addingTimeInterval(Double(Potion.repeatWindowDays) * 86_400)) != nil || shop.potionPrice(.gildedIndulgence) != Potion.gildedIndulgence.basePrice * 3 / 2 {
             errors.append("a second Gilded Indulgence on the first free day should cost 150%, got \(shop.potionPrice(.gildedIndulgence))")
         }
 

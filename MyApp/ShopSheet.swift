@@ -148,7 +148,9 @@ struct ShopSheet: View {
         case .fullRecovery:
             ""
         case .potion(let potion):
-            if potion.needsQuest {
+            if potion.isRuleSkip {
+                "\(potion.details) Today pays no gold. Cooldown: 36 hours."
+            } else if potion.needsQuest {
                 "It clears today's \(potion.stat.rawValue) quests. Today pays no gold."
             } else {
                 "It skips no quest. The excuse applies to the \(potion.stat.rawValue) score. Today pays no gold."
