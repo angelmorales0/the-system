@@ -218,8 +218,6 @@ struct StatTargets: Codable, Equatable {
         goals["Resting heart rate"] = "\(Int(RecoveryLevel.restingHrMin))–\(Int(RecoveryLevel.restingHrBand.target)) bpm average"
         goals["Circadian rhythm"] = "Sleep times drift \(Int(RecoveryLevel.circadianBand.target)) min or less"
 
-        goals["Savings rate"] = "Save \(Int(FinanceLevel.savingsBand.target * 100))% of post-tax income"
-        goals["Budget adherence"] = "$0 over budget"
         goals["Monthly income"] = "$\(Int(FinanceLevel.incomeBand.target).formatted()) post-tax a month"
         return goals
     }()
@@ -245,14 +243,8 @@ struct StatTargets: Codable, Equatable {
             }
         }
 
-        // Removing a target scales the rest back to 100 in the same ratio (FIN 60/30/10 → 66.7/33.3).
+        // Removing every target of a stat leaves it at level 0.
         let finance = FinanceLevel.evaluate(months: [])
-        let scaled = finance.removing(["Monthly income"])
-        if scaled.requirements.map(\.category) != ["Savings rate", "Budget adherence"]
-            || abs(scaled.requirements.reduce(0, { $0 + $1.weight }) - 100) > 0.001
-            || abs((scaled.requirements.first?.weight ?? 0) - 200.0 / 3) > 0.001 {
-            errors.append("removing Monthly income should leave 66.7/33.3, got \(scaled.requirements.map(\.weight))")
-        }
         if finance.removing(Set(finance.requirements.map(\.category))).level != 0 {
             errors.append("a stat with every target removed should be level 0")
         }

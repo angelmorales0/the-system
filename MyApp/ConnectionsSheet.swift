@@ -200,7 +200,7 @@ struct ConnectionDetailView: View {
     }
 }
 
-/// Settings that only one service has: OAuth sign-in, Mercury budget, Claude model.
+/// Settings that only one service has: OAuth sign-in, Mercury settings, Claude model.
 struct ConnectionExtras: View {
     let connection: Connection
     let refresh: Int
@@ -280,18 +280,15 @@ struct OAuthSignIn: View {
     }
 }
 
-/// Mercury budget, tax reserve, settle hour, income filter, and category map. The backend read these from its environment.
-/// The budget is set once and then locked for 3 months, so it cannot be moved to fit a bad month.
+/// Mercury tax reserve, settle hour, income filter, and category map. The backend read these from its environment.
+/// The FIN level has no budget target, so the budget is no longer set here.
 struct MercurySettingsView: View {
     @State private var settings = MercurySettings.load()
-    @State private var budget = ""
-    @State private var confirmBudget = false
     @State private var categories = MercurySettings.load().categoryText
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             QuestSectionTitle(text: "FIN settings")
-            budgetRow
             Stepper("Tax reserve: \(Int((settings.taxReserveRate * 100).rounded()))%", value: $settings.taxReserveRate, in: 0...0.6, step: 0.05)
             Stepper("Day settles at \(settings.settleHour):00 (Los Angeles)", value: $settings.settleHour, in: 0...23)
             TextField("Income counterparty regex (empty = all)", text: $settings.incomeCounterpartyRegex)
@@ -308,42 +305,6 @@ struct MercurySettingsView: View {
         }
         .onChange(of: settings) { _, _ in save() }
         .onChange(of: categories) { _, _ in save() }
-        .confirmationDialog("Set the monthly budget to \(Self.usd(Double(budget.trimmingCharacters(in: .whitespaces)) ?? 0))?",
-                            isPresented: $confirmBudget, titleVisibility: .visible) {
-            Button("Set budget for 3 months") { setBudget() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("It cannot be changed until \(Self.day(Calendar.current.date(byAdding: .month, value: MercurySettings.budgetLockMonths, to: .now) ?? .now)).")
-        }
-    }
-
-    @ViewBuilder
-    private var budgetRow: some View {
-        if let amount = settings.budget, let unlock = settings.budgetUnlockDate(), !settings.canSetBudget() {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Monthly budget: \(Self.usd(amount))")
-                Text("Locked until \(Self.day(unlock)).")
-                    .font(.footnote)
-                    .foregroundStyle(SystemTheme.muted)
-            }
-            .accessibilityElement(children: .combine)
-        } else {
-            HStack(spacing: 10) {
-                TextField(settings.budget.map { "Monthly budget: \(Self.usd($0))" } ?? "Monthly budget (USD)", text: $budget)
-                    .keyboardType(.decimalPad)
-                Button("Set") { confirmBudget = true }
-                    .disabled((Double(budget.trimmingCharacters(in: .whitespaces)) ?? 0) <= 0)
-            }
-        }
-    }
-
-    private func setBudget() {
-        guard let amount = Double(budget.trimmingCharacters(in: .whitespaces)) else { return }
-        var next = settings
-        guard next.setBudget(amount) else { return }
-        settings = next
-        budget = ""
-        save()
     }
 
     private func save() {
@@ -352,13 +313,6 @@ struct MercurySettingsView: View {
         next.save()
     }
 
-    private static func usd(_ amount: Double) -> String {
-        "$" + (Int(amount.rounded())).formatted()
-    }
-
-    private static func day(_ date: Date) -> String {
-        date.formatted(date: .abbreviated, time: .omitted)
-    }
 }
 
 /// The model that plans the quests. Empty uses the default.

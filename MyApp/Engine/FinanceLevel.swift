@@ -23,91 +23,32 @@ nonisolated struct FinanceMonth: Codable, Equatable {
     /// The part of the spending that paid a credit card bill. Mercury does not see the purchases on the card.
     var cardBillUsd: Double? = nil
     /// True when the month ended after the last good Mercury sync, so its last days are missing.
-    /// The FIN level still reads it, as before. The monthly budget quest waits for a full read.
+    /// The FIN level still reads it, as before.
     var missingLastDays: Bool? = nil
 }
 
-/// Deterministic FIN (finance) level 0...350.
+/// Deterministic FIN (finance) level 0...350. One target: post-tax income in the newest complete month.
+/// Budget adherence and the savings rate were removed on 2026-11-18. `FinanceMonth` still decodes their inputs.
 /// Pure: the same months always give the same report. No network and no clock.
 enum FinanceLevel {
-    // Floors are the level 0 limits; targets are the max level rules.
-    static let savingsBand = StatLevel.Band(floor: 0, target: 0.30)       // share of post-tax income
+    // The floor is the level 0 limit; the target is the max level rule.
     static let incomeBand = StatLevel.Band(floor: 0, target: 25_000)      // USD per month, post-tax
-    /// Dollars over budget at level 0, as a share of the budget. The target is $0 over.
-    static let budgetFloorShare = 0.5
-    /// Rounding slack for "$0 over": half a cent.
-    static let budgetTolerance = 0.005
 
     enum Weight {
-        static let savings = 60.0
-        static let budget = 30.0
-        static let income = 10.0
+        static let income = 100.0
     }
 
     /// Scores the newest complete month. A month in progress does not count.
     static func evaluate(months: [FinanceMonth]) -> StatLevelReport {
         guard let month = months.filter(\.complete).max(by: { $0.month < $1.month }) else {
-            let none = "no complete month yet"
             return StatLevelReport(stat: .FIN, requirements: [
-                StatRequirement(category: "Savings rate", passed: false, progress: 0, weight: Weight.savings, detail: none, hasData: false),
-                StatRequirement(category: "Budget adherence", passed: false, progress: 0, weight: Weight.budget, detail: none, hasData: false),
-                StatRequirement(category: "Monthly income", passed: false, progress: 0, weight: Weight.income, detail: none, hasData: false),
+                StatRequirement(category: "Monthly income", passed: false, progress: 0, weight: Weight.income, detail: "no complete month yet", hasData: false),
             ])
         }
-        return StatLevelReport(stat: .FIN, requirements: [
-            savingsRate(month),
-            budgetAdherence(month),
-            monthlyIncome(month),
-        ])
+        return StatLevelReport(stat: .FIN, requirements: [monthlyIncome(month)])
     }
 
     // MARK: - Requirements
-
-    /// (income − spending) / income. Negative clamps to 0. No income gives 0.
-    static func rate(_ month: FinanceMonth) -> Double {
-        guard month.postTaxIncomeUsd > 0 else { return 0 }
-        return max((month.postTaxIncomeUsd - month.spendingUsd) / month.postTaxIncomeUsd, 0)
-    }
-
-    /// Strict rule: the month saved 30% or more of post-tax income.
-    private static func savingsRate(_ month: FinanceMonth) -> StatRequirement {
-        let value = rate(month)
-        let saved = month.postTaxIncomeUsd - month.spendingUsd
-        let detail: String
-        if month.postTaxIncomeUsd <= 0 {
-            detail = "no income in \(month.month) (\(usd(month.spendingUsd)) spent)"
-        } else if saved < 0 {
-            detail = "spent \(usd(-saved)) more than \(usd(month.postTaxIncomeUsd)) income in \(month.month)"
-        } else {
-            detail = "saved \(percent(value)) (\(usd(saved)) of \(usd(month.postTaxIncomeUsd))) in \(month.month)"
-        }
-        return StatRequirement(
-            category: "Savings rate",
-            passed: value >= savingsBand.target,
-            progress: savingsBand.progress(value),
-            weight: Weight.savings,
-            detail: detail
-        )
-    }
-
-    /// Strict rule: $0 over `MONTHLY_BUDGET_USD`. Without a budget there is nothing to score, so the rule counts as 0.
-    private static func budgetAdherence(_ month: FinanceMonth) -> StatRequirement {
-        guard let budget = month.budgetUsd, budget > 0 else {
-            return StatRequirement(category: "Budget adherence", passed: false, progress: 0, weight: Weight.budget, detail: "budget not set (MONTHLY_BUDGET_USD)", hasData: false)
-        }
-        let over = max(0, month.spendingUsd - budget)
-        let band = StatLevel.Band(floor: budgetFloorShare * budget, target: 0)
-        let detail = over <= budgetTolerance
-            ? "\(usd(month.spendingUsd)) of \(usd(budget)) budget in \(month.month)"
-            : "\(usd(over)) over \(usd(budget)) budget in \(month.month)"
-        return StatRequirement(
-            category: "Budget adherence",
-            passed: over <= budgetTolerance,
-            progress: band.progress(over),
-            weight: Weight.budget,
-            detail: detail
-        )
-    }
 
     /// Strict rule: $25,000 or more post-tax income in the month.
     private static func monthlyIncome(_ month: FinanceMonth) -> StatRequirement {
@@ -143,135 +84,46 @@ enum FinanceLevel {
 
     // MARK: - Self-check (runs in DEBUG at launch)
 
-    /// A complete month that meets every the max level requirement: 34% saved, $500 under budget, $25,000 income.
+    /// A complete month that meets the max level rule: $25,000 post-tax income, high spending.
     static func perfectMonth() -> FinanceMonth {
-        FinanceMonth(month: "2026-09", postTaxIncomeUsd: 25_000, spendingUsd: 16_500, budgetUsd: 17_000, complete: true)
-    }
-
-    /// A complete month at every level 0 floor: no income, spending 50% over budget.
-    static func floorMonth() -> FinanceMonth {
-        FinanceMonth(month: "2026-09", postTaxIncomeUsd: 0, spendingUsd: 3_000, budgetUsd: 2_000, complete: true)
+        FinanceMonth(month: "2026-09", postTaxIncomeUsd: 25_000, spendingUsd: 30_000, budgetUsd: 1_000, complete: true)
     }
 
     static func check() -> [String] {
         var errors: [String] = []
-        let perfect = perfectMonth()
-        let report = evaluate(months: [perfect])
-        if !report.isMaxLevel {
-            errors.append("perfect month should reach the max level, failing: " + report.failing.map { "\($0.category): \($0.detail)" }.joined(separator: " | "))
+        let report = evaluate(months: [perfectMonth()])
+        if report.requirements.map(\.category) != ["Monthly income"] || report.requirements.map(\.weight) != [100] {
+            errors.append("FIN should have Monthly income only at 100, got \(report.requirements.map(\.category))")
         }
-        if report.requirements.count != 3 {
-            errors.append("FIN should have 3 requirements, got \(report.requirements.count)")
-        }
-        let weights = report.requirements.map(\.weight)
-        if weights != [60, 30, 10] {
-            errors.append("weights should be 60/30/10, got \(weights)")
-        }
-        if report.level != StatLevel.maxLevel || abs(report.score - 100) > 0.001 || report.stat != .FIN {
-            errors.append("perfect month should score 100 and the max level, got \(report.score) level \(report.level)")
-        }
-        let savedDetail = report.requirements.first?.detail
-        if savedDetail != "saved 34% ($8,500 of $25,000) in 2026-09" {
-            errors.append("savings detail wrong: \(String(describing: savedDetail))")
+        if !report.isMaxLevel || report.level != StatLevel.maxLevel || abs(report.score - 100) > 0.001 || report.stat != .FIN {
+            errors.append("$25,000 income should reach the max level whatever the spending, got \(report.score) level \(report.level)")
         }
 
         let empty = evaluate(months: [])
-        if empty.isMaxLevel || empty.level != 0 || empty.score != 0 || !empty.requirements.allSatisfy({ $0.detail == "no complete month yet" }) {
-            errors.append("no months must be level 0 with \"no complete month yet\", got level \(empty.level) score \(empty.score)")
+        if empty.level != 0 || empty.requirements.first?.detail != "no complete month yet" {
+            errors.append("no months must be level 0 with \"no complete month yet\", got level \(empty.level)")
         }
 
-        let floorReport = evaluate(months: [floorMonth()])
-        if floorReport.level != 0 || floorReport.score > 0.001 {
-            errors.append("floor month should be level 0, got level \(floorReport.level) score \(floorReport.score): " + floorReport.requirements.map { "\($0.category) \($0.points)" }.joined(separator: ", "))
+        // $24,999 fails the strict rule and caps one under the max. Half the target is half the score.
+        var nearly = perfectMonth()
+        nearly.postTaxIncomeUsd = 24_999
+        if evaluate(months: [nearly]).level != StatLevel.maxLevel - 1 {
+            errors.append("$24,999 should cap one under the max level, got \(evaluate(months: [nearly]).level)")
+        }
+        var half = perfectMonth()
+        half.postTaxIncomeUsd = 12_500
+        if abs(evaluate(months: [half]).score - 50) > 0.001 {
+            errors.append("$12,500 should score 50, got \(evaluate(months: [half]).score)")
         }
 
-        @discardableResult
-        func failsOnly(_ category: String, _ edit: (inout FinanceMonth) -> Void, line: Int = #line) -> StatLevelReport {
-            var month = perfect
-            edit(&month)
-            let edited = evaluate(months: [month])
-            let failing = edited.failing.map(\.category)
-            if failing != [category] {
-                errors.append("line \(line): expected only \(category) to fail, got \(failing)")
-            }
-            if edited.level >= StatLevel.maxLevel {
-                errors.append("line \(line): a failing \(category) must stay under the max level, got \(edited.level)")
-            }
-            if edited.topGains(1).first?.category != category {
-                errors.append("line \(line): \(category) should be the top gain, got \(edited.topGains(1).map(\.category))")
-            }
-            return edited
-        }
-
-        // Each requirement at its floor alone. Budget stays met by raising the budget with spending.
-        let noSavings = failsOnly("Savings rate") { $0.spendingUsd = 25_000; $0.budgetUsd = 25_000 }
-        let overBudget = failsOnly("Budget adherence") { $0.budgetUsd = 11_000 }   // $5,500 over = 50% of budget
-        let lowIncome = failsOnly("Monthly income") { $0.postTaxIncomeUsd = 0.01; $0.spendingUsd = 0 }
-        if !(noSavings.level < overBudget.level && overBudget.level < lowIncome.level) {
-            errors.append("savings failing alone should cost the most levels, then budget, then income: \(noSavings.level) \(overBudget.level) \(lowIncome.level)")
-        }
-
-        // 29.9% saved misses 30%: strict rule fails and the level caps one under the max.
-        let nearly = failsOnly("Savings rate") { $0.spendingUsd = 17_525; $0.budgetUsd = 18_000 }
-        if nearly.level != StatLevel.maxLevel - 1 || nearly.requirements[0].detail.hasPrefix("saved 29.9%") != true {
-            errors.append("29.9% saved should cap at one under the max level and read 29.9%, got level \(nearly.level) \(nearly.requirements[0].detail)")
-        }
-        // Exactly 30% passes.
-        var exact = perfect
-        exact.spendingUsd = 17_500
-        exact.budgetUsd = 17_500
-        if !evaluate(months: [exact]).isMaxLevel {
-            errors.append("exactly 30% saved and $0 over should pass")
-        }
-
-        // $420 over a $6,000 budget: progress is 1 − 420 / 3,000.
-        let over = failsOnly("Budget adherence") { $0.spendingUsd = 6_420; $0.budgetUsd = 6_000 }
-        let overRow = over.requirements[1]
-        if abs(overRow.progress - (1 - 420.0 / 3_000)) > 0.0001 || overRow.detail != "$420 over $6,000 budget in 2026-09" {
-            errors.append("$420 over $6,000 should give progress 0.86, got \(overRow)")
-        }
-
-        // No MONTHLY_BUDGET_USD: the budget rule has no data. It counts as 0 at its 30% weight and the TODO detail stays,
-        // so a perfect month without a budget stops at 70% of the max.
-        var noBudgetMonth = perfect
-        noBudgetMonth.budgetUsd = nil
-        let noBudget = evaluate(months: [noBudgetMonth])
-        let budgetRow = noBudget.requirements[1]
-        if budgetRow.hasData || budgetRow.progress != 0 || budgetRow.detail != "budget not set (MONTHLY_BUDGET_USD)" {
-            errors.append("a missing budget should have no data and read \"budget not set (MONTHLY_BUDGET_USD)\", got \(budgetRow)")
-        }
-        errors += StatLevelReport.zeroCheck(noBudget, noData: ["Budget adherence"], "without a budget")
-        var noBudgetWeak = noBudgetMonth
-        noBudgetWeak.spendingUsd = 25_000
-        if evaluate(months: [noBudgetWeak]).level != 35 {
-            errors.append("no savings and no budget should be income alone: 10 points = level 35, got \(evaluate(months: [noBudgetWeak]).level)")
-        }
-
-        // $24,999 income fails.
-        failsOnly("Monthly income") { $0.postTaxIncomeUsd = 24_999; $0.spendingUsd = 16_000 }
-
-        // The month in progress never counts, even when it is newer and better.
-        let inProgress = FinanceMonth(month: "2026-10", postTaxIncomeUsd: 30_000, spendingUsd: 1_000, budgetUsd: 17_000, complete: false)
-        let weak = FinanceMonth(month: "2026-09", postTaxIncomeUsd: 10_000, spendingUsd: 9_000, budgetUsd: 8_000, complete: true)
-        let ignored = evaluate(months: [inProgress, weak])
-        if ignored.isMaxLevel || ignored.failing.count != 3 {
-            errors.append("the month in progress should not score, got failing \(ignored.failing.map(\.category))")
-        }
+        // The month in progress never counts; the newest complete month wins, whatever the array order.
+        let inProgress = FinanceMonth(month: "2026-10", postTaxIncomeUsd: 30_000, spendingUsd: 1_000, budgetUsd: nil, complete: false)
+        let older = FinanceMonth(month: "2026-08", postTaxIncomeUsd: 1_000, spendingUsd: 0, budgetUsd: nil, complete: true)
         if !evaluate(months: [inProgress]).requirements.allSatisfy({ $0.detail == "no complete month yet" }) {
             errors.append("only a month in progress should read \"no complete month yet\"")
         }
-
-        // The newest complete month wins over an older one, whatever the array order.
-        let older = FinanceMonth(month: "2026-08", postTaxIncomeUsd: 25_000, spendingUsd: 10_000, budgetUsd: 17_000, complete: true)
-        if evaluate(months: [weak, older]).isMaxLevel || !evaluate(months: [older, perfect]).isMaxLevel || !evaluate(months: [perfect, older]).isMaxLevel {
-            errors.append("the newest complete month should be scored, not an older one")
-        }
-
-        // Overspending clamps to 0, never negative.
-        var overspent = perfect
-        overspent.spendingUsd = 30_000
-        if rate(overspent) != 0 || evaluate(months: [overspent]).requirements[0].progress != 0 {
-            errors.append("spending over income should clamp the savings rate to 0")
+        if !evaluate(months: [older, perfectMonth(), inProgress]).isMaxLevel || evaluate(months: [inProgress, older]).isMaxLevel {
+            errors.append("the newest complete month should be scored")
         }
 
         // The phone decodes the backend JSON; extra keys are ignored.
