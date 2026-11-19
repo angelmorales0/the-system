@@ -10,8 +10,8 @@ import UserNotifications
 /// Only the combined total can fail it. A sub-cap over its limit only turns its line red.
 /// Phone minutes that overlap Mac minutes count once. Until the Macs report their minutes, the full
 /// possible overlap is taken out, so the total is never inflated (see `ScreenTimeDay.sharedMinutes`).
-/// At 500 minutes the row turns yellow. Past the 30-minute grace (over 530) the quest fails,
-/// the day misses its required set, and a penalty opens at the day's end.
+/// At 500 minutes the row turns yellow. Past the 30-minute grace (over 530) the row fails and turns red.
+/// A failed row opens no penalty (removed on 2026-11-18): it only shows the miss.
 enum ScreenTime {
     static let questId = "daily_screen_time"
     static let title = "Screen Time"
@@ -480,10 +480,10 @@ enum ScreenTimeRules {
         if !snapshot.screenTimeToday.atCap || snapshot.bundle.quests.first(where: { $0.id == ScreenTime.questId })?.status != .pending {
             errors.append("530 minutes should be yellow and still pending")
         }
-        // One more minute of phone: 531 fails the quest and opens a penalty at the day's end.
+        // One more minute of phone: 531 fails the row (red), but it does not miss the required set.
         snapshot.applyScreenTime(phoneMinutes: 51, workMinutes: nil)
-        if snapshot.screenTimeToday.atCap || snapshot.bundle.quests.first(where: { $0.id == ScreenTime.questId })?.status != .failed || !snapshot.missesRequiredSet {
-            errors.append("531 minutes should fail the quest and miss the required set")
+        if snapshot.screenTimeToday.atCap || snapshot.bundle.quests.first(where: { $0.id == ScreenTime.questId })?.status != .failed || snapshot.missesRequiredSet {
+            errors.append("531 minutes should fail the row without missing the required set")
         }
         // A lower reading later does not undo it.
         snapshot.applyScreenTime(phoneMinutes: 10, workMinutes: 10)
@@ -491,8 +491,9 @@ enum ScreenTimeRules {
             errors.append("a lower reading must not lower the count or clear the failure")
         }
         snapshot.refreshIfNeeded(catalog: catalog, now: now.addingTimeInterval(86_400))
-        if !snapshot.player.penaltyOpen || snapshot.screenTimeToday.totalMinutes != 0 {
-            errors.append("a failed Screen Time day should open a penalty and start the next day at 0, got penalty \(snapshot.player.penaltyOpen)")
+        if snapshot.player.penaltyOpen || snapshot.screenTimeToday.totalMinutes != 0
+            || snapshot.questHistory.first?.quests.first(where: { $0.title == ScreenTime.title })?.status != .failed {
+            errors.append("a failed Screen Time day should stay red in the record, open no penalty, and start the next day at 0, got penalty \(snapshot.player.penaltyOpen)")
         }
 
         // 7 h + 1.5 h is 510, inside the grace: both lines stay normal and the row is yellow.
