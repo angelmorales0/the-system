@@ -15,11 +15,19 @@ struct HabitState: Codable, Equatable {
     var morningUnlockedDayKey: String?
     /// The wake time WHOOP gave for a quest day, kept so the lock knows its start without a new read.
     var wokeAt: [String: Date] = [:]
+    /// The contracts the player signed, oldest first. A contract stays until its end date and after, as a record.
+    var contracts: [Contract] = []
+    /// Body weight in lb by quest day (the newest weigh-in of the day), for the weight contract.
+    var weights: [String: Double] = [:]
+    /// Full Recovery tokens a broken contract took while the bank was empty: the next tokens earned go to it.
+    var tokenDebt = 0
+    /// Rest days a broken contract took, by quest week (its Monday).
+    var restDaysForfeited: [String: Int] = [:]
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case eatOutPenaltyWeeks, beliefs, morningUnlockedDayKey, wokeAt
+        case eatOutPenaltyWeeks, beliefs, morningUnlockedDayKey, wokeAt, contracts, weights, tokenDebt, restDaysForfeited
     }
 
     init(from decoder: Decoder) throws {
@@ -28,6 +36,10 @@ struct HabitState: Codable, Equatable {
         beliefs = try container.decodeIfPresent([String].self, forKey: .beliefs) ?? Beliefs.defaults
         morningUnlockedDayKey = try container.decodeIfPresent(String.self, forKey: .morningUnlockedDayKey)
         wokeAt = try container.decodeIfPresent([String: Date].self, forKey: .wokeAt) ?? [:]
+        contracts = try container.decodeIfPresent([Contract].self, forKey: .contracts) ?? []
+        weights = try container.decodeIfPresent([String: Double].self, forKey: .weights) ?? [:]
+        tokenDebt = try container.decodeIfPresent(Int.self, forKey: .tokenDebt) ?? 0
+        restDaysForfeited = try container.decodeIfPresent([String: Int].self, forKey: .restDaysForfeited) ?? [:]
     }
 }
 
@@ -89,6 +101,169 @@ extension GameSnapshot {
         guard MorningLock.unlockingWorkout(integrations, after: after) != nil else { return false }
         habits.morningUnlockedDayKey = today
         return true
+    }
+}
+
+// MARK: - Contracts
+
+/// A promise the player signs on purpose: an action rule, checked each quest week until an end date the player picks.
+/// It cannot be changed or cancelled before the end date. Each broken week costs the same stake:
+/// 1 Full Recovery token and 1 rest day. With no token in the bank, the next token earned is taken.
+/// With no rest day left this week, next week has one fewer.
+struct Contract: Codable, Equatable, Identifiable {
+    enum Kind: String, Codable, CaseIterable, Identifiable {
+        /// Body weight on or under a straight line from the start weight to the target on the end date.
+        case bodyWeight
+        var id: String { rawValue }
+        var label: String { "Body weight" }
+    }
+
+    /// One judged week.
+    struct Check: Codable, Equatable {
+        /// The last quest day of the period: a Sunday, or the end date.
+        var endDayKey: String
+        /// The line on that day, in lb.
+        var lineLb: Double
+        /// The average of the period's weigh-ins. Nil when there was none.
+        var averageLb: Double?
+        var kept: Bool
+    }
+
+    var id: String
+    var kind: Kind
+    var startDayKey: String
+    var endDayKey: String
+    var startLb: Double
+    var targetLb: Double
+    var signedAt: Date
+    var checks: [Check] = []
+
+    var title: String {
+        "Reach \(Contract.number(targetLb)) lb by \(Contract.dateText(endDayKey))"
+    }
+
+    /// The rule in words, for the sign screen and the record.
+    var terms: String {
+        let side = targetLb > startLb ? "on or over" : "on or under"
+        let from = startLb > 0 ? "\(Contract.number(startLb)) lb" : "your start weight"
+        return "Each week, from \(Contract.dateText(startDayKey)) to \(Contract.dateText(endDayKey)), your average weigh-in must be \(side) "
+            + "a straight line from \(from) to \(Contract.number(targetLb)) lb. A week with no weigh-in is broken. "
+            + "Weigh-ins come from Apple Health."
+    }
+
+    static let stake = "Each broken week costs 1 Full Recovery token and 1 rest day. With no token, the next one you earn is taken. "
+        + "With no rest day left this week, next week has one fewer."
+
+    func isActive(on dayKey: String) -> Bool { startDayKey <= dayKey && dayKey <= endDayKey }
+
+    /// The line on a day: a straight line from the start weight on the start day to the target on the end day.
+    func lineLb(on dayKey: String) -> Double {
+        guard let start = QuestDay.date(from: startDayKey), let end = QuestDay.date(from: endDayKey), let day = QuestDay.date(from: dayKey),
+              end > start else { return targetLb }
+        let share = min(max(day.timeIntervalSince(start) / end.timeIntervalSince(start), 0), 1)
+        return startLb + (targetLb - startLb) * share
+    }
+
+    /// The periods to judge: each quest week (Monday to Sunday) from the start day, the last one cut at the end date.
+    var periods: [(start: String, end: String)] {
+        var result: [(String, String)] = []
+        var start = startDayKey
+        while start <= endDayKey {
+            let sunday = QuestDay.key(byAddingDays: 6, to: RestDays.weekKey(of: start))
+            let end = min(sunday, endDayKey)
+            result.append((start, end))
+            start = QuestDay.key(byAddingDays: 1, to: end)
+        }
+        return result
+    }
+
+    /// Why the contract cannot be signed, or nil.
+    var problem: String? {
+        if !(50...500).contains(startLb) || !(50...500).contains(targetLb) { return "Type weights from 50 to 500 lb." }
+        if abs(startLb - targetLb) < 0.5 { return "The target must differ from the start weight." }
+        if endDayKey <= QuestDay.key(byAddingDays: 6, to: startDayKey) { return "Pick an end date at least a week away." }
+        return nil
+    }
+
+    static func number(_ value: Double) -> String {
+        value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
+    }
+
+    static func dateText(_ dayKey: String) -> String {
+        QuestDay.date(from: dayKey)?.formatted(date: .abbreviated, time: .omitted) ?? dayKey
+    }
+}
+
+extension GameSnapshot {
+    /// Rest days the player can still spend in the week, after the ones a broken contract took.
+    func restDaysForfeited(on dayKey: String) -> Int {
+        habits.restDaysForfeited[RestDays.weekKey(of: dayKey)] ?? 0
+    }
+
+    /// Signs a contract. It starts today. Returns why it was refused, or nil when it was signed.
+    mutating func signContract(_ draft: Contract, now: Date) -> String? {
+        var contract = draft
+        contract.startDayKey = bundle.dayKey
+        contract.signedAt = now
+        contract.checks = []
+        if let problem = contract.problem { return problem }
+        if habits.contracts.contains(where: { $0.kind == contract.kind && $0.isActive(on: bundle.dayKey) }) {
+            return "A \(contract.kind.label.lowercased()) contract is already active. It ends on \(Contract.dateText(habits.contracts.last { $0.kind == contract.kind }?.endDayKey ?? ""))."
+        }
+        habits.contracts.append(contract)
+        return nil
+    }
+
+    /// Saves the newest weigh-in of each quest day.
+    mutating func recordWeights(_ readings: [BodyMassReading]) {
+        for reading in readings.sorted(by: { $0.date < $1.date }) where reading.kg > 0 {
+            habits.weights[QuestDay.key(for: reading.date)] = (reading.pounds * 10).rounded() / 10
+        }
+        let oldest = QuestDay.key(byAddingDays: -400, to: bundle.dayKey)
+        habits.weights = habits.weights.filter { $0.key >= oldest }
+    }
+
+    /// Judges each period that has ended and takes the stake for each broken one. Returns the number broken now.
+    @discardableResult
+    mutating func judgeContracts(now: Date) -> Int {
+        let today = QuestDay.key(for: now)
+        var broken = 0
+        for index in habits.contracts.indices {
+            let contract = habits.contracts[index]
+            for period in contract.periods where period.end < today && !contract.checks.contains(where: { $0.endDayKey == period.end }) {
+                let weighIns = habits.weights.filter { $0.key >= period.start && $0.key <= period.end }.map(\.value)
+                let average = weighIns.isEmpty ? nil : weighIns.reduce(0, +) / Double(weighIns.count)
+                let line = contract.lineLb(on: period.end)
+                let losing = contract.targetLb < contract.startLb
+                let kept = average.map { losing ? $0 <= line + 0.05 : $0 >= line - 0.05 } ?? false
+                habits.contracts[index].checks.append(Contract.Check(endDayKey: period.end, lineLb: (line * 10).rounded() / 10,
+                                                                     averageLb: average.map { ($0 * 10).rounded() / 10 }, kept: kept))
+                if !kept {
+                    broken += 1
+                    takeStake(today: today)
+                }
+            }
+        }
+        payTokenDebt()
+        return broken
+    }
+
+    /// 1 Full Recovery token (or a debt on the next one) and 1 rest day (this week's, else next week's).
+    private mutating func takeStake(today: String) {
+        habits.tokenDebt += 1
+        let week = RestDays.weekKey(of: today)
+        let left = max(RestDays.allowance(on: today) - restDaysUsed(on: today) - restDaysForfeited(on: today), 0)
+        let target = left > 0 ? week : QuestDay.key(byAddingDays: 7, to: week)
+        habits.restDaysForfeited[target, default: 0] += 1
+        habits.restDaysForfeited = habits.restDaysForfeited.filter { $0.key >= QuestDay.key(byAddingDays: -21, to: week) }
+    }
+
+    /// Takes owed tokens from the bank, as soon as there are any.
+    mutating func payTokenDebt() {
+        while habits.tokenDebt > 0, player.fullRecoveryBank > 0 {
+            player.fullRecoveryBank -= 1
+            habits.tokenDebt -= 1
+        }
     }
 }
 
@@ -297,6 +472,46 @@ enum HabitRules {
         var rest = GameSnapshot.fresh(catalog: catalog, now: monday)
         rest.restDayKeys = [rest.bundle.dayKey]
         if rest.morningLockOn(now: seven) { errors.append("a rest day should have no morning lock") }
+
+        // Contracts: weekly periods to the end date, a straight line, and the stake for a broken week.
+        var signer = GameSnapshot.fresh(catalog: catalog, now: monday)
+        let today = signer.bundle.dayKey
+        var draft = Contract(id: "c1", kind: .bodyWeight, startDayKey: "", endDayKey: QuestDay.key(byAddingDays: 20, to: today),
+                             startLb: 155, targetLb: 145, signedAt: monday)
+        if signer.signContract(draft, now: monday) != nil || signer.signContract(draft, now: monday) == nil {
+            errors.append("a contract should sign once, and a second weight contract should be refused while the first is active")
+        }
+        let signed = signer.habits.contracts[0]
+        if signed.periods.count != 3 || signed.periods.first?.end != QuestDay.key(byAddingDays: 6, to: RestDays.weekKey(of: today))
+            || abs(signed.lineLb(on: signed.endDayKey) - 145) > 0.001 || abs(signed.lineLb(on: today) - 155) > 0.001 {
+            errors.append("a 21-day contract from a Monday should have 3 weekly periods and a line from 155 to 145, got \(signed.periods)")
+        }
+        draft.startDayKey = today
+        draft.endDayKey = QuestDay.key(byAddingDays: 3, to: today)
+        if draft.problem == nil { errors.append("a contract shorter than a week should be refused") }
+        // Week 1: weigh-ins under the line keep it. Week 2: no weigh-in breaks it and takes the stake.
+        signer.player.fullRecoveryBank = 0
+        let line = signed.lineLb(on: signed.periods[0].end)
+        signer.habits.weights = [today: line - 1]
+        let weekTwo = (QuestDay.start(of: QuestDay.key(byAddingDays: 7, to: today)) ?? monday).addingTimeInterval(3600)
+        let firstBroken = signer.judgeContracts(now: weekTwo)
+        if firstBroken != 0 || signer.habits.contracts[0].checks.first?.kept != true {
+            errors.append("a week under the line should be kept, got \(signer.habits.contracts[0].checks)")
+        }
+        let weekThree = (QuestDay.start(of: QuestDay.key(byAddingDays: 14, to: today)) ?? monday).addingTimeInterval(3600)
+        signer.bundle.dayKey = QuestDay.key(for: weekThree)
+        if signer.judgeContracts(now: weekThree) != 1 || signer.habits.tokenDebt != 1
+            || signer.restDaysForfeited(on: QuestDay.key(for: weekThree)) != 1 || signer.judgeContracts(now: weekThree) != 0 {
+            errors.append("a week with no weigh-in should be broken once: a token owed and a rest day taken")
+        }
+        signer.player.depositRecoveryToken()
+        signer.payTokenDebt()
+        if signer.player.fullRecoveryBank != 0 || signer.habits.tokenDebt != 0 {
+            errors.append("the next token earned should pay the debt")
+        }
+        if signer.restDaysLeft(on: QuestDay.key(for: weekThree)) != RestDays.perWeek - 1 {
+            errors.append("a taken rest day should leave one fewer this week")
+        }
 
         // Beliefs: cleaned to 10 lines, and the days run through them in order.
         let lines = Beliefs.cleaned(["  I live below my means. ", "", String(repeating: "x", count: 200)] + Array(repeating: "Line", count: 12))

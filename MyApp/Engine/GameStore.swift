@@ -345,6 +345,20 @@ final class GameStore: ObservableObject {
         saveStatTargets(next)
     }
 
+    /// Signs a contract. Returns why it was refused, or nil when it was signed.
+    func signContract(_ draft: Contract, now: Date = .now) -> String? {
+        var next = snapshot
+        if let problem = next.signContract(draft, now: now) { return problem }
+        snapshot = next
+        persist()
+        return nil
+    }
+
+    /// The newest weigh-in, in lb, for the contract form.
+    var latestWeightLb: Double? {
+        statInputs?.bodyMass.map { ($0.pounds * 10).rounded() / 10 } ?? snapshot.habits.weights.max { $0.key < $1.key }?.value
+    }
+
     /// Saves the player's beliefs: trimmed, empty lines dropped, 10 at most.
     func setBeliefs(_ lines: [String]) {
         var next = snapshot
@@ -724,6 +738,13 @@ final class GameStore: ObservableObject {
             next.applyMonthlyPenalty(board: self.monthlyBoard, catalog: self.catalog, now: now)
             let eatOutPenalty = next.applyEatOutCap(catalog: self.catalog, now: now)
             let unlocked = next.checkMorningLock(integrations: day, wokeAt: remote.whoop.wokeAt)
+            // Weigh-ins: today's newest from Apple Health, and the daily ones of the last 30 days once they are loaded.
+            let dailyMass = (self.statInputs?.inputs.recoveryDays ?? []).compactMap { day -> BodyMassReading? in
+                guard let kg = day.bodyMassKg, let date = QuestDay.date(from: day.dayKey) else { return nil }
+                return BodyMassReading(kg: kg, date: date, source: "Apple Health")
+            }
+            next.recordWeights(dailyMass + (bodyMass.map { [$0] } ?? []))
+            let brokenContracts = next.judgeContracts(now: now)
             // After today's readiness, so a red recovery hits HP and sets the regeneration speed.
             next.applyHitPoints(integrations: day, maxHP: HitPoints.maxHP(for: self.statLevels), now: now)
             // After today's screen time too, so only the new minutes add fatigue.
@@ -735,6 +756,8 @@ final class GameStore: ObservableObject {
             self.integrationsDayKey = dayKey
             if settled.liftedPenalty {
                 self.verificationNote = "The last quest day was completed. The penalty is lifted."
+            } else if brokenContracts > 0 {
+                self.verificationNote = "A contract week was broken: 1 Full Recovery token and 1 rest day are taken."
             } else if unlocked {
                 self.verificationNote = "Morning workout found. Your apps are open."
             } else if eatOutPenalty {

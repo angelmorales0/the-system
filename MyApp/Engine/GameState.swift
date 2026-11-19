@@ -693,8 +693,9 @@ struct GameSnapshot: Codable, Equatable {
     }
 
     /// Rest days still open in the quest week that holds `dayKey`.
+    /// A broken contract takes rest days too (`restDaysForfeited`).
     func restDaysLeft(on dayKey: String) -> Int {
-        max(RestDays.allowance(on: dayKey) - restDaysUsed(on: dayKey), 0)
+        max(RestDays.allowance(on: dayKey) - restDaysUsed(on: dayKey) - restDaysForfeited(on: dayKey), 0)
     }
 
     /// Today is a free rest day, not a token day.
