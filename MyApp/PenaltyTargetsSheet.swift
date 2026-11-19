@@ -5,7 +5,7 @@ import FamilyControls
 #endif
 
 /// Additive sheet. The four swipe screens stay as they are.
-/// Two lists: the apps a penalty leaves open, and the apps a penalty hides.
+/// Three lists: the apps a penalty leaves open, the apps a penalty hides, and the apps the morning lock leaves open.
 struct PenaltyTargetsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: GameStore
@@ -13,6 +13,7 @@ struct PenaltyTargetsSheet: View {
     private enum List: String, CaseIterable, Identifiable {
         case allowed = "Allowed"
         case hidden = "Hidden"
+        case morning = "Morning"
         var id: String { rawValue }
     }
 
@@ -20,6 +21,7 @@ struct PenaltyTargetsSheet: View {
     #if os(iOS)
     @State private var allowed = PenaltySelectionStore.load(key: PenaltyGroup.allowedSelectionKey)
     @State private var hidden = PenaltySelectionStore.load(key: PenaltyGroup.hiddenSelectionKey, entireCategory: true)
+    @State private var morning = PenaltySelectionStore.load(key: PenaltyGroup.morningAllowedSelectionKey)
     #endif
     @State private var accessError: String?
 
@@ -33,6 +35,13 @@ struct PenaltyTargetsSheet: View {
                             ForEach(List.allCases) { Text($0.rawValue).tag($0) }
                         }
                         .pickerStyle(.segmented)
+                        if list == .morning {
+                            Text("Pick the apps that stay open during the morning lock: Hevy, Strava, Spotify, and The System. "
+                                 + "While this list is empty, the morning lock uses the Allowed list.")
+                                .font(.footnote)
+                                .foregroundStyle(SystemTheme.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         if let accessError {
                             Text(accessError)
                                 .font(.footnote)
@@ -47,6 +56,7 @@ struct PenaltyTargetsSheet: View {
                 switch list {
                 case .allowed: FamilyActivityPicker(selection: $allowed)
                 case .hidden: FamilyActivityPicker(selection: $hidden)
+                case .morning: FamilyActivityPicker(selection: $morning)
                 }
                 #else
                 Text("Family Controls runs on iPhone. The steps are in docs/PHASE7_DEVICE.md.")
@@ -75,6 +85,7 @@ struct PenaltyTargetsSheet: View {
         #if os(iOS)
         PenaltySelectionStore.save(allowed, key: PenaltyGroup.allowedSelectionKey)
         PenaltySelectionStore.save(hidden, key: PenaltyGroup.hiddenSelectionKey)
+        PenaltySelectionStore.save(morning, key: PenaltyGroup.morningAllowedSelectionKey)
         #endif
         // Also reapplies an open penalty, so new lists take effect at once.
         store.saveTargetSelections()

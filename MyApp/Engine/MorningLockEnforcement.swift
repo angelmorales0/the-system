@@ -6,7 +6,8 @@ import FamilyControls
 import ManagedSettings
 #endif
 
-/// The morning lock on the phone: its own shield store, next to the penalty's, with the same allowed apps.
+/// The morning lock on the phone: its own shield store, next to the penalty's, with its own allowed apps
+/// (the penalty's list while the morning list is empty).
 /// The monitor starts it at 7:00 each day, also when the app is closed, unless the app wrote that today has no lock
 /// (a rest day, or the workout is done). The app starts it earlier at an earlier wake time, and ends it.
 /// The monitor repeats these strings in `MorningLockMonitor`; change them together.
@@ -36,9 +37,15 @@ enum MorningLockEnforcement {
     }
 
     #if os(iOS)
-    /// Every app category except the allowed apps (the penalty's list), and every website.
+    /// The morning list, or the penalty's list while the morning list is empty.
+    static var allowedApps: Set<ApplicationToken> {
+        let morning = PenaltySelectionStore.load(key: PenaltyGroup.morningAllowedSelectionKey).applicationTokens
+        return morning.isEmpty ? PenaltySelectionStore.load(key: PenaltyGroup.allowedSelectionKey).applicationTokens : morning
+    }
+
+    /// Every app category except the allowed apps, and every website.
     private static func applyShields() {
-        let allowed = PenaltySelectionStore.load(key: PenaltyGroup.allowedSelectionKey).applicationTokens
+        let allowed = allowedApps
         let store = ManagedSettingsStore(named: .init(storeName))
         store.shield.applications = nil
         store.shield.webDomains = nil

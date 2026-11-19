@@ -16,6 +16,9 @@ enum PenaltyGroup {
     static let allowedSelectionKey = "penaltyAllowedSelection"
     /// Apps that leave the Home Screen during a penalty. Allowed apps are never hidden.
     static let hiddenSelectionKey = "penaltyHiddenSelection"
+    /// Apps that stay open during the morning lock: Hevy, Strava, Spotify, and The System, picked by the player.
+    /// While it is empty, the morning lock uses `allowedSelectionKey`.
+    static let morningAllowedSelectionKey = "morningAllowedSelection"
     /// The open penalty row with its progress, for the shield: "Penalty 10K [3.2/10km]".
     static let shieldLineKey = "penaltyShieldLine"
     static let startedAtKey = "penaltyStartedAt"

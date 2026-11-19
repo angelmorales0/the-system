@@ -140,16 +140,20 @@ enum MorningLockMonitor {
     static let activity = "morningLock"
     static let storeName = "morningLock"
     static let offDayKey = "morningLockOffDayKey"
+    static let morningAllowedSelectionKey = "morningAllowedSelection"
 
     nonisolated static func start(now: Date) {
         let defaults = UserDefaults(suiteName: PenaltyMonitorGroup.suiteName) ?? .standard
         let today = PenaltyMonitorShields.questDayKey(for: now)
         guard defaults.string(forKey: offDayKey) != today else { return }
-        var allowed = Set<ApplicationToken>()
-        if let data = defaults.data(forKey: PenaltyMonitorGroup.allowedSelectionKey),
-           let selection = try? PropertyListDecoder().decode(FamilyActivitySelection.self, from: data) {
-            allowed = selection.applicationTokens
+        // The morning list, or the penalty's list while the morning list is empty.
+        func tokens(_ key: String) -> Set<ApplicationToken> {
+            guard let data = defaults.data(forKey: key),
+                  let selection = try? PropertyListDecoder().decode(FamilyActivitySelection.self, from: data) else { return [] }
+            return selection.applicationTokens
         }
+        let morning = tokens(morningAllowedSelectionKey)
+        let allowed = morning.isEmpty ? tokens(PenaltyMonitorGroup.allowedSelectionKey) : morning
         let store = ManagedSettingsStore(named: .init(storeName))
         store.shield.applications = nil
         store.shield.webDomains = nil
