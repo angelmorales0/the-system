@@ -139,6 +139,11 @@
 			path = PenaltyActivity;
 			sourceTree = "<group>";
 		};
+		G70000000000000000000001 /* SharedWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SharedWidgets;
+			sourceTree = "<group>";
+		};
 		G60000000000000000000001 /* FocusTracker */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = FocusTracker;
@@ -189,6 +194,7 @@
 				G40000000000000000000001 /* PenaltyShieldAction */,
 				G50000000000000000000001 /* PenaltyActivity */,
 				G60000000000000000000001 /* FocusTracker */,
+				G70000000000000000000001 /* SharedWidgets */,
 				C00000000000000000000001 /* Config.xcconfig */,
 				C00000000000000000000002 /* MyApp-Info.plist */,
 				000000000000000000000020 /* Products */,
@@ -230,6 +236,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				000000000000000000000010 /* MyApp */,
+				G70000000000000000000001 /* SharedWidgets */,
 			);
 			name = MyApp;
 			productName = MyApp;
@@ -302,6 +309,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				G50000000000000000000001 /* PenaltyActivity */,
+				G70000000000000000000001 /* SharedWidgets */,
 			);
 			name = PenaltyActivity;
 			productName = PenaltyActivity;

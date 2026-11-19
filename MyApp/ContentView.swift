@@ -23,6 +23,10 @@ struct ContentView: View {
         .task { SystemSound.launch.play() }
         // The app starts active, so no phase change runs the connection check: run it once at launch.
         .task { store.checkConnections() }
+        #if DEBUG && os(iOS)
+        // Launch with WIDGET_GALLERY=1 to save every widget design as PNG pages in Documents.
+        .task { if ProcessInfo.processInfo.environment["WIDGET_GALLERY"] == "1" { WidgetGallery.export() } }
+        #endif
         #if DEBUG
         // A paged TabView ignores its first selection, so the start page is set once it is on screen.
         .task { selectedPage = Self.startPage }

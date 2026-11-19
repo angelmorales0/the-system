@@ -1324,6 +1324,7 @@ final class GameStore: ObservableObject {
         snapshot.saveToUserDefaults()
         dayClock.save()
         statHistory.save()
+        writeWidgetData()
     }
 
     private static func clockString(_ seconds: TimeInterval) -> String {
