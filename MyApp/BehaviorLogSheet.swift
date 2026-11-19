@@ -72,16 +72,16 @@ struct BehaviorLogSheet: View {
 }
 
 /// The habits as streaks: one row a habit, one dot a day for the last 28 days (today last), and the current streak.
-/// A hand-marked row (No eating out): tap a day to mark it passed (glowing white) or failed (red).
+/// Hand-marked rows (No eating out, No caffeine, Only whole foods): tap a day, then Pass (glowing white) or Fail (red).
 struct SystemsPanel: View {
     let tracks: [SystemsView.Track]
-    /// A day key and the pick: true passed, false failed, nil cleared.
-    var onMark: ((String, Bool?) -> Void)? = nil
-    @State private var picking: String?
+    /// Called with a hand habit, the day, and the pick: true passed, false failed.
+    var onMark: ((HandHabit, String, Bool) -> Void)? = nil
+    @State private var picking: (habit: HandHabit, day: String)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("The 1% steps of each day. Cyan: done. Red: missed. Dim: no rule or no data. Tap a day of No eating out to mark it.")
+            Text("The 1% steps of each day. Cyan: done. Red: missed. Dim: no rule or no data. On a row you mark by hand, tap a day for Pass or Fail. A day you do not mark fails.")
                 .font(.caption)
                 .foregroundStyle(QuestLight.ink.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)
@@ -97,8 +97,8 @@ struct SystemsPanel: View {
                     }
                     HStack(spacing: 3) {
                         ForEach(Array(track.marks.enumerated()), id: \.offset) { index, mark in
-                            if track.editable, onMark != nil, index < track.dayKeys.count {
-                                Button { picking = track.dayKeys[index] } label: {
+                            if let habit = track.handHabit, onMark != nil, index < track.dayKeys.count {
+                                Button { picking = (habit, track.dayKeys[index]) } label: {
                                     dot(mark, white: true)
                                         .frame(maxWidth: .infinity, minHeight: 28)
                                         .contentShape(Rectangle())
@@ -111,19 +111,18 @@ struct SystemsPanel: View {
                         }
                     }
                 }
-                .accessibilityElement(children: track.editable ? .contain : .ignore)
+                .accessibilityElement(children: track.handHabit != nil ? .contain : .ignore)
                 .accessibilityLabel(track.name)
                 .accessibilityValue("\(track.streak) day streak, \(track.marks.filter { $0 == .done }.count) of the last \(track.marks.count) days done")
             }
         }
         .foregroundStyle(QuestLight.ink)
-        .confirmationDialog(picking.map { "No eating out: \(Contract.dateText($0))" } ?? "",
+        .confirmationDialog(picking.map { "\($0.habit.name): \(Contract.dateText($0.day))" } ?? "",
                             isPresented: Binding(get: { picking != nil }, set: { if !$0 { picking = nil } }),
                             titleVisibility: .visible) {
-            if let day = picking {
-                Button("Pass") { onMark?(day, true) }
-                Button("Fail", role: .destructive) { onMark?(day, false) }
-                Button("Clear (use Mercury)") { onMark?(day, nil) }
+            if let picking {
+                Button("Pass") { onMark?(picking.habit, picking.day, true) }
+                Button("Fail", role: .destructive) { onMark?(picking.habit, picking.day, false) }
                 Button("Cancel", role: .cancel) {}
             }
         }

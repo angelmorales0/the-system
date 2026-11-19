@@ -360,21 +360,17 @@ final class GameStore: ObservableObject {
         persist()
     }
 
-    /// Marks a day of No eating out by hand: true passed, false failed, nil back to Mercury.
-    func setEatOutMark(_ dayKey: String, passed: Bool?) {
+    /// Marks a day of a hand habit (No eating out, No caffeine, Only whole foods): true passed, false failed.
+    func setHandMark(_ habit: HandHabit, _ dayKey: String, passed: Bool) {
         var next = snapshot
-        next.setEatOutMark(dayKey, passed: passed)
+        next.setHandMark(habit, dayKey, passed: passed)
         guard next != snapshot else { return }
         snapshot = next
         persist()
     }
 
-    /// The habit streaks for the systems view, with caffeine from Apple Health once it is loaded.
-    var systemsTracks: [SystemsView.Track] {
-        let caffeine = Dictionary((statInputs?.inputs.recoveryDays ?? []).compactMap { day in day.caffeineMg.map { (day.dayKey, $0) } },
-                                  uniquingKeysWith: { first, _ in first })
-        return SystemsView.tracks(snapshot, caffeine: caffeine)
-    }
+    /// The habit streaks for the systems view.
+    var systemsTracks: [SystemsView.Track] { SystemsView.tracks(snapshot) }
 
     /// Saves the phone's location as home. Home by 9 pm starts with the next day.
     func setHomeHere() {
