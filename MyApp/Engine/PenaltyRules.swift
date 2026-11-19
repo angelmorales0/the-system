@@ -1,7 +1,11 @@
 import Foundation
 
 enum PenaltyRules {
+    /// Written for the run penalty, so it holds the run for its own rows. `PenaltyQuests.check` covers the burpees.
     static func check() -> [String] {
+        let saved = PenaltyQuests.choiceOverride
+        PenaltyQuests.choiceOverride = .run
+        defer { PenaltyQuests.choiceOverride = saved }
         var errors: [String] = []
         guard let catalog = try? FallbackCatalog(data: Data(catalogJSON.utf8)),
               let dayOne = QuestDay.date(from: "2026-10-01"),
