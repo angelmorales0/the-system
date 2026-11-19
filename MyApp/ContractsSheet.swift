@@ -19,8 +19,7 @@ struct ContractsSheet: View {
     var body: some View {
         NavigationStack {
             QuestSheet(title: "Contracts") {
-                Text("A contract is a promise you sign on purpose. You cannot change or cancel it before its end date. "
-                     + Contract.rules)
+                Text(Contract.rules)
                     .font(.footnote)
                     .foregroundStyle(SystemTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)

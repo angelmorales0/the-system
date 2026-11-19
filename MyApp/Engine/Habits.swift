@@ -251,8 +251,7 @@ struct Contract: Codable, Equatable, Identifiable {
     }
 
     /// The general rule, for the contracts screen.
-    static let rules = "You pick the habit, the days a week, the end date, and the punishment. Each broken week, the app takes the punishment. "
-        + "With no token, the next one you earn is taken. With no rest day left this week, next week has one fewer."
+    static let rules = "A promise you cannot cancel. Each broken week, the app takes the punishment you picked."
 
     func isActive(on dayKey: String) -> Bool { startDayKey <= dayKey && dayKey <= endDayKey }
 
