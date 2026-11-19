@@ -24,7 +24,8 @@ struct EndedDay: Codable, Equatable {
     var screenTime: ScreenTimeDay?
     /// Gold the day was paid as it ended.
     var paidGold = 0
-    /// A missed month opened a penalty after this day ended. No late work on this day lifts that one.
+    /// A penalty that is not the day's (the eat-out cap) opened after this day ended. No late work on this day lifts it.
+    /// The saved name stays for old saves.
     var monthPenalty = false
 
     static let maxReads = 3
@@ -345,25 +346,6 @@ enum EndedDayRules {
         let macLate = both.settleEndedDay(integrations: data(strava: [run]), mac: LateMacRead(trackerSet: true, answered: true, workMinutes: 840), catalog: catalog, now: dayTwo)
         if !macLate.openedPenalty || !both.player.penaltyOpen || both.gold != 0 || PenaltyQuests.rows(in: both.bundle).filter({ $0.status != .completed }).count != 1 {
             errors.append("Mac minutes over the limit should fail a day that a late run completed, got \(macLate) gold \(both.gold)")
-        }
-
-        // A missed month opens its penalty while the day still waits. The day's late runs do not lift that one.
-        var month = GameSnapshot.fresh(catalog: catalog, now: dayOne)
-        month.player.penaltyOpen = true
-        month.rebuildBundle(catalog: catalog, now: dayOne)
-        month.applyScreenTime(phoneMinutes: 30, workMinutes: nil)
-        finish(&month) { $0.kind != .penalty && !TrainingDay.isRaceRun($0) && $0.id != ScreenTime.questId }
-        month.refreshIfNeeded(catalog: catalog, now: dayTwo)
-        _ = month.settleEndedDay(integrations: data(stravaUp: false), catalog: catalog, now: dayTwo)
-        let failedMonth = MonthlyQuestRow(id: MonthlyQuests.budgetId, title: "Monthly budget", progress: "[$1,300/$1,000]", status: .failed, share: 1)
-        month.applyMonthlyPenalty(board: MonthlyBoard(monthName: "October", rows: [], lastMonth: "2026-09", lastMonthName: "September", lastRows: [failedMonth]),
-                                  catalog: catalog, now: dayTwo)
-        if month.endedDay?.monthPenalty != true { errors.append("a missed month should mark the day that still waits") }
-        let secondRun = WorkoutEvent(source: "strava", externalId: "late-run-2", sport: "Run", start: dayOne.addingTimeInterval(30_000),
-                                     end: dayOne.addingTimeInterval(33_300), movingTimeSec: 3_300, distanceMeters: 10_020)
-        let afterMonth = month.settleEndedDay(integrations: data(strava: [run, secondRun]), catalog: catalog, now: dayTwo)
-        if afterMonth.liftedPenalty || !month.player.penaltyOpen || PenaltyQuests.rows(in: month.bundle).isEmpty {
-            errors.append("late runs should not lift a penalty that a missed month opened, got \(afterMonth)")
         }
 
         // A day with no Mac count and no tracker is not kept.

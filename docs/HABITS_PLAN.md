@@ -173,7 +173,7 @@ because a straight line to it gives a weekly action check.
 | Model | `StatRequirement`: an outcome with a floor and a target | Stays. New `Contract` next to it: action rule, period, source, stake, start and end date, and a record of each period (kept or broken) |
 | Checks | Each stat file scores outcomes (`IntelligenceLevel`, `StrengthLevel`, ...) | Stay. New: one contract check for each source, from the readings the app already loads |
 | Levels | Level = how close the outcomes are to the targets | No change |
-| Monthly quests | Codeforces "+X rating", finance goals | No change |
+| Monthly quests | Codeforces "+X rating", finance goals | Removed (2026-11-18) |
 | Targets page | Remove and add targets, custom STR goals | No change. New Contracts page with a "Create a contract" screen: pick the rule, enter its numbers (for 145 lb: start weight and end date), pick the end date, read the terms and the stake, and sign. Then see its record; renew it on the end date. No cancel during the term. |
 | Planner | Reads `goals.strength` gaps | Also reads the active contracts, and plans the day so you keep them |
 | Penalties | Daily quest penalty | Stays. A broken contract takes its own stake. |

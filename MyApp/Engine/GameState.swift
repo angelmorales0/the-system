@@ -25,8 +25,6 @@ struct GameSnapshot: Codable, Equatable {
     var readiness: ReadinessSnapshot?
     /// Mercury aggregates for the quest day. Not a dollar balance.
     var finance: FinanceSnapshot?
-    /// The newest month whose monthly quests were judged, "YYYY-MM". Each month opens at most one penalty.
-    var monthlyPenaltyMonth: String?
     /// Titles from the previous quest day. Sent as summaries, never as evidence.
     var recentQuestTitles: [String] = []
     /// Past quest days as they ended, newest first, at most 30. The generator reads them.
@@ -915,7 +913,7 @@ extension GameSnapshot {
     private enum CodingKeys: String, CodingKey {
         case version, player, signals, bundle, evidenceLog, progressLog, penaltyStarts, runningTimers
         case recentQuestTitles, generationAttemptDayKey, generatedBundle, readiness
-        case finance, monthlyPenaltyMonth
+        case finance
         case fullRecoveryDayKey, queuedFullRecoveryDayKey
         case hiddenUnlocks
         case noGymDayKey, noGymPlanDayKey, plannerRestDayKey, plannerRestReason, restDayKeys
@@ -938,7 +936,6 @@ extension GameSnapshot {
         recentQuestTitles = try container.decodeIfPresent([String].self, forKey: .recentQuestTitles) ?? []
         readiness = try container.decodeIfPresent(ReadinessSnapshot.self, forKey: .readiness)
         finance = try container.decodeIfPresent(FinanceSnapshot.self, forKey: .finance)
-        monthlyPenaltyMonth = try container.decodeIfPresent(String.self, forKey: .monthlyPenaltyMonth)
         fullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .fullRecoveryDayKey)
         queuedFullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .queuedFullRecoveryDayKey)
         hiddenUnlocks = try container.decodeIfPresent(LossyArray<HiddenQuestUnlock>.self, forKey: .hiddenUnlocks)?.elements ?? []
@@ -974,7 +971,6 @@ extension GameSnapshot {
         try container.encode(recentQuestTitles, forKey: .recentQuestTitles)
         try container.encodeIfPresent(readiness, forKey: .readiness)
         try container.encodeIfPresent(finance, forKey: .finance)
-        try container.encodeIfPresent(monthlyPenaltyMonth, forKey: .monthlyPenaltyMonth)
         try container.encodeIfPresent(fullRecoveryDayKey, forKey: .fullRecoveryDayKey)
         try container.encodeIfPresent(queuedFullRecoveryDayKey, forKey: .queuedFullRecoveryDayKey)
         try container.encode(hiddenUnlocks, forKey: .hiddenUnlocks)

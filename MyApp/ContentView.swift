@@ -16,9 +16,6 @@ struct ContentView: View {
             StatusSheetView()
                 .environment(\.isPageVisible, selectedPage == 1)
                 .tag(1)
-            MonthlyQuestView()
-                .environment(\.isPageVisible, selectedPage == 2)
-                .tag(2)
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .ignoresSafeArea()
@@ -57,7 +54,7 @@ struct ContentView: View {
     private static var startPage: Int {
         #if DEBUG
         let page = UserDefaults.standard.integer(forKey: "startPage")
-        return (0...2).contains(page) ? page : 0
+        return (0...1).contains(page) ? page : 0
         #else
         return 0
         #endif

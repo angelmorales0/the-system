@@ -93,7 +93,7 @@ final class GameStore: ObservableObject {
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MonkeytypeClient.check() + MercuryClient.check()
             + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check()
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
-            + MonthlyQuests.check() + EndedDayRules.check() + WorkoutClaimRules.check() + RebuiltRowRules.check() + PlanAndLockRules.check()
+            + EndedDayRules.check() + WorkoutClaimRules.check() + RebuiltRowRules.check() + PlanAndLockRules.check()
             + HevyRoutine.check() + HabitRules.check()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         // The write to Hevy is checked with replies made in the check: it calls no server.
@@ -467,11 +467,6 @@ final class GameStore: ObservableObject {
 
     /// Before the first refresh there are no live inputs; the next refresh applies the new targets.
     /// `announce` plays the level-up cue when the STATUS level rises; an edit to the targets stays quiet.
-    /// This month's and last month's quests, from the latest Mercury and Codeforces readings.
-    var monthlyBoard: MonthlyBoard {
-        MonthlyQuests.board(codeforces: statInputs?.codeforces, typing: statInputs?.typing, financeMonths: statInputs?.financeMonths ?? [], excuses: snapshot.potionExcuses, now: .now)
-    }
-
     private func recomputeStatLevels(now: Date, announce: Bool = true) {
         guard let statInputs, statHistoriesLoaded else { return }
         let before = statLevels
@@ -790,7 +785,6 @@ final class GameStore: ObservableObject {
             // The stat levels first: max HP is built from them.
             self.statInputs = (remote.codeforces, remote.monkeytype, remote.financeMonths, bodyMass, focusDays, self.statInputs?.inputs ?? StatInputs())
             self.recomputeStatLevels(now: now)
-            next.applyMonthlyPenalty(board: self.monthlyBoard, catalog: self.catalog, now: now)
             let eatOutPenalty = next.applyEatOutCap(catalog: self.catalog, now: now)
             let unlocked = next.checkMorningLock(integrations: day, wokeAt: remote.whoop.wokeAt)
             // Weigh-ins: today's newest from Apple Health, and the daily ones of the last 30 days once they are loaded.
