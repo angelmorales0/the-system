@@ -101,6 +101,12 @@ struct OnDeviceQuestGenerateClient: QuestGenerating {
         let outcome = await QuestPlanner.claudeOrNone(full) { request, timeout in
             await QuestPlanner.callClaude(request, apiKey: key, timeout: timeout)
         }
+        // Claude's status for the connection warning: no answer is a failure, any answer is a working key.
+        if case .unreachable = outcome {
+            ConnectionStatusStore.record(.claude, ok: false, message: "Claude did not answer. Check the Anthropic key and its credit.")
+        } else {
+            ConnectionStatusStore.record(.claude, ok: true)
+        }
         let raw: JSONValue
         switch outcome {
         case .accepted(let plan):

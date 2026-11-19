@@ -40,6 +40,7 @@ struct SystemView: View {
         .sheet(isPresented: $showLog, onDismiss: { SystemSound.systemClose.play() }) {
             BehaviorLogSheet()
         }
+
         .sheet(isPresented: $editingSplit, onDismiss: { SystemSound.systemClose.play() }) {
             NavigationStack { SplitEditorSheet(dayId: GymSplit.day(named: store.bundle.headerLine)?.id) }
         }
@@ -48,6 +49,8 @@ struct SystemView: View {
     private var questContent: some View {
         VStack(spacing: 0) {
             QuestInfoHeader()
+            ConnectionBanner()
+                .padding(.top, 14)
             Spacer(minLength: 28)
             Text("[Daily Quest: \(store.bundle.headerLine)\nhas arrived.]")
                 .font(.system(.subheadline, design: .default).weight(.regular))

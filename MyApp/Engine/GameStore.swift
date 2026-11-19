@@ -1,5 +1,10 @@
 import Combine
 import SwiftUI
+#if os(iOS)
+import CoreLocation
+import FamilyControls
+import UserNotifications
+#endif
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -30,6 +35,10 @@ final class GameStore: ObservableObject {
     }
     private static let dayCueKey = "dayCueDayKey"
     @Published private(set) var verificationNote: String?
+    /// Connections that stopped working, for the warning on the quest screen.
+    @Published private(set) var connectionProblems: [ConnectionProblem] = []
+    /// The Mac tracker's last status, kept between checks that do not read the Mac.
+    private var lastMacStatus: MacTrackerStatus?
     /// What the last write of the day's routine to Hevy did, with the quest day it was for. Nil before any write.
     @Published private var hevyRoutineResult: (dayKey: String, note: String)? = {
         guard let note = UserDefaults.standard.string(forKey: GameStore.hevyRoutineNoteKey),
@@ -91,7 +100,7 @@ final class GameStore: ObservableObject {
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check() + MacScreenClient.check()
             + HiddenQuestRules.check() + RecoveryHolidayRules.check() + ShopRules.check()
             + DailyStretch.check() + StretchSplit.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
-            + NoGymDayRules.check() + PenaltyDecay.check() + RestRules.check() + RestScore.check() + SecretStore.check() + SecretSeed.check() + ConnectionStatusStore.check()
+            + NoGymDayRules.check() + PenaltyDecay.check() + RestRules.check() + RestScore.check() + SecretStore.check() + SecretSeed.check() + ConnectionStatusStore.check() + ConnectionAlerts.check()
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MonkeytypeClient.check() + MercuryClient.check()
             + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check()
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
@@ -324,8 +333,33 @@ final class GameStore: ObservableObject {
 
     /// After the owner saves or removes a key in Status → Connections: read the services again.
     func connectionsChanged() {
+        checkConnections()
         allowGenerationAfterNewKey(now: .now)
         refreshIntegrations(now: .now)
+    }
+
+    /// Updates the connection warning, and notifies once for each new problem.
+    func checkConnections() {
+        guard persistence == .standard else { return }
+        var health: [Connection: ConnectionHealth] = [:]
+        for connection in Connection.allCases { health[connection] = ConnectionStatusStore.health(connection) }
+        var screenTimeApproved: Bool?
+        var locationAlways: Bool?
+        #if os(iOS)
+        screenTimeApproved = AuthorizationCenter.shared.authorizationStatus == .approved
+        if snapshot.habits.homeSet { locationAlways = CLLocationManager().authorizationStatus == .authorizedAlways }
+        #endif
+        let problems = ConnectionAlerts.problems(health: health, mac: lastMacStatus, screenTimeApproved: screenTimeApproved,
+                                                 locationAlways: locationAlways)
+        connectionProblems = problems
+        #if os(iOS)
+        for problem in ConnectionAlerts.newProblems(problems) {
+            let content = UNMutableNotificationContent()
+            content.title = problem.title.uppercased()
+            content.body = problem.detail + " Open The System to fix it."
+            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "connection-\(problem.id)", content: content, trigger: nil))
+        }
+        #endif
     }
 
     /// A Claude key saved after this morning's offline plan: plan today again, if nothing is done yet.
@@ -856,6 +890,8 @@ final class GameStore: ObservableObject {
             if rebuilt {
                 self.runningTimersRemoveMissing()
             }
+            self.lastMacStatus = MacTrackerStatus.make(settings: .load(), reading: macScreen, dayKey: dayKey, dayStart: QuestDay.start(of: dayKey), now: now)
+            self.checkConnections()
             self.evaluateConnectedVerifiers(now: now)
             // After today's readiness, sleep, and weight are in, so the generator plans from today's data.
             self.requestGenerationIfNeeded(now: now)

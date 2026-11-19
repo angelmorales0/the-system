@@ -21,6 +21,8 @@ struct ContentView: View {
         .ignoresSafeArea()
         // Once per launch. An open penalty's own cue, a major one, cuts this short.
         .task { SystemSound.launch.play() }
+        // The app starts active, so no phase change runs the connection check: run it once at launch.
+        .task { store.checkConnections() }
         #if DEBUG
         // A paged TabView ignores its first selection, so the start page is set once it is on screen.
         .task { selectedPage = Self.startPage }
@@ -34,12 +36,22 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
+        // A broken Strava or Hevy cannot check the penalty: the warning stays on top of the penalty screen.
+        .overlay(alignment: .top) {
+            if store.openPenaltyQuest != nil {
+                ConnectionBanner()
+                    .padding(.horizontal, 24)
+                    .padding(.top, 8)
+            }
+        }
         .animation(.easeInOut(duration: 0.4), value: store.openPenaltyQuest?.id)
         .tint(SystemTheme.accent)
         .preferredColorScheme(.dark)
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 store.refreshForToday()
+                // At once, not after the data read: a key removed or access turned off shows right away.
+                store.checkConnections()
             }
         }
         .task(id: scenePhase) {
