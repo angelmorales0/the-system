@@ -27,6 +27,8 @@ struct BehaviorLogSheet: View {
                     .padding(8)
                     .overlay { Rectangle().stroke(QuestLight.ink.opacity(0.4), lineWidth: 0.8) }
                     .accessibilityLabel("Today's note")
+                    // Saved as you type, so the Log written row turns cyan at once.
+                    .onChange(of: text) { _, value in if loaded { store.setLogNote(value) } }
 
                 Button {
                     store.setLogNote(text)
@@ -72,7 +74,8 @@ struct BehaviorLogSheet: View {
 }
 
 /// The habits as streaks: one row a habit, one dot a day for the last 28 days (today last), and the current streak.
-/// Hand-marked rows (No eating out, No caffeine, Only whole foods): tap a day, then Pass (glowing white) or Fail (red).
+/// Hand-marked rows (No eating out, No caffeine, Only whole foods): tap a day, then Pass (glowing white) or Fail (red)
+/// in the bar that opens under the row. The day changes color at once.
 struct SystemsPanel: View {
     let tracks: [SystemsView.Track]
     /// Called with a hand habit, the day, and the pick: true passed, false failed.
@@ -94,8 +97,11 @@ struct SystemsPanel: View {
                     HStack(spacing: 3) {
                         ForEach(Array(track.marks.enumerated()), id: \.offset) { index, mark in
                             if let habit = track.handHabit, onMark != nil, index < track.dayKeys.count {
-                                Button { picking = (habit, track.dayKeys[index]) } label: {
+                                let day = track.dayKeys[index]
+                                let selected = picking?.habit == habit && picking?.day == day
+                                Button { picking = selected ? nil : (habit, day) } label: {
                                     dot(mark, white: true)
+                                        .overlay { if selected { RoundedRectangle(cornerRadius: 2).stroke(QuestLight.cyan, lineWidth: 1.5).padding(-2) } }
                                         .frame(maxWidth: .infinity, minHeight: 28)
                                         .contentShape(Rectangle())
                                 }
@@ -106,6 +112,9 @@ struct SystemsPanel: View {
                             }
                         }
                     }
+                    if let picking, picking.habit == track.handHabit {
+                        pickBar(picking)
+                    }
                 }
                 .accessibilityElement(children: track.handHabit != nil ? .contain : .ignore)
                 .accessibilityLabel(track.name)
@@ -113,16 +122,41 @@ struct SystemsPanel: View {
             }
         }
         .foregroundStyle(QuestLight.ink)
-        .confirmationDialog(picking.map { "\($0.habit.name): \(Contract.dateText($0.day))" } ?? "",
-                            isPresented: Binding(get: { picking != nil }, set: { if !$0 { picking = nil } }),
-                            titleVisibility: .visible) {
-            if let picking {
-                Button(picking.habit.choices.yes) { onMark?(picking.habit, picking.day, true) }
-                Button(picking.habit.choices.no, role: picking.habit.weeklyLimit == nil ? .destructive : nil) {
-                    onMark?(picking.habit, picking.day, false)
-                }
-                Button("Cancel", role: .cancel) {}
-            }
+    }
+
+    /// The day's two choices, under its row. A tap marks the day at once and closes the bar.
+    private func pickBar(_ picking: (habit: HandHabit, day: String)) -> some View {
+        HStack(spacing: 8) {
+            Text(Contract.dateText(picking.day))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(QuestLight.ink.opacity(0.75))
+            Spacer(minLength: 4)
+            choice(picking.habit.choices.yes, color: QuestLight.ink) { mark(picking, true) }
+            choice(picking.habit.choices.no, color: picking.habit.weeklyLimit == nil ? QuestLight.penalty : QuestLight.ink) { mark(picking, false) }
+        }
+    }
+
+    private func choice(_ title: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title.uppercased())
+                .font(.caption2.weight(.semibold))
+                .tracking(0.8)
+                .foregroundStyle(color)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 32)
+                .overlay { Rectangle().stroke(color.opacity(0.7), lineWidth: 0.8) }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Marks the day with no animation, so the color changes on the tap.
+    private func mark(_ picking: (habit: HandHabit, day: String), _ passed: Bool) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            onMark?(picking.habit, picking.day, passed)
+            self.picking = nil
         }
     }
 

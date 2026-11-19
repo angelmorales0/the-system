@@ -492,6 +492,9 @@ final class GameStore: ObservableObject {
     }
 
     /// The phone came home or left: judge the row again.
+    /// Judges Home by 9 pm now: at 9:00 pm while the app is open (the minute tick), and on every open after it.
+    func checkHomeBy(now: Date = .now) { homeEventArrived(now: now) }
+
     private func homeEventArrived(now: Date = .now) {
         guard !startedNewDay(now: now) else { return }
         var next = snapshot

@@ -59,12 +59,16 @@ struct ContentView: View {
                 store.refreshForToday()
                 // At once, not after the data read: a key removed or access turned off shows right away.
                 store.checkConnections()
+                // An open after 9:00 pm judges Home by 9 pm at once, before the data read.
+                store.checkHomeBy()
             }
         }
         .task(id: scenePhase) {
             while scenePhase == .active, !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 store.readPhoneMinutes()
+                // Home by 9 pm is judged within a minute of 9:00 pm while the app is open.
+                store.checkHomeBy()
             }
         }
     }
