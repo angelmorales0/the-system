@@ -81,7 +81,7 @@ struct SystemsPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("The 1% steps of each day. Cyan: done. Red: missed. Dim: no rule or no data. On a row you mark by hand, tap a day for Pass or Fail. A day you do not mark fails.")
+            Text("The 1% steps of each day. Cyan: done. Red: missed. Dim: no rule or no data. On a row you mark by hand, tap a day for Pass or Fail. A day you do not mark fails. Traveling: mark the days you travel; a third in a week fails.")
                 .font(.caption)
                 .foregroundStyle(QuestLight.ink.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)
@@ -91,9 +91,9 @@ struct SystemsPanel: View {
                         Text(track.name)
                             .font(.footnote.weight(.semibold))
                         Spacer()
-                        Text("\(track.streak) day\(track.streak == 1 ? "" : "s")")
+                        Text(track.summary ?? "\(track.streak) day\(track.streak == 1 ? "" : "s")")
                             .font(.footnote.monospacedDigit())
-                            .foregroundStyle(track.streak > 0 ? QuestLight.cyan : QuestLight.ink.opacity(0.6))
+                            .foregroundStyle(track.summary == nil && track.streak > 0 ? QuestLight.cyan : QuestLight.ink.opacity(0.6))
                     }
                     HStack(spacing: 3) {
                         ForEach(Array(track.marks.enumerated()), id: \.offset) { index, mark in
@@ -121,8 +121,10 @@ struct SystemsPanel: View {
                             isPresented: Binding(get: { picking != nil }, set: { if !$0 { picking = nil } }),
                             titleVisibility: .visible) {
             if let picking {
-                Button("Pass") { onMark?(picking.habit, picking.day, true) }
-                Button("Fail", role: .destructive) { onMark?(picking.habit, picking.day, false) }
+                Button(picking.habit.choices.yes) { onMark?(picking.habit, picking.day, true) }
+                Button(picking.habit.choices.no, role: picking.habit.weeklyLimit == nil ? .destructive : nil) {
+                    onMark?(picking.habit, picking.day, false)
+                }
                 Button("Cancel", role: .cancel) {}
             }
         }

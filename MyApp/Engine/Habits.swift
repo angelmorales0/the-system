@@ -37,6 +37,8 @@ struct HabitState: Codable, Equatable {
     var caffeineMarks: [String: Bool] = [:]
     /// Only whole foods, by quest day, the same way.
     var wholeFoodsMarks: [String: Bool] = [:]
+    /// Traveling to see friends, by quest day: true traveled, false stayed. 2 travel days a week are allowed.
+    var travelMarks: [String: Bool] = [:]
     /// Habits the player typed in for a contract. Each one is a Systems row, marked by hand like the others.
     var customHabits: [CustomHabit] = []
 
@@ -44,7 +46,7 @@ struct HabitState: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case eatOutPenaltyWeeks, beliefs, morningUnlockedDayKey, wokeAt, contracts, weights, tokenDebt, restDaysForfeited, homeSet, homeEvents
-        case morningDoneDays, log, eatOutMarks, caffeineMarks, wholeFoodsMarks, customHabits
+        case morningDoneDays, log, eatOutMarks, caffeineMarks, wholeFoodsMarks, travelMarks, customHabits
     }
 
     init(from decoder: Decoder) throws {
@@ -64,6 +66,7 @@ struct HabitState: Codable, Equatable {
         eatOutMarks = try container.decodeIfPresent([String: Bool].self, forKey: .eatOutMarks) ?? [:]
         caffeineMarks = try container.decodeIfPresent([String: Bool].self, forKey: .caffeineMarks) ?? [:]
         wholeFoodsMarks = try container.decodeIfPresent([String: Bool].self, forKey: .wholeFoodsMarks) ?? [:]
+        travelMarks = try container.decodeIfPresent([String: Bool].self, forKey: .travelMarks) ?? [:]
         customHabits = try container.decodeIfPresent([CustomHabit].self, forKey: .customHabits) ?? []
     }
 }
@@ -345,12 +348,13 @@ enum ContractHabits {
     static let homeBy = "homeBy"
     static let screenTime = "screenTime"
     static let log = "log"
+    static let stretching = "stretching"
     /// A new habit, typed in at signing. Signing turns it into a custom habit and a Systems row.
     static let new = "new"
 
     /// Key and name of each habit the player can pick, in Systems order, then "New habit".
     static func options(_ habits: HabitState) -> [(key: String, name: String)] {
-        [(homeBy, HomeBy.title), (screenTime, "Screen Time")] + habits.handHabits.map { ($0.id, $0.name) } + [(log, "Log written"), (new, "New habit…")]
+        [(homeBy, HomeBy.title), (screenTime, "Screen Time"), (stretching, DailyStretch.title)] + habits.handHabits.map { ($0.id, $0.name) } + [(log, "Log written"), (new, "New habit…")]
     }
 
     /// Where the day's pass comes from, in words.
@@ -359,6 +363,8 @@ enum ContractHabits {
         case homeBy: "The app checks it from your location at 9:00 pm. A day with no Home by 9 pm row fails."
         case screenTime: "The app checks it from the Screen Time row."
         case log: "A day passes when you write the log."
+        case stretching: "The app checks it from the Stretching row (Hevy)."
+        case HandHabit.travel.id: "Mark each day you travel on the Systems page. A third travel day in a week fails."
         default: "You mark each day Pass or Fail on the Systems page. A day you do not mark fails."
         }
     }
@@ -372,7 +378,11 @@ extension GameSnapshot {
         case ContractHabits.homeBy: return rows.contains { $0.method == .homeBy && $0.status == .completed }
         case ContractHabits.screenTime: return rows.contains { $0.method == .screenTimeLimit && $0.status == .completed }
         case ContractHabits.log: return habits.log[dayKey] != nil
-        default: return habits.marks(id: key)[dayKey] == true
+        case ContractHabits.stretching: return rows.contains { $0.params[DailyStretch.dayParam] != nil && $0.status == .completed }
+        default:
+            // A hand habit: a past day without a mark has its default (fail, or pass for a limit habit).
+            guard let habit = habits.handHabits.first(where: { $0.id == key }) else { return false }
+            return habit.passed(on: dayKey, marks: habits.marks(habit), today: QuestDay.key(byAddingDays: 1, to: dayKey)) == true
         }
     }
 
@@ -644,6 +654,8 @@ enum SystemsView {
         var dayKeys: [String] = []
         /// Set when the player marks each day by hand: a tap picks Pass or Fail.
         var handHabit: HandHabit? = nil
+        /// Shown in place of the streak when set: "1/2 travel days".
+        var summary: String? = nil
         var id: String { handHabit?.id ?? name }
 
         /// Done days in a row, ending today or yesterday (today may still be open).
@@ -669,17 +681,23 @@ enum SystemsView {
         // A hand-marked day shows its mark. A past day without one fails; today stays open until marked.
         // Days before the rule started stay dim.
         func hand(_ habit: HandHabit) -> Track {
-            let marks = keys.map { key -> Mark in
-                if let passed = game.habits.marks(habit)[key] { return passed ? .done : .missed }
-                if key >= today || key < habit.firstDay { return .none }
-                return .missed
+            let saved = game.habits.marks(habit)
+            // A limit habit shows this quest week, Monday to Sunday, and the days used.
+            let week = RestDays.weekKey(of: today)
+            let days = habit.weeklyLimit == nil ? keys : (0..<7).map { QuestDay.key(byAddingDays: $0, to: week) }
+            let marks = days.map { key -> Mark in
+                key > today ? .none : habit.passed(on: key, marks: saved, today: today).map { $0 ? .done : .missed } ?? .none
             }
-            return Track(name: habit.name, marks: marks, dayKeys: keys, handHabit: habit)
+            let summary = habit.weeklyLimit.map { limit in
+                "\(saved.filter { $0.value && $0.key >= week && $0.key <= today }.count)/\(limit) travel days"
+            }
+            return Track(name: habit.name, marks: marks, dayKeys: days, handHabit: habit, summary: summary)
         }
         let logged = keys.map { key -> Mark in game.habits.log[key] != nil ? .done : .none }
         return [
             Track(name: "Home by 9 pm", marks: keys.map { mark($0) { $0.method == .homeBy } }),
             Track(name: "Screen Time", marks: keys.map { mark($0) { $0.method == .screenTimeLimit } }),
+            Track(name: DailyStretch.title, marks: keys.map { mark($0) { $0.params[DailyStretch.dayParam] != nil } }),
         ] + game.habits.handHabits.map(hand) + [
             Track(name: "Log written", marks: logged),
         ]
@@ -693,12 +711,32 @@ struct HandHabit: Hashable {
     var name: String
     /// The first quest day the habit counts. Earlier days stay dim.
     var firstDay: String
+    /// Set for a limit habit (Traveling): a mark means the day was used (traveled), up to this many days a quest week.
+    /// A used day within the limit passes, one past it fails, and a day without a mark passes.
+    var weeklyLimit: Int? = nil
+
+    /// The two choices of the tap dialog: the label for true, then for false.
+    var choices: (yes: String, no: String) { weeklyLimit == nil ? ("Pass", "Fail") : ("Traveled", "Did not travel") }
+
+    /// The day's pass from the marks. Nil for a day with no mark that is still open (today) or before the first day.
+    func passed(on dayKey: String, marks: [String: Bool], today: String) -> Bool? {
+        if dayKey < firstDay { return nil }
+        if let limit = weeklyLimit {
+            if marks[dayKey] != true { return dayKey < today || marks[dayKey] == false ? true : nil }
+            let week = RestDays.weekKey(of: dayKey)
+            let used = marks.filter { $0.value && $0.key >= week && $0.key <= dayKey }.count
+            return used <= limit
+        }
+        if let mark = marks[dayKey] { return mark }
+        return dayKey < today ? false : nil
+    }
 
     static let builtInFirstDay = "2026-11-18"
     static let noEatingOut = HandHabit(id: "noEatingOut", name: "No eating out", firstDay: builtInFirstDay)
     static let noCaffeine = HandHabit(id: "noCaffeine", name: "No caffeine", firstDay: builtInFirstDay)
     static let wholeFoods = HandHabit(id: "wholeFoods", name: "Only whole foods", firstDay: builtInFirstDay)
-    static let builtIns = [noEatingOut, noCaffeine, wholeFoods]
+    static let travel = HandHabit(id: "travel", name: "Traveling (max 2 days a week)", firstDay: builtInFirstDay, weeklyLimit: 2)
+    static let builtIns = [noEatingOut, noCaffeine, wholeFoods, travel]
     static let customPrefix = "custom:"
 }
 
@@ -726,6 +764,7 @@ extension HabitState {
         case HandHabit.noEatingOut.id: return eatOutMarks
         case HandHabit.noCaffeine.id: return caffeineMarks
         case HandHabit.wholeFoods.id: return wholeFoodsMarks
+        case HandHabit.travel.id: return travelMarks
         default:
             let custom = id.hasPrefix(HandHabit.customPrefix) ? String(id.dropFirst(HandHabit.customPrefix.count)) : id
             return customHabits.first { $0.id == custom }?.marks ?? [:]
@@ -744,6 +783,7 @@ extension GameSnapshot {
         case HandHabit.noEatingOut.id: habits.eatOutMarks = marks.filter { $0.key >= QuestDay.key(byAddingDays: -60, to: bundle.dayKey) }
         case HandHabit.noCaffeine.id: habits.caffeineMarks = marks.filter { $0.key >= QuestDay.key(byAddingDays: -60, to: bundle.dayKey) }
         case HandHabit.wholeFoods.id: habits.wholeFoodsMarks = marks.filter { $0.key >= QuestDay.key(byAddingDays: -60, to: bundle.dayKey) }
+        case HandHabit.travel.id: habits.travelMarks = marks.filter { $0.key >= QuestDay.key(byAddingDays: -60, to: bundle.dayKey) }
         default:
             let custom = String(habit.id.dropFirst(HandHabit.customPrefix.count))
             guard let index = habits.customHabits.firstIndex(where: { $0.id == custom }) else { return }
@@ -1119,10 +1159,11 @@ enum HabitRules {
         var tracked = GameSnapshot.fresh(catalog: catalog, now: monday)
         tracked.habits.log = [QuestDay.key(byAddingDays: -2, to: tracked.bundle.dayKey): "a", QuestDay.key(byAddingDays: -1, to: tracked.bundle.dayKey): "b"]
         let tracks = SystemsView.tracks(tracked)
-        if tracks.map(\.name) != ["Home by 9 pm", "Screen Time", "No eating out", "No caffeine", "Only whole foods", "Log written"]
-            || tracks.contains(where: { $0.marks.count != SystemsView.days })
+        if tracks.map(\.name) != ["Home by 9 pm", "Screen Time", "Stretching", "No eating out", "No caffeine", "Only whole foods",
+                                    "Traveling (max 2 days a week)", "Log written"]
+            || tracks.contains(where: { $0.marks.count != ($0.handHabit?.weeklyLimit == nil ? SystemsView.days : 7) })
             || tracks.first(where: { $0.name == "Log written" })?.streak != 2 {
-            errors.append("the systems view should show 6 habits of 28 days with a 2-day log streak, got \(tracks.map { "\($0.name) \($0.streak)" })")
+            errors.append("the systems view should show 8 habits of 28 days with a 2-day log streak, got \(tracks.map { "\($0.name) \($0.streak)" })")
         }
 
         // Hand habits: dim before the first day, red for an unmarked past day, open today until marked, and each mark shows.
@@ -1145,6 +1186,18 @@ enum HabitRules {
                     || ate.habits.marks(habit) != ["2026-11-19": true, "2026-11-20": false] {
                     errors.append("\(habit.name) should fail unmarked past days and show each mark, got \(String(describing: failed?.marks.suffix(4)))")
                 }
+            }
+        }
+
+        // Traveling: unmarked days pass, 2 travel days a week pass, the third fails; a new week starts over.
+        if let friday = QuestDay.date(from: "2026-11-27") {
+            var trip = GameSnapshot.fresh(catalog: catalog, now: friday)
+            for day in ["2026-11-23", "2026-11-25", "2026-11-26"] { trip.setHandMark(.travel, day, passed: true) }
+            let row = SystemsView.tracks(trip).first { $0.handHabit == .travel }
+            if row?.marks != [.done, .done, .done, .missed, .none, .none, .none] || row?.dayKeys.first != "2026-11-23"
+                || row?.summary != "3/2 travel days" || HandHabit.travel.choices.yes != "Traveled"
+                || !trip.habitPassed(HandHabit.travel.id, on: "2026-11-24") || trip.habitPassed(HandHabit.travel.id, on: "2026-11-26") {
+                errors.append("Traveling should allow 2 travel days a week and fail the third, got \(String(describing: row?.marks))")
             }
         }
 
