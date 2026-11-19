@@ -169,12 +169,6 @@ struct SystemView: View {
                 }
             }
 
-            // The week's discretionary spend, on the quest screen so it is seen every day.
-            if let spend = store.snapshot.weekSpendUsd {
-                MoneyRows(spend: spend)
-                    .padding(.top, 10)
-            }
-
             if !otherOptionalQuests.isEmpty {
                 VStack(spacing: 1) {
                     ForEach(otherOptionalQuests) { questRow($0) }
@@ -439,43 +433,6 @@ private enum GoalRow: Identifiable {
         case .lifts: "gym_lifts"
         }
     }
-}
-
-/// This week's discretionary spend against $280, with a bar. Yellow from 75%, red from 100%. It opens no penalty.
-private struct MoneyRows: View {
-    let spend: Double
-
-    private var share: Double { spend / MercuryClient.weeklySoftCapUsd }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 11) {
-                Text("Spend this week")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text("[\(FinanceLevel.usd(spend))/\(FinanceLevel.usd(MercuryClient.weeklySoftCapUsd))]")
-                    .monospacedDigit()
-                    .foregroundStyle(color)
-                    .shadow(color: color.opacity(0.6), radius: 5)
-            }
-            .font(.subheadline)
-            .foregroundStyle(QuestLight.ink)
-            .shadow(color: QuestLight.cyan.opacity(0.6), radius: 5)
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(QuestLight.ink.opacity(0.15))
-                    Capsule().fill(color).frame(width: proxy.size.width * min(max(share, 0), 1))
-                        .shadow(color: color.opacity(0.7), radius: 4)
-                }
-            }
-            .frame(height: 5)
-        }
-        .frame(minHeight: 44)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Spend this week")
-        .accessibilityValue("\(FinanceLevel.usd(spend)) of \(FinanceLevel.usd(MercuryClient.weeklySoftCapUsd))")
-    }
-
-    private var color: Color { share >= 1 ? QuestLight.penalty : share >= 0.75 ? Color.yellow : QuestLight.ink }
 }
 
 /// Work and phone under the Screen Time row. A line over its own cap turns red; only the total can fail the quest.

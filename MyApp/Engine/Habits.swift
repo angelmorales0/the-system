@@ -827,14 +827,6 @@ enum Beliefs {
     }
 }
 
-extension GameSnapshot {
-    /// This quest week's discretionary spend from the last Mercury read. Nil before a read of this week.
-    var weekSpendUsd: Double? {
-        guard let finance, RestDays.weekKey(of: finance.dayKey) == RestDays.weekKey(of: bundle.dayKey) else { return nil }
-        return finance.weekDiscretionaryUsd
-    }
-}
-
 enum HabitRules {
     static func check() -> [String] {
         var errors: [String] = []
