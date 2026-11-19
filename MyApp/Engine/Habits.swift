@@ -23,11 +23,15 @@ struct HabitState: Codable, Equatable {
     var tokenDebt = 0
     /// Rest days a broken contract took, by quest week (its Monday).
     var restDaysForfeited: [String: Int] = [:]
+    /// True once the player set a home. Home by 9 pm starts the next day.
+    var homeSet = false
+    /// When the phone entered and left home, newest last. Copied from `HomeEvents` before each judgment.
+    var homeEvents: [HomeEvent] = []
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case eatOutPenaltyWeeks, beliefs, morningUnlockedDayKey, wokeAt, contracts, weights, tokenDebt, restDaysForfeited
+        case eatOutPenaltyWeeks, beliefs, morningUnlockedDayKey, wokeAt, contracts, weights, tokenDebt, restDaysForfeited, homeSet, homeEvents
     }
 
     init(from decoder: Decoder) throws {
@@ -40,6 +44,8 @@ struct HabitState: Codable, Equatable {
         weights = try container.decodeIfPresent([String: Double].self, forKey: .weights) ?? [:]
         tokenDebt = try container.decodeIfPresent(Int.self, forKey: .tokenDebt) ?? 0
         restDaysForfeited = try container.decodeIfPresent([String: Int].self, forKey: .restDaysForfeited) ?? [:]
+        homeSet = try container.decodeIfPresent(Bool.self, forKey: .homeSet) ?? false
+        homeEvents = try container.decodeIfPresent([HomeEvent].self, forKey: .homeEvents) ?? []
     }
 }
 
@@ -264,6 +270,102 @@ extension GameSnapshot {
             player.fullRecoveryBank -= 1
             habits.tokenDebt -= 1
         }
+    }
+}
+
+// MARK: - Home by 9 pm
+
+/// The phone entered (inside) or left home.
+struct HomeEvent: Codable, Equatable {
+    var at: Date
+    var inside: Bool
+}
+
+/// The phone's home events, saved by `HomeTracker` when iOS wakes the app at the edge of home. Kept 14 days.
+enum HomeEvents {
+    static let key = "com.angelmorales.thesystem.homeEvents.v1"
+
+    static func load(from defaults: UserDefaults = .standard) -> [HomeEvent] {
+        guard let data = defaults.data(forKey: key), let events = try? JSONDecoder().decode([HomeEvent].self, from: data) else { return [] }
+        return events
+    }
+
+    static func append(_ event: HomeEvent, to defaults: UserDefaults = .standard) {
+        let cutoff = event.at.addingTimeInterval(-14 * 86_400)
+        let events = (load(from: defaults) + [event]).filter { $0.at >= cutoff }.sorted { $0.at < $1.at }
+        if let data = try? JSONEncoder().encode(events) { defaults.set(data, forKey: key) }
+    }
+}
+
+/// Always on: the phone is at home at 9:00 pm, every day, a rest day too. Only the Moonlit Pass skips a night.
+/// The row starts the day after the player sets a home. It is judged at 9:00 pm: home then completes it,
+/// anywhere else fails it, and a failed row opens a penalty at the day's end like any required quest.
+enum HomeBy {
+    static let questId = "daily_home_by_9"
+    static let title = "Home by 9 pm"
+    static let hour = 21
+
+    /// 9:00 pm of the quest day.
+    static func deadline(_ dayKey: String) -> Date? {
+        QuestDay.start(of: dayKey)?.addingTimeInterval(Double(hour - QuestDay.startHour) * 3600)
+    }
+
+    /// Home or not at a moment: the newest event at or before it. Nil with no event before it.
+    static func home(at date: Date, events: [HomeEvent]) -> Bool? {
+        events.filter { $0.at <= date }.max { $0.at < $1.at }?.inside
+    }
+
+    static func quest(mode: QuestMode, now: Date) -> Quest {
+        Quest(
+            id: questId,
+            title: title,
+            kind: .daily,
+            stat: .REC,
+            verification: VerificationSpec(method: .homeBy, params: ["hour": .number(Double(hour))]),
+            deadline: QuestDay.endOfDay(now),
+            difficulty: .normal,
+            mode: mode,
+            progress: QuestProgress(current: 0, target: 1, unit: ""),
+            status: .pending,
+            assignedAt: now
+        )
+    }
+
+    /// Adds the row once, before Stretching and after the other required rows.
+    static func ensure(in bundle: QuestBundle, homeSet: Bool, now: Date) -> QuestBundle {
+        guard homeSet, !bundle.quests.contains(where: { $0.id == questId }) else { return bundle }
+        var copy = bundle
+        let insertAt = copy.quests.firstIndex { $0.id == DailyStretch.questId }
+            ?? copy.quests.lastIndex(where: { $0.kind != .optional }).map { $0 + 1 } ?? copy.quests.count
+        copy.quests.insert(quest(mode: bundle.mode, now: now), at: insertAt)
+        return copy
+    }
+}
+
+extension GameSnapshot {
+    /// Moves the row: before 9:00 pm it shows home or not; at 9:00 pm it completes at home and fails elsewhere.
+    mutating func applyHomeBy(now: Date) {
+        guard let index = bundle.quests.firstIndex(where: { $0.id == HomeBy.questId }), bundle.quests[index].status == .pending,
+              let deadline = HomeBy.deadline(bundle.dayKey) else { return }
+        let events = habits.homeEvents
+        if now >= deadline {
+            let home = HomeBy.home(at: deadline, events: events) == true
+            bundle.quests[index].status = home ? .completed : .failed
+            bundle.quests[index].progress.current = home ? 1 : 0
+        } else {
+            bundle.quests[index].progress.current = HomeBy.home(at: now, events: events) == true ? 1 : 0
+        }
+    }
+
+    /// The row of a day that is ending is judged at its 9:00 pm, so a closed app still gets an answer.
+    mutating func settleHomeBy() {
+        guard let deadline = HomeBy.deadline(bundle.dayKey) else { return }
+        applyHomeBy(now: deadline)
+    }
+
+    /// True when today's Home by 9 pm row is not done. A rest day does not waive it.
+    var homeByMissed: Bool {
+        bundle.quests.contains { $0.id == HomeBy.questId && $0.status != .completed }
     }
 }
 
@@ -526,6 +628,42 @@ enum HabitRules {
         }
         if signer.restDaysLeft(on: QuestDay.key(for: weekThree)) != RestDays.perWeek - 1 {
             errors.append("a taken rest day should leave one fewer this week")
+        }
+
+        // Home by 9 pm: judged at 21:00 from the events, added only once a home is set, and not waived on a rest day.
+        var home = GameSnapshot.fresh(catalog: catalog, now: monday)
+        if home.bundle.quests.contains(where: { $0.id == HomeBy.questId }) {
+            errors.append("Home by 9 pm should wait until a home is set")
+        }
+        home.habits.homeSet = true
+        home.rebuildBundle(catalog: catalog, now: monday)
+        guard let nine = HomeBy.deadline(home.bundle.dayKey), home.bundle.quests.contains(where: { $0.id == HomeBy.questId }) else {
+            return errors + ["Home by 9 pm should be on the day once a home is set"]
+        }
+        home.habits.homeEvents = [HomeEvent(at: nine.addingTimeInterval(-3600), inside: true)]
+        home.applyHomeBy(now: nine.addingTimeInterval(-60))
+        let before = home.bundle.quests.first { $0.id == HomeBy.questId }
+        home.applyHomeBy(now: nine.addingTimeInterval(60))
+        if before?.status != .pending || before?.progress.current != 1 || home.bundle.quests.first(where: { $0.id == HomeBy.questId })?.status != .completed {
+            errors.append("home at 9:00 pm should complete the row, and not before 9:00 pm")
+        }
+        var out = GameSnapshot.fresh(catalog: catalog, now: monday)
+        out.habits.homeSet = true
+        out.rebuildBundle(catalog: catalog, now: monday)
+        out.habits.homeEvents = [HomeEvent(at: nine.addingTimeInterval(-3600), inside: true), HomeEvent(at: nine.addingTimeInterval(-600), inside: false)]
+        out.restDayKeys = [out.bundle.dayKey]
+        out.settleHomeBy()
+        if out.bundle.quests.first(where: { $0.id == HomeBy.questId })?.status != .failed || !out.homeByMissed {
+            errors.append("away at 9:00 pm should fail the row, also on a rest day")
+        }
+        // The Moonlit Pass skips one night.
+        var pass = GameSnapshot.fresh(catalog: catalog, now: monday)
+        pass.habits.homeSet = true
+        pass.rebuildBundle(catalog: catalog, now: monday)
+        pass.gold = 10_000
+        _ = pass.usePotion(.moonlitPass, now: monday)
+        if pass.bundle.quests.first(where: { $0.id == HomeBy.questId })?.status != .completed || pass.homeByMissed || pass.gold != 5_800 {
+            errors.append("a Moonlit Pass should skip tonight's Home by 9 pm for 4,200 gold")
         }
 
         // Day off: Sundays. Work past the grace fails the Screen Time quest; a weekday keeps the 7-hour work cap.

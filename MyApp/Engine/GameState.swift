@@ -93,6 +93,7 @@ struct GameSnapshot: Codable, Equatable {
         guard key > bundle.dayKey else { return }
         grantHolidayRecovery(previousKey: bundle.dayKey, key: key)
         settleScreenTime()
+        settleHomeBy()
         awardDayGold()
         recordQuestDay()
         keepEndedDay()
@@ -180,7 +181,8 @@ struct GameSnapshot: Codable, Equatable {
     var missesRequiredSet: Bool {
         let missed = !bundle.openRequired.isEmpty
         let waived = bundle.mode == .fullRecovery || signals.spendingFullRecovery || fullRecoveryDayKey == bundle.dayKey
-        return missed && !waived
+        // Home by 9 pm is always on: a rest day does not waive it.
+        return missed && (!waived || homeByMissed)
     }
 
     private mutating func assignQueuedRecovery(on key: String) {
@@ -847,7 +849,7 @@ struct GameSnapshot: Codable, Equatable {
             day.headerLine = Self.restDayHeader
             day.narrative = ""
         }
-        let screen = ScreenTime.ensure(in: day, now: now)
+        let screen = HomeBy.ensure(in: ScreenTime.ensure(in: day, now: now), homeSet: habits.homeSet, now: now)
         let stretch = StretchSplit.today(history: questHistory, dayKey: day.dayKey)
         return PenaltyQuests.ensure(
             in: measured(restDay ? screen : DailyStretch.ensure(in: screen, now: now, day: stretch)),

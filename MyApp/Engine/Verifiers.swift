@@ -69,6 +69,8 @@ enum VerifierRegistry {
             return HevySetsVerifier()
         case .healthkitWorkout:
             return HealthKitWorkoutVerifier()
+        case .homeBy:
+            return IncompleteVerifier(method: method, reason: "Home by 9 pm updates from your phone's location. It completes when the phone is home at 9:00 pm.")
         case .screenTimeLimit:
             // The row moves from Screen Time threshold events (phone) and the backend (work), not from a verifier.
             // It completes when the day ends under the cap, and fails as soon as the total goes over.

@@ -9,6 +9,7 @@ struct StatusSettingsSheet: View {
     @State private var showShields = false
     @State private var showScreenTime = false
     @State private var showAppIcon = false
+    @State private var confirmHome = false
     @AppStorage(SoundPlayer.enabledKey) private var soundOn = true
 
     var body: some View {
@@ -62,6 +63,7 @@ struct StatusSettingsSheet: View {
                 link("PENALTY ZONE") { showShields = true }
                 link("SCREEN TIME") { showScreenTime = true }
                 link("APP ICON") { showAppIcon = true }
+                homeRow
                 SystemDivider()
                 ConnectionRows()
             }
@@ -71,6 +73,12 @@ struct StatusSettingsSheet: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Today becomes a rest day. Finished quests stay done. Missed training does not open a penalty today.")
+        }
+        .confirmationDialog("Set this place as home?", isPresented: $confirmHome, titleVisibility: .visible) {
+            Button("Set home here") { store.setHomeHere() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Home by 9 pm starts tomorrow and holds every day, rest days too. Only a Moonlit Pass skips a night. The System needs Always location access; it saves only when you come home and leave.")
         }
         .confirmationDialog("Use one rest day?", isPresented: $confirmRest, titleVisibility: .visible) {
             Button("Use rest day") { store.useRestDay() }
@@ -87,6 +95,33 @@ struct StatusSettingsSheet: View {
         .sheet(isPresented: $showAppIcon, onDismiss: { SystemSound.systemClose.play() }) {
             AppIconSheet()
         }
+    }
+
+    /// Home for Home by 9 pm: set it once, here, at home.
+    private var homeRow: some View {
+        Button {
+            SystemSound.systemOpen.play()
+            confirmHome = true
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("HOME")
+                        .font(.caption.weight(.semibold))
+                        .tracking(1.1)
+                        .foregroundStyle(SystemTheme.muted)
+                    Text(store.snapshot.habits.homeSet ? "Set. Tap to set it again here." : "Not set. Tap here at home.")
+                        .font(.caption)
+                        .foregroundStyle(QuestLight.ink.opacity(0.8))
+                }
+                Spacer()
+                Image(systemName: "house.fill")
+                    .font(.title3)
+                    .foregroundStyle(SystemTheme.cyan)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("setHomeButton")
     }
 
     /// This week's free rest days: the ones left, out of the 2 each week gives.

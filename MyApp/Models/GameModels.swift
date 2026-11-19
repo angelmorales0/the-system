@@ -52,6 +52,8 @@ enum VerificationMethod: String, Codable, CaseIterable, Equatable {
     case screenTimeLimit = "screen_time_limit"
     case manualConfirm = "manual_confirm"
     case timerSession = "timer_session"
+    /// The phone is at home at 21:00 (see `HomeBy`). The app moves this row, not a verifier.
+    case homeBy = "home_by"
 
     /// Old saves can name removed methods (`whoop_recovery`, `healthkit_nutrition`, `macrofactor_protein`,
     /// `mercury_spend_under`). Read those as a manual confirm, so the save still loads.

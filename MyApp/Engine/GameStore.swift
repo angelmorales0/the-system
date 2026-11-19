@@ -127,6 +127,7 @@ final class GameStore: ObservableObject {
             snapshot = GameSnapshot.fresh(catalog: catalog)
         case .standard:
             snapshot = GameSnapshot.loadFromUserDefaults() ?? GameSnapshot.fresh(catalog: catalog)
+            snapshot.habits.homeEvents = HomeEvents.load()
             snapshot.refreshIfNeeded(catalog: catalog)
             snapshot.claimQueuedRecoveryForToday(catalog: catalog, now: .now)
             snapshot.bundle = GymSplit.withoutOldRows(snapshot.bundle)
@@ -163,6 +164,11 @@ final class GameStore: ObservableObject {
         persist()
         ensureTicker()
         observeHealthUpdates()
+        // The home tracker is made at launch, so iOS can hand it the enter and leave events it woke the app for.
+        if persistence == .standard {
+            HomeTracker.shared.onEvent = { [weak self] in self?.homeEventArrived() }
+            HomeTracker.shared.resume()
+        }
         refreshIntegrations(now: .now)
         enforcePenalty()
         #if DEBUG
@@ -343,6 +349,38 @@ final class GameStore: ObservableObject {
         var next = statTargets
         next.deleteCustom(category)
         saveStatTargets(next)
+    }
+
+    /// Saves the phone's location as home. Home by 9 pm starts with the next day.
+    func setHomeHere() {
+        guard persistence == .standard else { return }
+        let tracker = HomeTracker.shared
+        tracker.onSetHome = { [weak self] problem in
+            guard let self else { return }
+            if let problem {
+                self.verificationNote = problem
+                return
+            }
+            var next = self.snapshot
+            next.habits.homeSet = true
+            next.habits.homeEvents = HomeEvents.load()
+            self.snapshot = next
+            self.verificationNote = "Home saved. Home by 9 pm starts tomorrow."
+            self.persist()
+        }
+        tracker.setHomeHere()
+    }
+
+    /// The phone came home or left: judge the row again.
+    private func homeEventArrived(now: Date = .now) {
+        guard !startedNewDay(now: now) else { return }
+        var next = snapshot
+        next.habits.homeEvents = HomeEvents.load()
+        next.applyHomeBy(now: now)
+        guard next != snapshot else { return }
+        snapshot = next
+        persist()
+        enforcePenalty()
     }
 
     /// Signs a contract. Returns why it was refused, or nil when it was signed.
@@ -622,6 +660,7 @@ final class GameStore: ObservableObject {
         let previousDay = snapshot.bundle.dayKey
         let previousGold = snapshot.gold
         var next = snapshot
+        if persistence == .standard { next.habits.homeEvents = HomeEvents.load() }
         next.refreshIfNeeded(catalog: catalog, now: now)
         snapshot = next
         if snapshot.bundle.dayKey != previousDay {
@@ -745,6 +784,8 @@ final class GameStore: ObservableObject {
             }
             next.recordWeights(dailyMass + (bodyMass.map { [$0] } ?? []))
             let brokenContracts = next.judgeContracts(now: now)
+            next.habits.homeEvents = HomeEvents.load()
+            next.applyHomeBy(now: now)
             // After today's readiness, so a red recovery hits HP and sets the regeneration speed.
             next.applyHitPoints(integrations: day, maxHP: HitPoints.maxHP(for: self.statLevels), now: now)
             // After today's screen time too, so only the new minutes add fatigue.

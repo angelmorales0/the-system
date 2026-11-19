@@ -33,13 +33,16 @@ enum Potion: String, Codable, CaseIterable, Equatable {
     case gildedIndulgence, nightfall, idleHours, ironblood, secondWind, quicksilver
     /// Today's eat-out charges do not count toward the weekly eat-out cap.
     case banquetSeal
+    /// Skips tonight's Home by 9 pm, for a night out.
+    case moonlitPass
 
-    /// A rule skip, not the stat's potion: it clears no quest.
-    var isRuleSkip: Bool { self == .banquetSeal }
+    /// A rule skip, not the stat's potion. The Banquet Seal clears no quest; the Moonlit Pass clears Home by 9 pm only.
+    var isRuleSkip: Bool { self == .banquetSeal || self == .moonlitPass }
 
     var stat: Stat {
         switch self {
         case .gildedIndulgence, .banquetSeal: .FIN
+        case .moonlitPass: .REC
         case .nightfall: .REC
         case .idleHours: .FOC
         case .ironblood: .STR
@@ -62,6 +65,7 @@ enum Potion: String, Codable, CaseIterable, Equatable {
         case .secondWind: "Second Wind Tonic"
         case .quicksilver: "Quicksilver Vial"
         case .banquetSeal: "Banquet Seal"
+        case .moonlitPass: "Moonlit Pass"
         }
     }
 
@@ -75,6 +79,7 @@ enum Potion: String, Codable, CaseIterable, Equatable {
         case .secondWind: "Skips today's run."
         case .quicksilver: "Skips today's stretch."
         case .banquetSeal: "Today's eat-out charges do not count toward the \(FinanceLevel.usd(MercuryClient.eatOutWeeklyCapUsd)) weekly cap."
+        case .moonlitPass: "Skips tonight's Home by 9 pm, for a night out."
         }
     }
 
@@ -87,7 +92,7 @@ enum Potion: String, Codable, CaseIterable, Equatable {
         case .ironblood, .secondWind: 3_600
         case .quicksilver: 1_200
         // About half of a perfect week's gold (7 × 1,200).
-        case .banquetSeal: 4_200
+        case .banquetSeal, .moonlitPass: 4_200
         }
     }
 
@@ -177,6 +182,10 @@ extension GameSnapshot {
 
     /// Open daily quests the potion would clear today. A rule skip clears none.
     func potionTargets(_ potion: Potion) -> [Quest] {
+        // Home by 9 pm holds on every day, a rest day too, so its skip works on any day.
+        if potion == .moonlitPass {
+            return bundle.quests.filter { $0.id == HomeBy.questId && $0.status == .pending }
+        }
         guard bundle.mode != .fullRecovery, !potion.isRuleSkip else { return [] }
         // The 10K that "No gym today" added stands for the lifts. The run potion skips the day's run, not that one.
         return bundle.quests.filter { $0.kind == .daily && $0.stat == potion.stat && $0.status != .completed && !$0.isNoGymRun }
@@ -190,6 +199,9 @@ extension GameSnapshot {
             return "\(potion.name) is on cooldown until \(ready.formatted(date: .abbreviated, time: .shortened))."
         }
         let targets = potionTargets(potion)
+        if potion == .moonlitPass && targets.isEmpty {
+            return "There is no open Home by 9 pm quest today."
+        }
         if potion.needsQuest && targets.isEmpty {
             // The only open run is the 10K that "No gym today" added: it stands for the lifts.
             if bundle.quests.contains(where: { $0.isNoGymRun && $0.stat == potion.stat && $0.status != .completed }) {
@@ -239,7 +251,7 @@ extension GameSnapshot {
             case .gildedIndulgence:
                 let month = String(use.dayKey.prefix(7))
                 excuses.spendUsdByMonth[month, default: 0] += Potion.indulgenceUsd
-            case .ironblood, .secondWind, .quicksilver, .banquetSeal:
+            case .ironblood, .secondWind, .quicksilver, .banquetSeal, .moonlitPass:
                 break
             }
         }
