@@ -31,12 +31,14 @@ struct HabitState: Codable, Equatable {
     var morningDoneDays: [String] = []
     /// The behavior log: one note a quest day, "what I did that could be better". Kept 365 days.
     var log: [String: String] = [:]
+    /// The player's own mark for No eating out, by quest day: true passed, false failed. It wins over Mercury.
+    var eatOutMarks: [String: Bool] = [:]
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case eatOutPenaltyWeeks, beliefs, morningUnlockedDayKey, wokeAt, contracts, weights, tokenDebt, restDaysForfeited, homeSet, homeEvents
-        case morningDoneDays, log
+        case morningDoneDays, log, eatOutMarks
     }
 
     init(from decoder: Decoder) throws {
@@ -53,6 +55,7 @@ struct HabitState: Codable, Equatable {
         homeEvents = try container.decodeIfPresent([HomeEvent].self, forKey: .homeEvents) ?? []
         morningDoneDays = try container.decodeIfPresent([String].self, forKey: .morningDoneDays) ?? []
         log = try container.decodeIfPresent([String: String].self, forKey: .log) ?? [:]
+        eatOutMarks = try container.decodeIfPresent([String: Bool].self, forKey: .eatOutMarks) ?? [:]
     }
 }
 
@@ -410,6 +413,10 @@ enum SystemsView {
         var name: String
         /// Oldest first, today last.
         var marks: [Mark]
+        /// The quest day of each mark, oldest first.
+        var dayKeys: [String] = []
+        /// True when the player marks each day by hand (No eating out): a tap picks pass or fail.
+        var editable = false
         var id: String { name }
 
         /// Done days in a row, ending today or yesterday (today may still be open).
@@ -438,8 +445,14 @@ enum SystemsView {
             if game.restDue(on: key) || key == today { return .none }
             return game.habits.morningDoneDays.isEmpty || key < (game.habits.morningDoneDays.min() ?? key) ? .none : .missed
         }
+        // Mercury sends this week's eat-out charges only: a day of this week with a charge is red, one without is cyan.
+        let weekKey = RestDays.weekKey(of: today)
+        let charges = game.finance.flatMap { RestDays.weekKey(of: $0.dayKey) == weekKey ? $0.eatOutWeek : nil }
+        let eatOutDays = Set((charges ?? []).map(\.dayKey))
         let eatOut = keys.map { key -> Mark in
-            game.habits.eatOutPenaltyWeeks.contains(RestDays.weekKey(of: key)) ? .missed : (game.finance == nil ? .none : .done)
+            if let passed = game.habits.eatOutMarks[key] { return passed ? .done : .missed }
+            guard charges != nil, RestDays.weekKey(of: key) == weekKey else { return .none }
+            return eatOutDays.contains(key) ? .missed : .done
         }
         let coffee = keys.map { key -> Mark in caffeine[key].map { $0 <= 0 ? .done : .missed } ?? .none }
         let logged = keys.map { key -> Mark in game.habits.log[key] != nil ? .done : .none }
@@ -448,10 +461,21 @@ enum SystemsView {
             Track(name: "Home by 9 pm", marks: keys.map { mark($0) { $0.method == .homeBy } }),
             Track(name: "Gym day", marks: keys.map { mark($0) { $0.stat == .STR && $0.method == .hevySets && $0.kind == .daily } }),
             Track(name: "Screen Time", marks: keys.map { mark($0) { $0.method == .screenTimeLimit } }),
-            Track(name: "Eat-out cap", marks: eatOut),
+            Track(name: "No eating out", marks: eatOut, dayKeys: keys, editable: true),
             Track(name: "No caffeine", marks: coffee),
             Track(name: "Log written", marks: logged),
         ]
+    }
+}
+
+extension GameSnapshot {
+    /// Marks a day of No eating out by hand: true passed, false failed, nil back to the Mercury reading.
+    /// Days after today cannot be marked. Marks older than 60 days are dropped.
+    mutating func setEatOutMark(_ dayKey: String, passed: Bool?) {
+        guard dayKey <= bundle.dayKey else { return }
+        habits.eatOutMarks[dayKey] = passed
+        let oldest = QuestDay.key(byAddingDays: -60, to: bundle.dayKey)
+        habits.eatOutMarks = habits.eatOutMarks.filter { $0.key >= oldest }
     }
 }
 
@@ -768,6 +792,29 @@ enum HabitRules {
             || tracks.first(where: { $0.name == "No caffeine" })?.marks.last != .done {
             errors.append("the systems view should show 7 habits of 28 days with a 2-day morning streak, got \(tracks.map { "\($0.name) \($0.streak)" })")
         }
+
+        // No eating out: a red day for each day of this week with a charge, cyan for the others, dim with no data.
+        var ate = tracked
+        let todayKey = ate.bundle.dayKey
+        ate.finance = FinanceSnapshot(eatOutWeek: [EatOutCharge(dayKey: todayKey, at: monday, usd: 18), EatOutCharge(dayKey: todayKey, at: monday, usd: 9)],
+                                      dayKey: todayKey, discretionarySpendUsd: 0, necessarySpendUsd: 0, capUsd: 40, discretionary7dUsd: 0,
+                                      paceState: "NORMAL", ytdIncomeUsd: 0, ytdGoalUsd: 0, settled: false)
+        let eaten = SystemsView.tracks(ate).first { $0.name == "No eating out" }
+        if eaten?.marks.last != .missed || eaten?.streak != 0
+            || SystemsView.tracks(tracked).first(where: { $0.name == "No eating out" })?.marks.allSatisfy({ $0 == .none }) != true {
+            errors.append("No eating out should mark today red after a charge, got \(String(describing: eaten?.marks.suffix(3)))")
+        }
+
+        // A hand mark wins over Mercury, and nil gives the day back to Mercury.
+        ate.setEatOutMark(todayKey, passed: true)
+        let marked = SystemsView.tracks(ate).first { $0.name == "No eating out" }
+        ate.setEatOutMark(todayKey, passed: nil)
+        if marked?.marks.last != .done || marked?.editable != true || marked?.dayKeys.last != todayKey
+            || SystemsView.tracks(ate).first(where: { $0.name == "No eating out" })?.marks.last != .missed {
+            errors.append("a hand mark should win over Mercury and clear back to it")
+        }
+        ate.setEatOutMark(QuestDay.key(byAddingDays: 1, to: todayKey), passed: false)
+        if ate.habits.eatOutMarks.count != 0 { errors.append("a future day should not take a mark") }
 
         // Day off: Sundays. Work past the grace fails the Screen Time quest; a weekday keeps the 7-hour work cap.
         let sunday = "2026-11-22"

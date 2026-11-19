@@ -360,6 +360,15 @@ final class GameStore: ObservableObject {
         persist()
     }
 
+    /// Marks a day of No eating out by hand: true passed, false failed, nil back to Mercury.
+    func setEatOutMark(_ dayKey: String, passed: Bool?) {
+        var next = snapshot
+        next.setEatOutMark(dayKey, passed: passed)
+        guard next != snapshot else { return }
+        snapshot = next
+        persist()
+    }
+
     /// The habit streaks for the systems view, with caffeine from Apple Health once it is loaded.
     var systemsTracks: [SystemsView.Track] {
         let caffeine = Dictionary((statInputs?.inputs.recoveryDays ?? []).compactMap { day in day.caffeineMg.map { (day.dayKey, $0) } },

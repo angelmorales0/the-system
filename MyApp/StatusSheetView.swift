@@ -30,7 +30,7 @@ struct StatusSheetView: View {
                         if !showLevels {
                             VStack(spacing: 18) {
                                 StatusTitleBox()
-                                SystemsPanel(tracks: store.systemsTracks)
+                                SystemsPanel(tracks: store.systemsTracks) { store.setEatOutMark($0, passed: $1) }
                                 StatusFrame {
                                     VStack(spacing: 0) {
                                         statusLink("CONTRACTS") { showContracts = true; SystemSound.systemOpen.play() }
