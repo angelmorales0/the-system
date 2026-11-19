@@ -86,6 +86,7 @@ struct StravaActivityVerifier: Verifier {
 /// but not "Incline Bench Press (Dumbbell)"), or `templateId`.
 /// Set mode: `sets` (else the quest target); `minReps` and `minWeightKg` are the row's targets, and a set under them counts.
 /// Time mode: `minDurationSec` sums the timed sets, for stretches such as "Splits [0/3min]".
+/// Rep mode: `totalReps` sums the reps of the exercise itself (no stand-ins), for the burpee penalty.
 /// Warm-up sets never count.
 struct HevySetsVerifier: Verifier {
     var method: VerificationMethod { .hevySets }
@@ -109,6 +110,7 @@ struct HevySetsVerifier: Verifier {
         // The plan's weight is a target too: a set with less weight was still done, and it counts.
         let minWeight: Double? = nil
         let minDuration = params["minDurationSec"]?.doubleValue
+        let totalReps = minDuration == nil ? params["totalReps"]?.doubleValue : nil
 
         var total = 0.0
         var workoutIds: [String] = []
@@ -126,7 +128,7 @@ struct HevySetsVerifier: Verifier {
             let firstOfMuscle = muscle != nil && !context.earlierExercises.contains { GymSplit.muscle(of: $0) == muscle }
             let standIns = workout.exercises.filter { entry in
                 let name = StrengthLevel.normalizedName(entry.title)
-                guard !matching.contains(entry), !context.otherExercises.contains(name), name != exercise else { return false }
+                guard totalReps == nil, !matching.contains(entry), !context.otherExercises.contains(name), name != exercise else { return false }
                 if minDuration == nil, Self.isStandIn(name, for: exercise) { return true }
                 return firstOfMuscle && GymSplit.muscle(of: name) == muscle
             }
@@ -141,14 +143,20 @@ struct HevySetsVerifier: Verifier {
                 return (set.weightKg ?? 0) + 0.001 >= minWeight
             } + standIns.flatMap(\.sets).filter(working)
             guard !sets.isEmpty else { continue }
-            total += minDuration != nil ? sets.reduce(0) { $0 + ($1.durationSec ?? 0) } : Double(sets.count)
+            if minDuration != nil {
+                total += sets.reduce(0) { $0 + ($1.durationSec ?? 0) }
+            } else if totalReps != nil {
+                total += Double(sets.reduce(0) { $0 + ($1.reps ?? 0) })
+            } else {
+                total += Double(sets.count)
+            }
             workoutIds.append(workout.id)
             latest = max(latest ?? workout.end, workout.end)
         }
         guard total > 0 else { return .unchanged }
 
         let key = templateId ?? exercise
-        let mode = minDuration != nil ? "time" : "sets"
+        let mode = minDuration != nil ? "time" : totalReps != nil ? "reps" : "sets"
         let evidence = Evidence.make(
             source: "hevy",
             externalId: "hevy:\(mode):\(context.dayKey):\(key)",
@@ -158,7 +166,7 @@ struct HevySetsVerifier: Verifier {
         if context.claimedKeys.contains(evidence.reuseKey) {
             return .failed(reason: "Those sets were already used for another quest today.")
         }
-        let target = minDuration ?? params["sets"]?.doubleValue ?? quest.progress.target
+        let target = minDuration ?? totalReps ?? params["sets"]?.doubleValue ?? quest.progress.target
         guard total + 0.001 >= target else {
             // Time mode shows minutes or seconds, matching the quest's unit.
             let shown = minDuration != nil && quest.progress.unit == "min" ? total / 60 : total

@@ -84,7 +84,9 @@ final class GameStore: ObservableObject {
 
     init(persistence: GamePersistence = .standard) {
         #if DEBUG
-        let problems = VerificationFixtures.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check() + RecoveryLevel.check()
+        // The older checks were written for the run penalty. The burpee one has its own check.
+        PenaltyQuests.choiceOverride = .run
+        let problems = PenaltyQuests.check() + VerificationFixtures.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check() + RecoveryLevel.check()
             + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check() + MacScreenClient.check()
             + HiddenQuestRules.check() + RecoveryHolidayRules.check() + ShopRules.check()
@@ -95,6 +97,7 @@ final class GameStore: ObservableObject {
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
             + EndedDayRules.check() + WorkoutClaimRules.check() + RebuiltRowRules.check() + PlanAndLockRules.check()
             + HevyRoutine.check() + HabitRules.check()
+        PenaltyQuests.choiceOverride = nil
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
         // The write to Hevy is checked with replies made in the check: it calls no server.
         Task { @MainActor in
@@ -152,6 +155,14 @@ final class GameStore: ObservableObject {
             let result = refused.map { "Split day not skipped. \($0)" } ?? "Skipped \(GymSplit.day(id: skip)?.name ?? skip). Today is \(snapshot.bundle.headerLine)."
             verificationNote = result
             print("[skipSplitDay] \(result)")
+        }
+        // Launch with `-openPenalty run` or `-openPenalty burpees` to open that penalty and see its screen. One launch only.
+        if persistence == .standard, let pick = UserDefaults.standard.string(forKey: "openPenalty"), !snapshot.player.penaltyOpen {
+            PenaltyQuests.choiceOverride = pick == "burpees" ? .burpees : .run
+            snapshot.player.penaltyOpen = true
+            snapshot.bundle = PenaltyQuests.ensure(in: snapshot.bundle, open: true, band: snapshot.trainingBand, catalog: catalog, now: .now)
+            PenaltyQuests.choiceOverride = nil
+            persist()
         }
         #endif
         if persistence == .standard {
@@ -250,6 +261,17 @@ final class GameStore: ObservableObject {
     }
 
     /// From the penalty screen: one token ends the open penalty. The cleared cue plays from the flag change.
+    /// "Unable to go outside": the open Penalty 10K becomes 300 burpees, checked in Hevy. Then it checks Hevy at once.
+    func swapPenaltyToBurpees(now: Date = .now) {
+        guard !startedNewDay(now: now) else { return }
+        snapshot.bundle = PenaltyQuests.swapToBurpees(in: snapshot.bundle, now: now)
+        verificationNote = "The penalty is now \(PenaltyQuests.burpeeReps) burpees. Log them in Hevy as \"\(PenaltyQuests.burpeeExercise)\"."
+        clock = now
+        persist()
+        enforcePenalty()
+        refreshForToday(now: now)
+    }
+
     func clearPenaltyWithFullRecovery(now: Date = .now) {
         guard !startedNewDay(now: now) else { return }
         var next = snapshot

@@ -6,8 +6,9 @@ import SwiftUI
 /// flat, leaning a little as the phone moves, with every line drawn twice (a dim copy sunk under the bright one), and it arrives with a flicker.
 /// The longer the penalty stays open, the more the screen rots around it (see `PenaltyDecay`):
 /// gray creeps in from the edges, the edge turns blood red and pulses, then everything outside blurs.
-/// There is no close button. The screen leaves when the penalty run is verified from Apple Health,
-/// or when the player spends one Full Recovery token on it.
+/// There is no close button. The screen leaves when the penalty is verified (the run from Apple Health or Strava,
+/// the burpees from Hevy), or when the player spends one Full Recovery token on it.
+/// A run that has not started can be swapped for 300 burpees with "Unable to go outside".
 struct PenaltyQuestView: View {
     @EnvironmentObject private var store: GameStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -16,6 +17,7 @@ struct PenaltyQuestView: View {
     @State private var arrived = false
     @State private var flicker = false
     @State private var confirmFullRecovery = false
+    @State private var confirmIndoors = false
     @StateObject private var tilt = MotionTilt()
 
     /// In DEBUG, launch with `-penaltyPreviewHours 12` to draw the screen as if the penalty were that old.
@@ -99,7 +101,7 @@ struct PenaltyQuestView: View {
         VStack(spacing: 0) {
             QuestInfoHeader()
             Spacer().frame(height: 18)
-            GhostText(Text("[Urgent Quest: \(Text("10K Run.").bold().italic())]"), font: .footnote, alignment: .center, ghost: ghost)
+            GhostText(Text("[Urgent Quest: \(Text(burpees ? "300 Burpees." : "10K Run.").bold().italic())]"), font: .footnote, alignment: .center, ghost: ghost)
             Spacer().frame(height: 26)
             VStack(spacing: 3) {
                 GhostText(Text("GOAL").tracking(3), font: .system(.title2).weight(.medium), alignment: .center, ghost: ghost)
@@ -115,7 +117,7 @@ struct PenaltyQuestView: View {
                 .shadow(color: QuestLight.blue.opacity(0.7), radius: 6)
             Spacer().frame(height: 26)
             HStack(spacing: 11) {
-                Text("10K RUN")
+                Text(burpees ? "300 BURPEES" : "10K RUN")
                     .tracking(1.6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(progress)
@@ -128,10 +130,48 @@ struct PenaltyQuestView: View {
             .foregroundStyle(QuestLight.cyan)
             .shadow(color: QuestLight.cyan.opacity(0.6), radius: 5)
             .accessibilityElement(children: .combine)
+            if burpees {
+                Text("Log them in Hevy as \"\(PenaltyQuests.burpeeExercise)\". Every set counts toward \(PenaltyQuests.burpeeReps).")
+                    .font(.caption2)
+                    .foregroundStyle(QuestLight.ink.opacity(0.6))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 8)
+            }
             Spacer().frame(height: 26)
+            if canGoIndoors {
+                indoorsButton
+                Spacer().frame(height: 14)
+            }
             fullRecoveryButton
         }
         .foregroundStyle(QuestLight.ink)
+    }
+
+    private var burpees: Bool { PenaltyQuests.isBurpees(quest) }
+
+    /// The run can still become burpees: it is open and no kilometer is logged yet.
+    private var canGoIndoors: Bool {
+        !burpees && quest.status != .completed && quest.progress.current == 0
+    }
+
+    /// Swaps the open run for 300 burpees. Asks first; it cannot be undone.
+    private var indoorsButton: some View {
+        Button { confirmIndoors = true } label: {
+            Text("UNABLE TO GO OUTSIDE")
+                .font(.caption.weight(.semibold))
+                .tracking(1.4)
+                .frame(maxWidth: .infinity, minHeight: 38)
+                .overlay { Rectangle().stroke(QuestLight.ink.opacity(0.6), lineWidth: 0.8) }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("penaltyIndoorsButton")
+        .confirmationDialog("Do 300 burpees instead?", isPresented: $confirmIndoors, titleVisibility: .visible) {
+            Button("Switch to 300 burpees") { store.swapPenaltyToBurpees() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The 10K run becomes 300 burpees, logged in Hevy as \"\(PenaltyQuests.burpeeExercise)\". You cannot switch back.")
+        }
     }
 
     /// One banked Full Recovery token ends the penalty. Asks first.
@@ -166,12 +206,13 @@ struct PenaltyQuestView: View {
     /// The generator's two sentences for today, or the app's own: `Laziness is present and is damaging the Player.
     /// Run 10 km and ensure your safety.`
     private var threat: String {
-        PenaltyDecay.threatLine(generated: store.snapshot.bundle.threat, dayKey: store.snapshot.bundle.dayKey)
+        PenaltyDecay.threatLine(generated: store.snapshot.bundle.threat, dayKey: store.snapshot.bundle.dayKey, burpees: burpees)
     }
 
     private var progress: String {
         let current = quest.progress.current, target = quest.progress.target
         let shown = min(current, target)
+        if burpees { return "[\(Int(shown))/\(Int(target))]" }
         return "[\(String(format: "%.1f", shown))/\(target == target.rounded() ? String(Int(target)) : String(target))\(quest.progress.unit)]"
     }
 

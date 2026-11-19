@@ -24,10 +24,18 @@ enum PenaltyDecay {
     /// Faults the screen names when the generator wrote no line. The quest day picks one, so a day reads the same all day.
     static let threats = ["Laziness", "Bad habits", "Neglect", "Weakness", "Complacency"]
     static let threatEnding = "Run 10 km and ensure your safety."
+    static let burpeeEnding = "Do 300 burpees and ensure your safety."
     static let threatMaxCharacters = 160
 
     /// The screen's two sentences: the generator's line when it kept the System's voice, else the app's own.
-    static func threatLine(generated: String?, dayKey: String) -> String {
+    /// `burpees` swaps the run sentence for the burpee one, in the generator's line and in the app's own.
+    static func threatLine(generated: String?, dayKey: String, burpees: Bool = false) -> String {
+        let line = baseThreatLine(generated: generated, dayKey: dayKey)
+        guard burpees, line.hasSuffix(threatEnding) else { return line }
+        return String(line.dropLast(threatEnding.count)) + burpeeEnding
+    }
+
+    private static func baseThreatLine(generated: String?, dayKey: String) -> String {
         if let text = generated?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty,
            text.count <= threatMaxCharacters, text.hasSuffix(threatEnding), text.count > threatEnding.count,
            !text.lowercased().contains("penalty"), text.lowercased().contains("player"), !text.contains("!") {
