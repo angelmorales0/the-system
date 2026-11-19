@@ -60,7 +60,7 @@ nonisolated struct CodeforcesReading: Codable, Equatable {
     }
 }
 
-/// Deterministic INT level 0...350 from the Codeforces rating in each language and the Monkeytype best.
+/// Deterministic INT level 0...350 from the best Codeforces rating across the languages and the Monkeytype best.
 /// Pure: the same reading always gives the same report. No network and no clock.
 enum IntelligenceLevel {
     /// 800 is the lowest problem rating; 2100 is Master. 1200 ≈ 30%, 1900 ≈ 85%.
@@ -70,15 +70,26 @@ enum IntelligenceLevel {
     static let typingBand = StatLevel.Band(floor: 40, target: 200)
 
     enum Weight {
-        static let rating = 30.0
+        static let rating = 90.0
         static let typing = 10.0
     }
 
+    /// One rating target for every language. It was one target per language (C++, Java, Python) before.
+    static let ratingCategory = "Codeforces rating"
     static func category(_ language: CodeforcesLanguage) -> String { "Codeforces \(language.rawValue)" }
     static let typingCategory = "Typing speed"
 
     static func evaluate(_ reading: CodeforcesReading, typing: MonkeytypeReading = .disconnected(reason: "")) -> StatLevelReport {
-        StatLevelReport(stat: .INT, requirements: CodeforcesLanguage.allCases.map { rating(reading, language: $0) } + [typingSpeed(typing)])
+        StatLevelReport(stat: .INT, requirements: [rating(reading), typingSpeed(typing)])
+    }
+
+    /// The highest rating across the languages: for each language, the rating after its newest contest.
+    /// The account's current rating counts too, for a newest contest in another language. The peak does not count.
+    static func bestRating(_ reading: CodeforcesReading) -> (rating: Int, language: CodeforcesLanguage?)? {
+        let byLanguage = CodeforcesLanguage.allCases.compactMap { language in reading.rating(in: language).map { ($0, Optional(language)) } }
+        let account = reading.rating.map { [($0, CodeforcesLanguage?.none)] } ?? []
+        // On a tie, a language wins, so the detail can name it.
+        return (byLanguage + account).max { $0.0 < $1.0 || ($0.0 == $1.0 && $0.1 == nil && $1.1 != nil) }.map { (rating: $0.0, language: $0.1) }
     }
 
     /// Strict rule: 200 WPM or more on a 60 second Monkeytype test.
@@ -95,9 +106,10 @@ enum IntelligenceLevel {
         )
     }
 
-    /// Strict rule: rating ≥ 2100 after the newest contest in the language. The peak (maxRating) shows in the detail but does not score.
-    private static func rating(_ reading: CodeforcesReading, language: CodeforcesLanguage) -> StatRequirement {
-        let category = category(language)
+    /// Strict rule: the highest rating across the languages is 2100 or more. Above 2100 scores no more.
+    /// The peak (maxRating) shows in the detail but does not score.
+    private static func rating(_ reading: CodeforcesReading) -> StatRequirement {
+        let category = ratingCategory
         guard reading.configured, reading.available else {
             return StatRequirement(category: category, passed: false, progress: 0, weight: Weight.rating, detail: reading.reason, hasData: false)
         }
@@ -105,10 +117,11 @@ enum IntelligenceLevel {
         guard reading.contests > 0, reading.rating != nil else {
             return StatRequirement(category: category, passed: false, progress: 0, weight: Weight.rating, detail: who + "unrated", hasData: false)
         }
-        guard let current = reading.rating(in: language) else {
-            return StatRequirement(category: category, passed: false, progress: 0, weight: Weight.rating, detail: who + "no rated contest in \(language.rawValue)", hasData: false)
+        guard let best = bestRating(reading) else {
+            return StatRequirement(category: category, passed: false, progress: 0, weight: Weight.rating, detail: who + "unrated", hasData: false)
         }
-        var detail = who + "rating \(current) after the last \(language.rawValue) contest"
+        let current = best.rating
+        var detail = who + "best rating \(current)" + (best.language.map { " (\($0.rawValue))" } ?? "")
         if let rank = reading.rank { detail += " (\(rank))" }
         if let peak = reading.maxRating { detail += ", max \(peak)" }
         detail += ", \(reading.contests) rated contests; target \(Int(ratingBand.target))"
@@ -141,8 +154,8 @@ enum IntelligenceLevel {
         if !top.isMaxLevel || top.level != StatLevel.maxLevel || abs(top.score - 100) > 0.001 {
             errors.append("rating 2100 should be the max level and score 100, got level \(top.level) score \(top.score)")
         }
-        if top.stat != .INT || top.requirements.count != 4 || top.requirements.reduce(0, { $0 + $1.weight }) != 100 {
-            errors.append("INT should have three languages and typing, with weights that add to 100")
+        if top.stat != .INT || top.requirements.map(\.category) != [ratingCategory, typingCategory] || top.requirements.reduce(0, { $0 + $1.weight }) != 100 {
+            errors.append("INT should have one Codeforces rating and typing, with weights that add to 100")
         }
         for (name, language) in [("GNU G++20 13.2 (64 bit, winlibs)", CodeforcesLanguage.cpp), ("C++23 (GCC 14-64, msys2)", .cpp), ("Java 21 64bit", .java), ("PyPy 3-64", .python), ("Python 3", .python)] {
             if CodeforcesLanguage(submission: name) != language { errors.append("\(name) should read as \(language.rawValue)") }
@@ -152,9 +165,21 @@ enum IntelligenceLevel {
         }
         var cppOnly = reading(rating: 2100)
         cppOnly.history = [CodeforcesContest(time: 1, oldRating: 2000, newRating: 2100, language: .cpp)]
-        let oneLanguage = evaluate(cppOnly)
-        if oneLanguage.requirements.filter(\.hasData).map(\.category) != ["Codeforces C++"] {
-            errors.append("a language with no rated contest should have no data")
+        let oneLanguage = evaluate(cppOnly, typing: typing(200))
+        if !oneLanguage.isMaxLevel || oneLanguage.requirements.first?.detail.contains("best rating 2100 (C++)") != true {
+            errors.append("2100 in one language should be the max level, got \(oneLanguage.level) \(oneLanguage.requirements.first?.detail ?? "")")
+        }
+        // The highest language scores: 1500 in Python after 1800 in C++ scores 1800.
+        var mixed = reading(rating: 1500)
+        mixed.history = [CodeforcesContest(time: 1, oldRating: 1700, newRating: 1800, language: .cpp),
+                         CodeforcesContest(time: 2, oldRating: 1800, newRating: 1500, language: .python)]
+        if bestRating(mixed)?.rating != 1800 || bestRating(mixed)?.language != .cpp
+            || abs((evaluate(mixed).requirements.first?.progress ?? 0) - ratingBand.progress(1800)) > 0.0001 {
+            errors.append("the best rating across the languages should score, got \(String(describing: bestRating(mixed)))")
+        }
+        // Above 2100 scores the same as 2100.
+        if evaluate(reading(rating: 2400), typing: typing(200)).score != evaluate(reading(rating: 2100), typing: typing(200)).score {
+            errors.append("a rating above 2100 should score the same as 2100")
         }
         var early = cppOnly
         early.history?.append(CodeforcesContest(time: 2, oldRating: 2100, newRating: 1500, language: .java))
