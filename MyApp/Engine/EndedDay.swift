@@ -76,9 +76,10 @@ struct LateSettle: Equatable {
 }
 
 extension QuestBundle {
-    /// Required rows still open. The Screen Time row never counts: over the limit it turns red, but it opens no penalty.
+    /// Required rows still open. The Screen Time and Stretching rows never count: they turn red when missed,
+    /// but they open no penalty (Stretching since 2026-11-19).
     var openRequired: [Quest] {
-        quests.filter { $0.kind != .optional && $0.status != .completed && $0.id != ScreenTime.questId }
+        quests.filter { $0.kind != .optional && $0.status != .completed && $0.id != ScreenTime.questId && $0.id != DailyStretch.questId }
     }
 }
 

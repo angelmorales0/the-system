@@ -735,6 +735,8 @@ struct HandHabit: Hashable {
     static let wholeFoods = HandHabit(id: "wholeFoods", name: "Only whole foods", firstDay: builtInFirstDay)
     static let travel = HandHabit(id: "travel", name: "Traveling (max 2 days a week)", firstDay: builtInFirstDay, weeklyLimit: 2)
     static let builtIns = [noEatingOut, noCaffeine, wholeFoods, travel]
+    /// The first ending day whose failed habit opens the penalty (added 2026-11-19).
+    static let penaltyFirstDay = "2026-11-19"
     static let customPrefix = "custom:"
 }
 
@@ -844,6 +846,24 @@ enum HabitRules {
         var lock = GameSnapshot.fresh(catalog: catalog, now: monday)
         if lock.morningLockOn(now: seven.addingTimeInterval(-60)) || !lock.morningLockOn(now: seven) {
             errors.append("the morning lock should hold from 7:00")
+        }
+        // A failed built-in habit opens the penalty as its day ends. Stretching never does.
+        if let thursday = QuestDay.date(from: "2026-11-19"), let friday = QuestDay.date(from: "2026-11-20") {
+            var day = GameSnapshot.fresh(catalog: catalog, now: thursday.addingTimeInterval(9 * 3600))
+            for habit in HandHabit.builtIns where habit.weeklyLimit == nil { day.setHandMark(habit, day.bundle.dayKey, passed: true) }
+            if !day.failedHabits(on: day.bundle.dayKey).isEmpty { errors.append("passed habits and no travel should not fail") }
+            day.setHandMark(.noCaffeine, day.bundle.dayKey, passed: false)
+            if day.failedHabits(on: day.bundle.dayKey).map(\.id) != [HandHabit.noCaffeine.id] { errors.append("a Fail mark should fail its habit") }
+            var unmarked = day
+            unmarked.habits.wholeFoodsMarks = [:]
+            unmarked.setHandMark(.noCaffeine, unmarked.bundle.dayKey, passed: true)
+            if unmarked.failedHabits(on: unmarked.bundle.dayKey).map(\.id) != [HandHabit.wholeFoods.id] { errors.append("a day left unmarked should fail") }
+            day.refreshIfNeeded(catalog: catalog, now: friday.addingTimeInterval(9 * 3600))
+            if !day.player.penaltyOpen || PenaltyQuests.rows(in: day.bundle).isEmpty { errors.append("a failed habit should open the penalty") }
+            if !day.failedHabits(on: "2026-11-18").isEmpty { errors.append("days before the rule should not fail") }
+            var stretch = QuestBundle.empty
+            stretch.quests = [DailyStretch.quest(mode: .performanceTraining, now: thursday)]
+            if !stretch.openRequired.isEmpty { errors.append("an open Stretching row should not open a penalty") }
         }
         func run(_ start: Date, minutes: Double, source: String = "strava") -> WorkoutEvent {
             WorkoutEvent(source: source, externalId: "\(start.timeIntervalSince1970)", sport: "Run", start: start,

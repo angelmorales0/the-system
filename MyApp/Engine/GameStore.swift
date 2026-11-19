@@ -100,7 +100,7 @@ final class GameStore: ObservableObject {
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check() + MacScreenClient.check()
             + HiddenQuestRules.check() + RecoveryHolidayRules.check() + ShopRules.check()
             + DailyStretch.check() + StretchSplit.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
-            + NoGymDayRules.check() + PenaltyDecay.check() + RestRules.check() + RestScore.check() + SecretStore.check() + SecretSeed.check() + ConnectionStatusStore.check() + ConnectionAlerts.check() + LootRules.check()
+            + NoGymDayRules.check() + PenaltyDecay.check() + RestRules.check() + RestScore.check() + SecretStore.check() + SecretSeed.check() + ConnectionStatusStore.check() + ConnectionAlerts.check() + LootRules.check() + LevelAlerts.check()
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MonkeytypeClient.check() + MercuryClient.check()
             + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check()
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
@@ -587,8 +587,8 @@ final class GameStore: ObservableObject {
         guard let statInputs, statHistoriesLoaded else { return }
         let before = statLevels
         defer {
-            if announce, before != .empty, statLevels.overallLevel > before.overallLevel {
-                cue(.levelUp)
+            if announce, persistence == .standard, let change = LevelAlerts.announce(before: before, after: statLevels) {
+                announceLevelChange(change)
             }
         }
         // A failed Codeforces or Monkeytype read keeps the last good reading for the level. The monthly quests
@@ -607,6 +607,26 @@ final class GameStore: ObservableObject {
         )
         statHistory.record(statLevels, on: QuestDay.key(for: now))
         syncMaxHP()
+    }
+
+    /// The overall level changed: shown as a card over every page now, and sent as a notification
+    /// (iOS shows it when the app is in the background).
+    @Published private(set) var pendingLevelChange: LevelChange?
+
+    private func announceLevelChange(_ change: LevelChange) {
+        pendingLevelChange = change
+        cue(change.rose ? .levelUp : .warning)
+        #if os(iOS)
+        let content = UNMutableNotificationContent()
+        content.title = LevelAlerts.title(change)
+        content.body = LevelAlerts.body(change)
+        content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "level-\(change.id)", content: content, trigger: nil))
+        #endif
+    }
+
+    func acknowledgeLevelChange() {
+        pendingLevelChange = nil
     }
 
     /// Max HP follows the stat levels. A new max moves the cap and keeps HP under it.

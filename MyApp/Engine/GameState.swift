@@ -100,6 +100,7 @@ struct GameSnapshot: Codable, Equatable {
         recordQuestDay()
         keepEndedDay()
         recordMissedDayIfNeeded()
+        openPenaltyForFailedHabits()
         let previousTitles = bundle.quests.map(\.title)
         if !previousTitles.isEmpty {
             recentQuestTitles = Array(previousTitles.prefix(8))
@@ -177,6 +178,22 @@ struct GameSnapshot: Codable, Equatable {
     mutating func recordMissedDayIfNeeded() {
         guard missesRequiredSet else { return }
         player.penaltyOpen = true
+    }
+
+    /// A built-in Systems habit failed on the ending day: a Fail mark, no mark, or a travel day past the weekly limit.
+    /// The penalty (the 10K or the burpees) opens, rest day or not. Late work on the day cannot lift it.
+    /// Custom habits are judged by their contracts instead.
+    mutating func openPenaltyForFailedHabits() {
+        guard !failedHabits(on: bundle.dayKey).isEmpty else { return }
+        player.penaltyOpen = true
+        endedDay?.monthPenalty = true
+    }
+
+    /// The built-in habits that failed on a day that has ended. Days before `HandHabit.penaltyFirstDay` never count.
+    func failedHabits(on dayKey: String) -> [HandHabit] {
+        guard dayKey >= HandHabit.penaltyFirstDay else { return [] }
+        let next = QuestDay.key(byAddingDays: 1, to: dayKey)
+        return HandHabit.builtIns.filter { $0.passed(on: dayKey, marks: habits.marks($0), today: next) == false }
     }
 
     /// True when ending the day now would open a penalty.
