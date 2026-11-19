@@ -143,7 +143,7 @@ final class GameStore: ObservableObject {
             #if DEBUG
             // Launch with `-lootPreview YES` to fill the inventory with sample items and one drop card.
             if UserDefaults.standard.bool(forKey: "lootPreview") || ProcessInfo.processInfo.environment["LOOT_PREVIEW"] == "1" {
-                for (index, item) in (LootCatalog.items.filter { !$0.chestOnly }.prefix(14)).enumerated() {
+                for (index, item) in LootCatalog.items.enumerated() {
                     snapshot.inventory.counts[item.id] = index % 3 + 1
                 }
                 snapshot.inventory.counts[LootCatalog.chest.id] = 2

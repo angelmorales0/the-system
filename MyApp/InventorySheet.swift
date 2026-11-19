@@ -8,24 +8,120 @@ struct ItemIconView: View {
     var size: CGFloat = 30
 
     var body: some View {
+        ZStack {
+            // A soft halo behind the item, like light from the System's glass.
+            RadialGradient(colors: [QuestLight.cyan.opacity(0.35), .clear], center: .center, startRadius: 0, endRadius: size * 0.75)
+                .frame(width: size * 1.6, height: size * 1.6)
+            shape
+                .overlay { detail }
+        }
+        .frame(width: size, height: size)
+    }
+
+    /// Fine lines drawn on top of the shapes the app draws itself: a ridge, rings, barbs.
+    @ViewBuilder
+    private var detail: some View {
+        let line = StrokeStyle(lineWidth: max(0.8, size * 0.035), lineCap: .round)
+        switch icon {
+        case .fang: FangDetail().stroke(QuestLight.blue.opacity(0.75), style: line)
+        case .tusk: TuskDetail().stroke(QuestLight.blue.opacity(0.75), style: line)
+        case .feather: FeatherDetail().stroke(QuestLight.blue.opacity(0.7), style: line)
+        case .dagger: BladeDetail(length: 0.55).stroke(QuestLight.blue.opacity(0.8), style: line).rotationEffect(.degrees(45)).scaleEffect(1.05)
+        case .sword: BladeDetail(length: 0.78).stroke(QuestLight.blue.opacity(0.8), style: line).rotationEffect(.degrees(45)).scaleEffect(1.25)
+        case .longsword: BladeDetail(length: 0.92).stroke(QuestLight.blue.opacity(0.8), style: line).rotationEffect(.degrees(45)).scaleEffect(1.38)
+        case .greatsword: BladeDetail(length: 0.95).stroke(QuestLight.blue.opacity(0.8), style: line).rotationEffect(.degrees(45)).scaleEffect(1.38)
+        case .symbol: EmptyView()
+        }
+    }
+
+    private var shape: some View {
         Group {
             switch icon {
             case .symbol(let name):
                 Image(systemName: name)
                     .resizable()
                     .scaledToFit()
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, QuestLight.cyan.opacity(0.85))
             case .fang:
                 FangShape().fill(Color.white)
+            case .tusk:
+                TuskShape().fill(Color.white)
+            case .feather:
+                FeatherShape().fill(Color.white, style: FillStyle(eoFill: true))
             case .dagger:
-                BladeShape(length: 0.62).fill(Color.white).rotationEffect(.degrees(45))
+                BladeShape(length: 0.55, width: 0.16).fill(Color.white).rotationEffect(.degrees(45)).scaleEffect(1.05)
             case .sword:
-                BladeShape(length: 0.86).fill(Color.white).rotationEffect(.degrees(45))
+                BladeShape(length: 0.78, width: 0.15).fill(Color.white).rotationEffect(.degrees(45)).scaleEffect(1.25)
+            case .longsword:
+                BladeShape(length: 0.92, width: 0.12).fill(Color.white).rotationEffect(.degrees(45)).scaleEffect(1.38)
+            case .greatsword:
+                BladeShape(length: 0.95, width: 0.24).fill(Color.white).rotationEffect(.degrees(45)).scaleEffect(1.38)
             }
         }
-        .foregroundStyle(.white)
         .frame(width: size, height: size)
         .shadow(color: QuestLight.cyan.opacity(0.9), radius: 4)
         .shadow(color: .white.opacity(0.6), radius: 1.5)
+    }
+}
+
+/// The fang's gum line at the root and a crack along its curve.
+struct FangDetail: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let w = rect.width, h = rect.height
+        path.move(to: CGPoint(x: rect.minX + w * 0.31, y: rect.minY + h * 0.86))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + w * 0.58, y: rect.minY + h * 0.86), control: CGPoint(x: rect.minX + w * 0.45, y: rect.minY + h * 0.80))
+        path.move(to: CGPoint(x: rect.minX + w * 0.44, y: rect.minY + h * 0.70))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + w * 0.70, y: rect.minY + h * 0.14), control: CGPoint(x: rect.minX + w * 0.46, y: rect.minY + h * 0.35))
+        return path
+    }
+}
+
+/// Growth rings across the tusk.
+struct TuskDetail: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let w = rect.width, h = rect.height
+        for (y, left, right) in [(0.84, 0.21, 0.59), (0.66, 0.30, 0.66), (0.48, 0.40, 0.70)] {
+            path.move(to: CGPoint(x: rect.minX + w * left, y: rect.minY + h * y))
+            path.addQuadCurve(to: CGPoint(x: rect.minX + w * right, y: rect.minY + h * (y - 0.04)),
+                              control: CGPoint(x: rect.minX + w * (left + right) / 2, y: rect.minY + h * (y + 0.04)))
+        }
+        return path
+    }
+}
+
+/// Barbs off the feather's spine.
+struct FeatherDetail: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let w = rect.width, h = rect.height
+        for step in 0..<5 {
+            let t = 0.2 + Double(step) * 0.14
+            let x = rect.minX + w * (0.36 + 0.5 * t), y = rect.minY + h * (0.78 - 0.66 * t)
+            path.move(to: CGPoint(x: x, y: y))
+            path.addLine(to: CGPoint(x: x - w * 0.13, y: y - h * 0.02))
+            path.move(to: CGPoint(x: x, y: y))
+            path.addLine(to: CGPoint(x: x + w * 0.06, y: y + h * 0.10))
+        }
+        return path
+    }
+}
+
+/// A blade's ridge down its center and a ring on the pommel.
+struct BladeDetail: Shape {
+    var length: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let h = rect.height, mid = rect.midX
+        let tip = rect.minY + h * (1 - length) * 0.5
+        let guardY = rect.minY + h * 0.72
+        path.move(to: CGPoint(x: mid, y: tip + h * 0.08))
+        path.addLine(to: CGPoint(x: mid, y: guardY - h * 0.03))
+        path.addEllipse(in: CGRect(x: mid - rect.width * 0.06, y: guardY + h * 0.215, width: rect.width * 0.12, height: rect.width * 0.12))
+        return path
     }
 }
 
@@ -42,14 +138,75 @@ struct FangShape: Shape {
     }
 }
 
-/// A straight blade with a cross guard and a grip, drawn upright. `length` is the blade's share of the height.
+/// Short L-shaped marks at the four corners of a rect.
+struct CornerBrackets: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let arm = min(rect.width, rect.height) * 0.18
+        for (x, y, dx, dy) in [(rect.minX, rect.minY, 1.0, 1.0), (rect.maxX, rect.minY, -1.0, 1.0),
+                               (rect.minX, rect.maxY, 1.0, -1.0), (rect.maxX, rect.maxY, -1.0, -1.0)] {
+            path.move(to: CGPoint(x: x + dx * arm, y: y))
+            path.addLine(to: CGPoint(x: x, y: y))
+            path.addLine(to: CGPoint(x: x, y: y + dy * arm))
+        }
+        return path
+    }
+}
+
+/// A thick tusk, curved the other way from a fang, with a flat root.
+struct TuskShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let w = rect.width, h = rect.height
+        path.move(to: CGPoint(x: rect.minX + w * 0.20, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + w * 0.22, y: rect.minY + h * 0.02), control: CGPoint(x: rect.minX + w * 0.95, y: rect.minY + h * 0.45))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + w * 0.58, y: rect.maxY), control: CGPoint(x: rect.minX + w * 0.70, y: rect.minY + h * 0.62))
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// A feather: a curved vane with a quill, and a cut line down the spine (even-odd fill).
+struct FeatherShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let w = rect.width, h = rect.height
+        let base = CGPoint(x: rect.minX + w * 0.18, y: rect.maxY)
+        let tip = CGPoint(x: rect.maxX - w * 0.08, y: rect.minY)
+        // The vane: slim, with two notches on the outer edge.
+        path.move(to: CGPoint(x: rect.minX + w * 0.32, y: rect.minY + h * 0.80))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + w * 0.40, y: rect.minY + h * 0.46), control: CGPoint(x: rect.minX + w * 0.22, y: rect.minY + h * 0.62))
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.47, y: rect.minY + h * 0.47))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + w * 0.58, y: rect.minY + h * 0.22), control: CGPoint(x: rect.minX + w * 0.45, y: rect.minY + h * 0.32))
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.64, y: rect.minY + h * 0.24))
+        path.addQuadCurve(to: tip, control: CGPoint(x: rect.minX + w * 0.70, y: rect.minY + h * 0.08))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + w * 0.40, y: rect.minY + h * 0.84), control: CGPoint(x: rect.maxX - w * 0.05, y: rect.minY + h * 0.55))
+        path.closeSubpath()
+        // The quill below the vane.
+        path.move(to: base)
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.33, y: rect.minY + h * 0.76))
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.38, y: rect.minY + h * 0.80))
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.22, y: rect.maxY))
+        path.closeSubpath()
+        // The spine, cut out of the vane.
+        path.move(to: CGPoint(x: rect.minX + w * 0.34, y: rect.minY + h * 0.80))
+        path.addQuadCurve(to: CGPoint(x: tip.x - w * 0.03, y: tip.y + h * 0.05), control: CGPoint(x: rect.minX + w * 0.55, y: rect.minY + h * 0.38))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + w * 0.37, y: rect.minY + h * 0.81), control: CGPoint(x: rect.minX + w * 0.58, y: rect.minY + h * 0.40))
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// A straight blade with a cross guard and a grip, drawn upright. `length` is the blade's share of the height,
+/// `width` its share of the width.
 struct BladeShape: Shape {
     var length: CGFloat
+    var width: CGFloat
 
     func path(in rect: CGRect) -> Path {
         var path = Path()
         let w = rect.width, h = rect.height, mid = rect.midX
-        let bladeWidth = w * 0.16
+        let bladeWidth = w * width
         let tip = rect.minY + h * (1 - length) * 0.5
         let guardY = rect.minY + h * 0.72
         path.move(to: CGPoint(x: mid, y: tip))
@@ -58,8 +215,14 @@ struct BladeShape: Shape {
         path.addLine(to: CGPoint(x: mid - bladeWidth / 2, y: guardY))
         path.addLine(to: CGPoint(x: mid - bladeWidth / 2, y: tip + bladeWidth))
         path.closeSubpath()
-        path.addRect(CGRect(x: mid - w * 0.22, y: guardY, width: w * 0.44, height: h * 0.06))
-        path.addRect(CGRect(x: mid - w * 0.05, y: guardY + h * 0.06, width: w * 0.10, height: h * 0.16))
+        // A cross guard with flared ends, the grip, and a round pommel.
+        path.move(to: CGPoint(x: mid - w * 0.26, y: guardY - h * 0.02))
+        path.addLine(to: CGPoint(x: mid + w * 0.26, y: guardY - h * 0.02))
+        path.addLine(to: CGPoint(x: mid + w * 0.20, y: guardY + h * 0.05))
+        path.addLine(to: CGPoint(x: mid - w * 0.20, y: guardY + h * 0.05))
+        path.closeSubpath()
+        path.addRect(CGRect(x: mid - w * 0.045, y: guardY + h * 0.05, width: w * 0.09, height: h * 0.15))
+        path.addEllipse(in: CGRect(x: mid - w * 0.08, y: guardY + h * 0.195, width: w * 0.16, height: w * 0.16))
         return path
     }
 }
@@ -280,6 +443,10 @@ struct InventorySheet: View {
                         Rectangle().stroke(QuestLight.ink.opacity(entry == nil ? 0.25 : 0.75), lineWidth: entry?.item.id == selected ? 2 : 1)
                     }
                     .shadow(color: QuestLight.cyan.opacity(entry == nil ? 0 : 0.5), radius: 4)
+                    .overlay {
+                        // Bright corner brackets on a filled slot, like the System's frames.
+                        if entry != nil { CornerBrackets().stroke(Color.white.opacity(0.9), lineWidth: 1.5).padding(1) }
+                    }
                 if let entry {
                     ItemIconView(icon: entry.item.icon, size: 30)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)

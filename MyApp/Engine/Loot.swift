@@ -31,8 +31,12 @@ enum ItemCategory: String, Codable, CaseIterable {
 enum ItemIcon: Equatable {
     case symbol(String)
     case fang
+    case tusk
+    case feather
     case dagger
     case sword
+    case longsword
+    case greatsword
 }
 
 /// One kind of item. Items are sold in the inventory for `value` gold. The Sealed Chest is opened, not sold.
@@ -54,38 +58,36 @@ enum LootCatalog {
                                 description: "A chest sealed with old mana. Keep it, and open it in the inventory when you want. It holds an item no quest drops.")
 
     static let items: [LootItem] = [
-        // Materials
+        // Materials: each icon shows the thing itself.
         LootItem(id: "lycanFang", name: "Lycan Fang", category: .material, rank: .E, value: 40, icon: .fang,
                  description: "A lycan's large, sharp fang. It can be sold in the shop."),
-        LootItem(id: "goblinEar", name: "Goblin Ear", category: .material, rank: .E, value: 30, icon: .symbol("ear.fill"),
-                 description: "A torn goblin ear. Hunters keep them as proof of a clear."),
-        LootItem(id: "ironScale", name: "Iron Scale", category: .material, rank: .E, value: 50, icon: .symbol("hexagon.fill"),
-                 description: "A dull scale from an iron lizard. Smiths melt it down."),
-        LootItem(id: "shadowPelt", name: "Shadow Wolf Pelt", category: .material, rank: .D, value: 90, icon: .symbol("pawprint.fill"),
-                 description: "A pelt that drinks the light. Warm, and hard to see at night."),
-        LootItem(id: "venomGland", name: "Venom Gland", category: .material, rank: .D, value: 110, icon: .symbol("drop.fill"),
-                 description: "A gland still full of venom. Handle it with gloves."),
-        LootItem(id: "orcTusk", name: "Orc Tusk", category: .material, rank: .D, value: 100, icon: .symbol("moon.fill"),
+        LootItem(id: "rockTurtleShell", name: "Rock Turtle Shell", category: .material, rank: .E, value: 50, icon: .symbol("tortoise.fill"),
+                 description: "A shell as hard as granite. Armorers cut it into plates."),
+        LootItem(id: "orcTusk", name: "Orc Tusk", category: .material, rank: .D, value: 100, icon: .tusk,
                  description: "A heavy, yellowed tusk. Carvers pay well for whole ones."),
-        LootItem(id: "frostShard", name: "Frost Shard", category: .material, rank: .C, value: 180, icon: .symbol("snowflake"),
-                 description: "A shard of ice that never melts. It keeps the cold of the gate it came from."),
-        LootItem(id: "spiderSilk", name: "Gate Spider Silk", category: .material, rank: .C, value: 160, icon: .symbol("circle.hexagongrid.fill"),
-                 description: "Silk strong enough to stop a blade. Armorers weave it into vests."),
+        LootItem(id: "basiliskVenom", name: "Basilisk Venom", category: .material, rank: .D, value: 110, icon: .symbol("drop.fill"),
+                 description: "One drop of basilisk venom. Alchemists turn it into antidotes."),
+        LootItem(id: "shadowWolfEye", name: "Shadow Wolf Eye", category: .material, rank: .D, value: 90, icon: .symbol("eye.fill"),
+                 description: "An eye that still sees in the dark. Used to make night lenses."),
+        LootItem(id: "frostCore", name: "Frost Core", category: .material, rank: .C, value: 180, icon: .symbol("snowflake"),
+                 description: "The frozen core of an ice beast. It never melts."),
+        LootItem(id: "goldenScarab", name: "Golden Scarab", category: .material, rank: .C, value: 160, icon: .symbol("ladybug.fill"),
+                 description: "A beetle with a shell of real gold. Collectors buy them whole."),
         LootItem(id: "gargoyleHeart", name: "Gargoyle Heart", category: .material, rank: .B, value: 350, icon: .symbol("heart.fill"),
                  description: "A stone heart that still beats once a minute."),
-        LootItem(id: "wyvernScale", name: "Wyvern Scale", category: .material, rank: .B, value: 400, icon: .symbol("lizard.fill"),
-                 description: "A scale from a wyvern's chest. Fire slides off it."),
-        LootItem(id: "dragonClaw", name: "Dragon Claw", category: .material, rank: .A, value: 900, icon: .symbol("flame.fill"),
-                 description: "A claw longer than a forearm, warm to the touch."),
-        LootItem(id: "phoenixPlume", name: "Phoenix Plume", category: .material, rank: .S, value: 2_000, icon: .symbol("bird.fill"),
+        LootItem(id: "petrifiedSalamander", name: "Petrified Salamander", category: .material, rank: .B, value: 400, icon: .symbol("lizard.fill"),
+                 description: "A fire salamander turned to stone. It is still warm inside."),
+        LootItem(id: "dragonfireEmber", name: "Dragonfire Ember", category: .material, rank: .A, value: 900, icon: .symbol("flame.fill"),
+                 description: "An ember from a dragon's breath. It burns for a hundred years."),
+        LootItem(id: "phoenixPlume", name: "Phoenix Plume", category: .material, rank: .S, value: 2_000, icon: .feather,
                  description: "A plume that glows like an ember. Few hunters have seen one."),
         // Crystals
         LootItem(id: "manaLow", name: "Low-Grade Mana Crystal", category: .crystal, rank: .E, value: 50, icon: .symbol("diamond.fill"),
                  description: "A small, cloudy crystal from a weak monster's core."),
         LootItem(id: "manaMid", name: "Mid-Grade Mana Crystal", category: .crystal, rank: .C, value: 200, icon: .symbol("rhombus.fill"),
                  description: "A clear crystal with a steady glow. Guilds buy these in bulk."),
-        LootItem(id: "runeStone", name: "Rune Stone", category: .crystal, rank: .B, value: 450, icon: .symbol("seal.fill"),
-                 description: "A stone carved with a rune that hums when held."),
+        LootItem(id: "sunStone", name: "Sun Stone", category: .crystal, rank: .B, value: 450, icon: .symbol("sun.max.fill"),
+                 description: "A stone that holds a day of sunlight. It glows in the dark."),
         LootItem(id: "manaHigh", name: "High-Grade Mana Crystal", category: .crystal, rank: .A, value: 800, icon: .symbol("suit.diamond.fill"),
                  description: "A crystal so dense with mana that it lights a room."),
         // Consumables
@@ -100,25 +102,27 @@ enum LootCatalog {
         // Equipment
         LootItem(id: "rustyDagger", name: "Rusty Dagger", category: .equipment, rank: .E, value: 60, icon: .dagger,
                  description: "An old dagger with a chipped edge. Better than bare hands."),
+        LootItem(id: "smithHammer", name: "Smith's Hammer", category: .equipment, rank: .E, value: 45, icon: .symbol("hammer.fill"),
+                 description: "A dwarf smith's hammer. Heavy enough to crack a skull."),
         LootItem(id: "steelSword", name: "Steel Shortsword", category: .equipment, rank: .D, value: 120, icon: .sword,
                  description: "A plain, well-balanced sword. Standard issue for new hunters."),
         LootItem(id: "hunterGauntlets", name: "Hunter's Gauntlets", category: .equipment, rank: .C, value: 220, icon: .symbol("hand.raised.fill"),
                  description: "Leather gauntlets lined with iron. They add weight to a punch."),
         LootItem(id: "knightShield", name: "Knight's Shield", category: .equipment, rank: .B, value: 380, icon: .symbol("shield.fill"),
                  description: "A shield from a fallen knight. Its crest is worn away."),
-        LootItem(id: "shadowBlade", name: "Shadow-Forged Blade", category: .equipment, rank: .A, value: 1_000, icon: .sword,
+        LootItem(id: "shadowBlade", name: "Shadow-Forged Blade", category: .equipment, rank: .A, value: 1_000, icon: .longsword,
                  description: "A black blade that cuts without a sound."),
         LootItem(id: "fallenCrown", name: "Crown of the Fallen King", category: .equipment, rank: .S, value: 2_500, icon: .symbol("crown.fill"),
                  description: "A crown from the deepest floor of a gate. It is cold and very heavy."),
         // Found only in a Sealed Chest
-        LootItem(id: "obsidianGreatsword", name: "Obsidian Greatsword", category: .equipment, rank: .A, value: 1_400, icon: .sword,
+        LootItem(id: "obsidianGreatsword", name: "Obsidian Greatsword", category: .equipment, rank: .A, value: 1_400, icon: .greatsword,
                  description: "A greatsword of black glass. It never dulls.", chestOnly: true),
-        LootItem(id: "wraithCloak", name: "Cloak of the Wraith", category: .equipment, rank: .A, value: 1_200, icon: .symbol("eye.fill"),
-                 description: "A cloak that hides its wearer from every monster below A-rank.", chestOnly: true),
-        LootItem(id: "titanBracer", name: "Titan's Bracer", category: .equipment, rank: .A, value: 1_300, icon: .symbol("bolt.shield.fill"),
-                 description: "A bracer forged for a giant's wrist. It doubles a hunter's grip.", chestOnly: true),
-        LootItem(id: "stormSpear", name: "Stormcaller Spear", category: .equipment, rank: .S, value: 3_000, icon: .symbol("bolt.fill"),
-                 description: "A spear that calls lightning down on whatever it points at.", chestOnly: true),
+        LootItem(id: "monarchKey", name: "Monarch's Key", category: .equipment, rank: .A, value: 1_200, icon: .symbol("key.fill"),
+                 description: "A key to a gate that no hunter has opened.", chestOnly: true),
+        LootItem(id: "thunderAegis", name: "Aegis of Thunder", category: .equipment, rank: .A, value: 1_300, icon: .symbol("bolt.shield.fill"),
+                 description: "A shield that throws back every strike as lightning.", chestOnly: true),
+        LootItem(id: "thunderBolt", name: "Thunder God's Bolt", category: .equipment, rank: .S, value: 3_000, icon: .symbol("bolt.fill"),
+                 description: "A bolt of lightning, held still. It strikes whatever it is thrown at.", chestOnly: true),
         LootItem(id: "abyssalCore", name: "Abyssal Core", category: .crystal, rank: .S, value: 3_500, icon: .symbol("atom"),
                  description: "The core of a gate boss from the abyss. Its mana could power a city.", chestOnly: true),
         LootItem(id: "starfallCrystal", name: "Starfall Crystal", category: .crystal, rank: .S, value: 4_000, icon: .symbol("sparkles"),
