@@ -252,13 +252,9 @@ struct NextQuestView: View {
                     VStack(spacing: 4) {
                         DayRing(remaining: remaining)
                             .frame(width: 64, height: 64)
-                        Group {
-                            if let end = data.ringEnd { Text(end, style: .timer) } else { Text("") }
-                        }
-                        .font(.system(size: 12, weight: .bold).monospacedDigit())
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(remaining < WidgetData.urgentFraction ? WidgetPalette.red : WidgetPalette.ink)
-                        .frame(width: 80)
+                        countdown(size: 12, remaining: remaining)
+                            .multilineTextAlignment(.center)
+                            .frame(width: 80)
                     }
                 }
                 WarningLine(text: warning, fontSize: 10)
@@ -267,7 +263,10 @@ struct NextQuestView: View {
         } else {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .center) {
-                    Caption(text: "Next quest")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Caption(text: "Next quest")
+                        countdown(size: 15, remaining: remaining)
+                    }
                     Spacer(minLength: 2)
                     DayRing(remaining: remaining).frame(width: 34, height: 34)
                 }
@@ -275,6 +274,17 @@ struct NextQuestView: View {
                 WarningLine(text: warning, fontSize: 8.5)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+
+    /// Hours, minutes, and seconds to the deadline, counting down on its own. It stops at 0:00.
+    @ViewBuilder
+    private func countdown(size: CGFloat, remaining: Double) -> some View {
+        if let end = data.ringEnd {
+            Text(timerInterval: min(now, end)...end, countsDown: true)
+                .font(.system(size: size, weight: .bold).monospacedDigit())
+                .foregroundStyle(remaining < WidgetData.urgentFraction ? WidgetPalette.red : WidgetPalette.ink)
+                .lineLimit(1)
         }
     }
 

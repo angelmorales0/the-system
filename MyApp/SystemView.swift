@@ -214,6 +214,8 @@ struct SystemView: View {
             Spacer(minLength: 22)
             QuestSignalRing(dayClock: store.dayClock, missesRequiredSet: store.snapshot.missesRequiredSet)
                 .frame(width: 43, height: 43)
+            QuestDayTimer(dayClock: store.dayClock)
+                .padding(.top, 6)
         }
     }
 
@@ -674,6 +676,27 @@ private struct QuestSignalRing: View {
         if failed { return "The day ended. Daily quest failed." }
         let minutes = max(0, Int(dayClock.deadline.timeIntervalSince(now) / 60))
         return "\(minutes / 60) hours \(minutes % 60) minutes until 5 AM"
+    }
+}
+
+/// The time left in the quest day under the ring: hours, minutes, and seconds, counting down to 0:00 at 5:00.
+/// Red with the ring, under 15% of the day left.
+private struct QuestDayTimer: View {
+    let dayClock: DayClock
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { timeline in
+            let now = dayClock.displayDate(for: timeline.date)
+            let urgent = dayClock.isUrgent(at: now)
+            Text(timerInterval: min(now, dayClock.deadline)...dayClock.deadline, countsDown: true)
+                .font(.system(.caption, design: .default).weight(.semibold).monospacedDigit())
+                .tracking(1)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(urgent ? QuestLight.penalty : QuestLight.ink.opacity(0.85))
+                .shadow(color: urgent ? QuestLight.penalty.opacity(0.7) : QuestLight.blue.opacity(0.7), radius: 4)
+                .accessibilityLabel("Time left in the quest day")
+        }
+        .allowsHitTesting(false)
     }
 }
 
