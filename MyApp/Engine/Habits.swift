@@ -27,11 +27,16 @@ struct HabitState: Codable, Equatable {
     var homeSet = false
     /// When the phone entered and left home, newest last. Copied from `HomeEvents` before each judgment.
     var homeEvents: [HomeEvent] = []
+    /// Quest days whose morning workout ended the lock, for the systems view. Kept 60 days.
+    var morningDoneDays: [String] = []
+    /// The behavior log: one note a quest day, "what I did that could be better". Kept 365 days.
+    var log: [String: String] = [:]
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case eatOutPenaltyWeeks, beliefs, morningUnlockedDayKey, wokeAt, contracts, weights, tokenDebt, restDaysForfeited, homeSet, homeEvents
+        case morningDoneDays, log
     }
 
     init(from decoder: Decoder) throws {
@@ -46,6 +51,8 @@ struct HabitState: Codable, Equatable {
         restDaysForfeited = try container.decodeIfPresent([String: Int].self, forKey: .restDaysForfeited) ?? [:]
         homeSet = try container.decodeIfPresent(Bool.self, forKey: .homeSet) ?? false
         homeEvents = try container.decodeIfPresent([HomeEvent].self, forKey: .homeEvents) ?? []
+        morningDoneDays = try container.decodeIfPresent([String].self, forKey: .morningDoneDays) ?? []
+        log = try container.decodeIfPresent([String: String].self, forKey: .log) ?? [:]
     }
 }
 
@@ -106,6 +113,7 @@ extension GameSnapshot {
         let after = habits.wokeAt[today] ?? dayStart
         guard MorningLock.unlockingWorkout(integrations, after: after) != nil else { return false }
         habits.morningUnlockedDayKey = today
+        habits.morningDoneDays = Array((habits.morningDoneDays + [today]).suffix(60))
         return true
     }
 }
@@ -366,6 +374,84 @@ extension GameSnapshot {
     /// True when today's Home by 9 pm row is not done. A rest day does not waive it.
     var homeByMissed: Bool {
         bundle.quests.contains { $0.id == HomeBy.questId && $0.status != .completed }
+    }
+}
+
+// MARK: - Behavior log
+
+/// One short note a day: what I did that could be better. Optional, never a penalty.
+enum BehaviorLog {
+    static let maxLength = 1_000
+    static let keepDays = 365
+}
+
+extension GameSnapshot {
+    /// Saves today's note. An empty note removes it.
+    mutating func setLogNote(_ text: String) {
+        let note = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(BehaviorLog.maxLength))
+        let today = bundle.dayKey
+        habits.log[today] = note.isEmpty ? nil : note
+        let oldest = QuestDay.key(byAddingDays: -BehaviorLog.keepDays, to: today)
+        habits.log = habits.log.filter { $0.key >= oldest }
+    }
+}
+
+// MARK: - Systems view
+
+/// The habits as streaks, the 1% steps of each day, ahead of the levels. One row a habit, one dot a day for 28 days.
+enum SystemsView {
+    static let days = 28
+
+    enum Mark: Equatable {
+        case done, missed, none
+    }
+
+    struct Track: Equatable, Identifiable {
+        var name: String
+        /// Oldest first, today last.
+        var marks: [Mark]
+        var id: String { name }
+
+        /// Done days in a row, ending today or yesterday (today may still be open).
+        var streak: Int {
+            var marks = self.marks
+            if marks.last != .done { marks = Array(marks.dropLast()) }
+            return marks.reversed().prefix { $0 == .done }.count
+        }
+    }
+
+    /// `caffeine` is mg by quest day from Apple Health, when loaded.
+    static func tracks(_ game: GameSnapshot, caffeine: [String: Double] = [:]) -> [Track] {
+        let today = game.bundle.dayKey
+        let keys = (0..<days).map { QuestDay.key(byAddingDays: $0 - (days - 1), to: today) }
+        let history = Dictionary(game.questHistory.map { ($0.dayKey, $0.quests) }, uniquingKeysWith: { first, _ in first })
+        let todayRows = GameSnapshot.questRecords(of: game.bundle)
+        func rows(_ key: String) -> [QuestRecord]? { key == today ? todayRows : history[key] }
+        /// A day's mark from its rows of one kind: done when all are completed, missed when one failed or the day ended open.
+        func mark(_ key: String, _ match: (QuestRecord) -> Bool) -> Mark {
+            guard let list = rows(key)?.filter(match), !list.isEmpty else { return .none }
+            if list.allSatisfy({ $0.status == .completed }) { return .done }
+            return key == today && !list.contains(where: { $0.status == .failed }) ? .none : .missed
+        }
+        let morning = keys.map { key -> Mark in
+            if game.habits.morningDoneDays.contains(key) { return .done }
+            if game.restDue(on: key) || key == today { return .none }
+            return game.habits.morningDoneDays.isEmpty || key < (game.habits.morningDoneDays.min() ?? key) ? .none : .missed
+        }
+        let eatOut = keys.map { key -> Mark in
+            game.habits.eatOutPenaltyWeeks.contains(RestDays.weekKey(of: key)) ? .missed : (game.finance == nil ? .none : .done)
+        }
+        let coffee = keys.map { key -> Mark in caffeine[key].map { $0 <= 0 ? .done : .missed } ?? .none }
+        let logged = keys.map { key -> Mark in game.habits.log[key] != nil ? .done : .none }
+        return [
+            Track(name: "Morning workout", marks: morning),
+            Track(name: "Home by 9 pm", marks: keys.map { mark($0) { $0.method == .homeBy } }),
+            Track(name: "Gym day", marks: keys.map { mark($0) { $0.stat == .STR && $0.method == .hevySets && $0.kind == .daily } }),
+            Track(name: "Screen Time", marks: keys.map { mark($0) { $0.method == .screenTimeLimit } }),
+            Track(name: "Eat-out cap", marks: eatOut),
+            Track(name: "No caffeine", marks: coffee),
+            Track(name: "Log written", marks: logged),
+        ]
     }
 }
 
@@ -664,6 +750,23 @@ enum HabitRules {
         _ = pass.usePotion(.moonlitPass, now: monday)
         if pass.bundle.quests.first(where: { $0.id == HomeBy.questId })?.status != .completed || pass.homeByMissed || pass.gold != 5_800 {
             errors.append("a Moonlit Pass should skip tonight's Home by 9 pm for 4,200 gold")
+        }
+
+        // The log keeps one trimmed note a day; an empty note removes it.
+        var noted = GameSnapshot.fresh(catalog: catalog, now: monday)
+        noted.setLogNote("  Ate out alone. ")
+        let afterNote = noted.habits.log[noted.bundle.dayKey]
+        noted.setLogNote("")
+        if afterNote != "Ate out alone." || noted.habits.log[noted.bundle.dayKey] != nil {
+            errors.append("the log should keep a trimmed note and remove an empty one")
+        }
+        // Systems view: 28 days a habit, and a streak that ends today or yesterday.
+        var tracked = GameSnapshot.fresh(catalog: catalog, now: monday)
+        tracked.habits.morningDoneDays = [QuestDay.key(byAddingDays: -2, to: tracked.bundle.dayKey), QuestDay.key(byAddingDays: -1, to: tracked.bundle.dayKey)]
+        let tracks = SystemsView.tracks(tracked, caffeine: [tracked.bundle.dayKey: 0])
+        if tracks.count != 7 || tracks.contains(where: { $0.marks.count != SystemsView.days }) || tracks.first?.streak != 2
+            || tracks.first(where: { $0.name == "No caffeine" })?.marks.last != .done {
+            errors.append("the systems view should show 7 habits of 28 days with a 2-day morning streak, got \(tracks.map { "\($0.name) \($0.streak)" })")
         }
 
         // Day off: Sundays. Work past the grace fails the Screen Time quest; a weekday keeps the 7-hour work cap.

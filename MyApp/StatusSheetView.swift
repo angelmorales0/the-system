@@ -11,6 +11,8 @@ struct StatusSheetView: View {
     @State private var showShop = false
     @State private var showBeliefs = false
     @State private var showContracts = false
+    /// The systems view comes first; the levels are one tap away.
+    @State private var showLevels = false
 
     var body: some View {
         ZStack {
@@ -18,6 +20,26 @@ struct StatusSheetView: View {
             GeometryReader { proxy in
                 ScrollView(showsIndicators: false) {
                     SystemPanel(padding: 14) {
+                        VStack(spacing: 18) {
+                        Picker("Page", selection: $showLevels) {
+                            Text("SYSTEMS").tag(false)
+                            Text("LEVELS").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        .accessibilityIdentifier("statusPagePicker")
+                        if !showLevels {
+                            VStack(spacing: 18) {
+                                StatusTitleBox()
+                                SystemsPanel(tracks: store.systemsTracks)
+                                StatusFrame {
+                                    VStack(spacing: 0) {
+                                        statusLink("CONTRACTS") { showContracts = true; SystemSound.systemOpen.play() }
+                                        Rectangle().fill(QuestLight.ink.opacity(0.25)).frame(height: 0.5)
+                                        statusLink("BELIEFS") { showBeliefs = true; SystemSound.systemOpen.play() }
+                                    }
+                                }
+                            }
+                        } else {
                         StatusSheetContent(
                             level: store.statLevels.overallLevel,
                             xp: (store.statLevels.overallXP, StatLevelSet.overallMaxXP),
@@ -32,6 +54,8 @@ struct StatusSheetView: View {
                             onBeliefs: { showBeliefs = true; SystemSound.systemOpen.play() },
                             onContracts: { showContracts = true; SystemSound.systemOpen.play() }
                         )
+                        }
+                        }
                     }
                     .frame(maxWidth: 460)
                     .padding(.horizontal, 18)
@@ -63,6 +87,25 @@ struct StatusSheetView: View {
             if penalty != nil { closeSheets() }
         }
         .onChange(of: store.bundle.dayKey) { _, _ in closeSheets() }
+    }
+
+    private func statusLink(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                    .font(.footnote.weight(.semibold))
+                    .tracking(1.6)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .opacity(0.7)
+            }
+            .foregroundStyle(QuestLight.ink)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title.capitalized)
     }
 
     private func closeSheets() {

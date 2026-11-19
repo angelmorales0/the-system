@@ -351,6 +351,22 @@ final class GameStore: ObservableObject {
         saveStatTargets(next)
     }
 
+    /// Saves today's behavior log note. An empty note removes it.
+    func setLogNote(_ text: String) {
+        var next = snapshot
+        next.setLogNote(text)
+        guard next != snapshot else { return }
+        snapshot = next
+        persist()
+    }
+
+    /// The habit streaks for the systems view, with caffeine from Apple Health once it is loaded.
+    var systemsTracks: [SystemsView.Track] {
+        let caffeine = Dictionary((statInputs?.inputs.recoveryDays ?? []).compactMap { day in day.caffeineMg.map { (day.dayKey, $0) } },
+                                  uniquingKeysWith: { first, _ in first })
+        return SystemsView.tracks(snapshot, caffeine: caffeine)
+    }
+
     /// Saves the phone's location as home. Home by 9 pm starts with the next day.
     func setHomeHere() {
         guard persistence == .standard else { return }

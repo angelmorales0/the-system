@@ -9,6 +9,7 @@ struct SystemView: View {
     @State private var stretchExpanded = false
     /// The gym split editor, opened from under the gym row.
     @State private var editingSplit = false
+    @State private var showLog = false
 
     var body: some View {
         ZStack {
@@ -36,6 +37,9 @@ struct SystemView: View {
             }
         }
         .animation(.easeOut(duration: 0.25), value: store.pendingHiddenReveal?.id)
+        .sheet(isPresented: $showLog, onDismiss: { SystemSound.systemClose.play() }) {
+            BehaviorLogSheet()
+        }
         .sheet(isPresented: $editingSplit, onDismiss: { SystemSound.systemClose.play() }) {
             NavigationStack { SplitEditorSheet(dayId: GymSplit.day(named: store.bundle.headerLine)?.id) }
         }
@@ -182,6 +186,25 @@ struct SystemView: View {
                     .foregroundStyle(QuestLight.ink.opacity(0.8))
                     .padding(.top, 14)
             }
+
+            // The behavior log: one short note a day.
+            Button {
+                SystemSound.systemOpen.play()
+                showLog = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: store.snapshot.habits.log[store.bundle.dayKey] == nil ? "square.and.pencil" : "checkmark")
+                    Text(store.snapshot.habits.log[store.bundle.dayKey] == nil ? "WRITE TODAY'S LOG" : "TODAY'S LOG WRITTEN")
+                        .tracking(1)
+                }
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(QuestLight.ink.opacity(0.75))
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 10)
+            .accessibilityIdentifier("behaviorLogButton")
 
             Spacer(minLength: 38)
             Text(warning)
