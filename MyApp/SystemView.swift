@@ -358,7 +358,8 @@ struct SystemView: View {
         let unlock = store.snapshot.beyondTheLimitToday
         let beyond = unlock?.questId == quest.id && quest.status == .completed && quest.progress.current + 0.05 >= (unlock?.achieved ?? 0)
         // The run's checkbox is its own button: a hand check for a bike day. The rest of the row still asks Strava.
-        let handCheck = quest.allowsCheckOff && quest.status == .pending
+        // A lift Hevy shows done that the app could not count takes a hand check too.
+        let handCheck = (quest.allowsCheckOff || store.hevyShowsDone(quest)) && quest.status == .pending
         return HStack(spacing: 11) {
         Button {
             store.handleQuestTap(id: quest.id)

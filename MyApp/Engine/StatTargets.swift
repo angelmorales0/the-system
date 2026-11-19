@@ -180,7 +180,7 @@ struct StatTargets: Codable, Equatable {
             goals[rule.category] = "\(rule.targetReps) reps in one set"
         }
         goals["Pistol squats"] = "\(Int(StrengthLevel.pistolBand.target)) reps per leg"
-        goals["Farmer's carry"] = "\(Int(StrengthLevel.farmerTargetLb)) lb/hand for \(Int(StrengthLevel.farmerTargetSec)) sec"
+        goals["Farmer's carry"] = "\(Int(StrengthLevel.farmerTargetLb)) lb/hand for \(Int(StrengthLevel.farmerTargetMeters)) m"
         goals["Dead hang"] = "\(Int(StrengthLevel.hangBand.target)) sec"
 
         goals["1-mile run"] = "\(clock(EnduranceLevel.mileBand.target)) or faster"

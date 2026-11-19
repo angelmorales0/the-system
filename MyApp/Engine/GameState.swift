@@ -630,9 +630,9 @@ struct GameSnapshot: Codable, Equatable {
 
     /// Hand check for the rows that allow one (see `Quest.allowsCheckOff`). Does not pretend to be Strava, WHOOP, or the other live sources.
     @discardableResult
-    mutating func applyLocalOverride(questId: String, now: Date) -> VerificationApply {
+    mutating func applyLocalOverride(questId: String, now: Date, hevyShows: Bool = false) -> VerificationApply {
         guard let quest = bundle.quests.first(where: { $0.id == questId }) else { return .ignored }
-        guard quest.allowsCheckOff else { return .ignored }
+        guard quest.allowsCheckOff || hevyShows else { return .ignored }
         let evidence = Evidence.make(
             source: "manual_override",
             externalId: "override:\(quest.id):\(bundle.dayKey)",

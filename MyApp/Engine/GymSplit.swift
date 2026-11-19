@@ -4,7 +4,8 @@ import Foundation
 /// Sets: 2 for each exercise while the player gets back into lifting. Squats, lateral raises, and curls keep 3,
 /// and pull-ups keep 4, 4, and 3. The player can change the sets and mark a row optional in the app (`SplitEdit`).
 /// Overhead press and bench press come once each, heavy. Chest and triceps get support work on Lower Day.
-/// Dead hangs come 3 times (Squat, Press, and Arms Day), never on Lower Day, which has the farmer's walk for grip.
+/// Dead hangs come on every day but Bench Day (Squat, Press, Lower, and Arms Day) for grip. The farmer's walk left
+/// Lower Day on 2026-11-18: Hevy logs it as distance, so its timed row could never fill.
 /// Lateral raises and curls, the current focus, come 3 times a rotation (Bench, Press, and Arms Day), never on a leg day.
 /// Pull-ups, the main goal (20 strict reps), also come 3 times, each with its own job: volume on Bench Day,
 /// weighted strength on Press Day, and a max-effort set on Arms Day. Squats come once, heavy.
@@ -136,7 +137,7 @@ enum GymSplit {
         support("Lying Leg Curl", 2, 8...12, muscle: "Hamstrings", aliases: ["lying leg curl", "seated leg curl", "leg curl", "nordic hamstring curl", "nordic curl"],
                 note: "Knee-flexion hamstring work, which the hinge lifts miss. Runners need it to protect the hamstrings."),
     ] + hipRows + [
-        hold("Farmers Walk", 2, seconds: 60, target: "Farmer's carry", aliases: StrengthLevel.farmerAliases),
+        hold("Dead Hang", 2, seconds: 60, target: "Dead hang", aliases: StrengthLevel.hangAliases),
     ])
 
     static let arms = Day(id: "arms", name: "Arms Day", focus: "Pull-ups first while fresh, then side delts, biceps, grip, and core. No pressing", lowerBody: false, exercises: [
@@ -513,8 +514,10 @@ enum GymSplit {
         }
         let catalog = FallbackCatalog.bundled()
 
-        // Every exercise trains a real STR target, and every STR target is in the split.
-        let targets = Set(StrengthLevel.evaluate(workouts: [], now: now).requirements.map(\.category))
+        // Every exercise trains a real STR target, and every STR target is in the split but the farmer's carry,
+        // which left Lower Day on 2026-11-18 (Hevy logs it as distance). It stays a level target, done off the split.
+        let offSplit: Set<String> = ["Farmer's carry"]
+        let targets = Set(StrengthLevel.evaluate(workouts: [], now: now).requirements.map(\.category)).subtracting(offSplit)
         let trained = Set(rotation.flatMap { $0.exercises.filter { !$0.support }.map(\.target) })
         if !trained.isSubset(of: targets) || trained != targets {
             errors.append("the split should train exactly the STR targets, missing \(targets.subtracting(trained).sorted()), extra \(trained.subtracting(targets).sorted())")
@@ -543,9 +546,9 @@ enum GymSplit {
         // Days a rotation that train each target. The focus targets come 3 times; the hardest lifts once.
         let expectedDays: [String: Int] = [
             "Lateral raise": 3, "Dumbbell curl": 3, "Toes-to-bar": 1,
-            "Pull-ups": 3, "Dead hang": 3, "Squat": 1, "Overhead press": 1, "Barbell row": 1,
+            "Pull-ups": 3, "Dead hang": 4, "Squat": 1, "Overhead press": 1, "Barbell row": 1,
             "Bench press": 1, "Weighted dips": 1, "Handstand push-ups": 1,
-            "Bulgarian split squat": 1, "Pistol squats": 1, "Farmer's carry": 1,
+            "Bulgarian split squat": 1, "Pistol squats": 1,
         ]
         for target in targets {
             let count = rotation.filter { day in day.exercises.contains { $0.target == target } }.count
@@ -658,7 +661,8 @@ enum GymSplit {
         if lower.headerLine != "Lower Day" || lower.quests.contains(where: { ($0.verification.params["exercise"]?.stringValue ?? "").hasPrefix("Deadlift") }) {
             errors.append("Lower Day should have no deadlift, got \(lower.quests.map(\.title))")
         }
-        if lower.quests.first(where: { $0.title.hasPrefix("Farmers Walk") })?.verification.params["minDurationSec"]?.doubleValue != 120 {
+        if lower.quests.first(where: { $0.title.hasPrefix("Dead Hang") })?.verification.params["minDurationSec"]?.doubleValue != 120
+            || lower.quests.contains(where: { $0.title.hasPrefix("Farmers Walk") }) {
             errors.append("a timed exercise should check total seconds")
         }
 
@@ -774,7 +778,7 @@ enum GymSplit {
         // The second goal takes the place of the last support exercise.
         let withThrust = adding([hipThrust], to: deadlift)
         let names = withThrust.exercises.map(\.exercise)
-        if names != ["Romanian Deadlift", "Incline Bench Press", "Skullcrusher", "Lying Leg Curl", "Hip Adduction", "Hip Abduction", "Farmers Walk", "Hip Thrust"]
+        if names != ["Romanian Deadlift", "Incline Bench Press", "Skullcrusher", "Lying Leg Curl", "Hip Adduction", "Hip Abduction", "Dead Hang", "Hip Thrust"]
             || withThrust.exercises.first(where: \.custom)?.target != "Hip Thrust" {
             errors.append("Hip Thrust should be added to Lower Day, got \(names)")
         }

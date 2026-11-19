@@ -3,6 +3,31 @@ import Foundation
 enum IntegrationRules {
     static func check() -> [String] {
         var errors: [String] = []
+        // A timed row filled by a measure Hevy logs another way: 2 distance sets of a Farmers Walk fill a 2×60s row.
+        do {
+            let now = Date(timeIntervalSince1970: 1_790_000_000)
+            let dayKey = QuestDay.key(for: now)
+            let quest = Quest(id: "walk", title: "Farmers Walk 2×60s", kind: .daily, stat: .STR,
+                              verification: VerificationSpec(method: .hevySets, params: ["exercise": .string("Farmers Walk"), "sets": .number(2),
+                                                                                       "minDurationSec": .number(120)]),
+                              deadline: now.addingTimeInterval(3600), difficulty: .normal, mode: .performanceTraining,
+                              progress: QuestProgress(current: 0, target: 120, unit: "s"), status: .pending, assignedAt: now)
+            let walked = HevyExercise(title: "Farmers Walk (Dumbbell)", templateId: nil,
+                                      sets: [HevySet(type: "normal", reps: nil, weightKg: 40, rpe: nil, durationSec: nil, distanceMeters: 36),
+                                             HevySet(type: "normal", reps: nil, weightKg: 40, rpe: nil, durationSec: nil, distanceMeters: 36)])
+            let workout = HevyWorkout(id: "w", title: "Lower", start: now.addingTimeInterval(-3600), end: now, exercises: [walked])
+            var data = DayIntegrationSnapshot.empty(dayKey: dayKey)
+            data.hevy = HevyDayReading(available: true, configured: true, reason: "", dayKey: dayKey, workouts: [workout])
+            let context = VerificationContext(now: now, dayKey: dayKey, assignedAt: now, manualConfirmsToday: 0, claimedKeys: [],
+                                              timerElapsedSec: nil, userConfirmed: false, integrations: data)
+            if case .completed = HevySetsVerifier().evaluate(quest: quest, context: context) {} else {
+                errors.append("2 distance sets should fill a 2×60s timed row")
+            }
+            if !quest.hevyShowsDone([workout]) || quest.hevyShowsDone([]) {
+                errors.append("a row Hevy shows done should take a hand check, and one Hevy does not show should not")
+            }
+        }
+
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         let run = event("strava", "1", "Run", start, 30 * 60, 5000)
         let sameRun = event("healthkit", "hk-1", "running", start.addingTimeInterval(6 * 60), 28 * 60, 4800)

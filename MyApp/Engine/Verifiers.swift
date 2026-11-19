@@ -177,6 +177,20 @@ extension Quest {
         (kind != .penalty && !isNoGymRun && TrainingDay.isRaceRun(self)) || verification.method.allowsLocalCheckbox
     }
 
+    /// A lift row that Hevy shows done today but the app could not count (for example, a measure Hevy logs another way).
+    /// The player may check it off. `workouts` is today's Hevy log.
+    func hevyShowsDone(_ workouts: [HevyWorkout]) -> Bool {
+        guard verification.method == .hevySets, kind != .penalty, verification.params["stretchMinutes"] == nil, status == .pending else { return false }
+        let templateId = verification.params["templateId"]?.stringValue
+        let name = StrengthLevel.normalizedName(verification.params["exercise"]?.stringValue ?? title)
+        return workouts.contains { workout in
+            workout.exercises.contains { entry in
+                (templateId.map { entry.templateId == $0 } ?? (StrengthLevel.normalizedName(entry.title) == name))
+                    && entry.sets.contains(where: \.isWorking)
+            }
+        }
+    }
+
     /// The 10K that "No gym today" added (`NoGymDay.addedId`).
     var isNoGymRun: Bool { id.hasSuffix("_" + NoGymDay.addedSlug) }
 }

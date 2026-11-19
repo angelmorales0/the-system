@@ -160,7 +160,7 @@ enum PlanAndLockRules {
         let oneRun = TrainingHistory.runWindow((1...4).map { .object(["km": .number(10), "daysAgo": .number(Double($0)), "counts": .string("10K")]) }, goalKm: 50, legDay: true)
         dead = QuestPlanner.setting(dead, ["trainingHistory"], to: .object(["lifts": .object([:]), "strengthSessions": .array([]), "runWindow": oneRun]))
         let deadPlan = QuestPlanner.titles(QuestPlanner.sanitize(QuestPlanner.templateBundle(dead), dead))
-        if deadPlan.count != 8 || !deadPlan.contains(where: { $0.hasPrefix("Farmers Walk") }) || deadPlan.contains(where: { $0.hasPrefix("Deadlift") }) {
+        if deadPlan.count != 8 || !deadPlan.contains(where: { $0.hasPrefix("Dead Hang") }) || deadPlan.contains(where: { $0.hasPrefix("Deadlift") }) {
             errors.append("the template should keep every Lower Day lift next to its 10K, got \(deadPlan)")
         }
 

@@ -65,6 +65,8 @@ enum StrengthLevel {
     /// Weight per hand in lb and hold time in seconds.
     static let farmerTargetLb = 100.0
     static let farmerTargetSec = 60.0
+    /// Hevy logs the farmer's walk as weight and distance. 40 m is about 44 yd.
+    static let farmerTargetMeters = 40.0
     /// Band on the product min(1, lb / 100) × min(1, sec / 60).
     static let farmerBand = StatLevel.Band(floor: 0, target: 1)
 
@@ -258,24 +260,30 @@ enum StrengthLevel {
         )
     }
 
-    /// Weight is per hand. A set needs a duration: a set with only distance does not count.
-    /// Progress: best min(1, lb / 100) × min(1, sec / 60). Strict rule: one set at 100 lb (0.5% tolerance) for 60 sec.
+    /// Weight is per hand. Hevy logs the walk as distance; a set logged with time counts too (60 sec = the full 40 m).
+    /// Progress: best min(1, lb / 100) × min(1, m / 40). Strict rule: one set at 100 lb (0.5% tolerance) for 40 m.
     private static func farmersCarry(_ workouts: [HevyWorkout]) -> StatRequirement {
-        let sets = workingSets(farmerAliases, workouts).compactMap { set -> (pounds: Double, seconds: Double)? in
-            guard let kg = set.weightKg, kg > 0, let seconds = set.durationSec, seconds > 0 else { return nil }
-            return (StatLevel.pounds(fromKilograms: kg), seconds)
+        let sets = workingSets(farmerAliases, workouts).compactMap { set -> (pounds: Double, share: Double, text: String)? in
+            guard let kg = set.weightKg, kg > 0 else { return nil }
+            if let meters = set.distanceMeters, meters > 0 {
+                return (StatLevel.pounds(fromKilograms: kg), meters / farmerTargetMeters, "\(format(meters)) m")
+            }
+            if let seconds = set.durationSec, seconds > 0 {
+                return (StatLevel.pounds(fromKilograms: kg), seconds / farmerTargetSec, "\(format(seconds)) sec")
+            }
+            return nil
         }
-        func score(_ set: (pounds: Double, seconds: Double)) -> Double {
-            min(1, set.pounds / farmerTargetLb) * min(1, set.seconds / farmerTargetSec)
+        func score(_ set: (pounds: Double, share: Double, text: String)) -> Double {
+            min(1, set.pounds / farmerTargetLb) * min(1, set.share)
         }
         guard let best = sets.max(by: { score($0) < score($1) }) else { return missing("Farmer's carry") }
-        let passed = sets.contains { meetsWeight($0.pounds, farmerTargetLb) && $0.seconds >= farmerTargetSec }
+        let passed = sets.contains { meetsWeight($0.pounds, farmerTargetLb) && $0.share >= 1 - 1e-9 }
         return StatRequirement(
             category: "Farmer's carry",
             passed: passed,
             progress: passed ? 1 : farmerBand.progress(score(best)),
             weight: weight,
-            detail: "best \(format(best.pounds)) lb/hand × \(format(best.seconds)) sec"
+            detail: "best \(format(best.pounds)) lb/hand × \(best.text)"
         )
     }
 
@@ -310,8 +318,8 @@ enum StrengthLevel {
 
     static func kilograms(_ pounds: Double) -> Double { pounds / StatLevel.poundsPerKilogram }
 
-    static func workingSet(lb: Double? = nil, reps: Int? = nil, seconds: Double? = nil, type: String = "normal") -> HevySet {
-        HevySet(type: type, reps: reps, weightKg: lb.map { $0 / StatLevel.poundsPerKilogram }, rpe: nil, durationSec: seconds)
+    static func workingSet(lb: Double? = nil, reps: Int? = nil, seconds: Double? = nil, meters: Double? = nil, type: String = "normal") -> HevySet {
+        HevySet(type: type, reps: reps, weightKg: lb.map { $0 / StatLevel.poundsPerKilogram }, rpe: nil, durationSec: seconds, distanceMeters: meters)
     }
 
     static func workout(_ exercises: [HevyExercise], daysAgo: Double, now: Date, id: String = "w") -> HevyWorkout {
@@ -328,7 +336,7 @@ enum StrengthLevel {
             HevyExercise(title: "Bent Over Row (Barbell)", sets: [workingSet(lb: 225, reps: 3)]),
             HevyExercise(title: "Chest Dip (Weighted)", sets: [workingSet(lb: 90, reps: 5)]),
             HevyExercise(title: "Pull Up", sets: [workingSet(reps: 20)]),
-            HevyExercise(title: "Farmers Walk", sets: [workingSet(lb: 100, seconds: 60)]),
+            HevyExercise(title: "Farmers Walk", sets: [workingSet(lb: 100, meters: 40)]),
             HevyExercise(title: "Pistol Squat", sets: [workingSet(reps: 10), workingSet(reps: 10)]),
             HevyExercise(title: "Bulgarian Split Squat (Dumbbell)", sets: [workingSet(lb: 80, reps: 8), workingSet(lb: 80, reps: 8)]),
             HevyExercise(title: "Handstand Push Up", sets: [workingSet(reps: 5)]),
@@ -470,10 +478,11 @@ enum StrengthLevel {
             errors.append("pistol sets of 10 and 6 should score the weaker leg (0.6), got \(String(describing: uneven))")
         }
 
-        // Farmer's carry at 100 lb for 30 sec is half progress and no pass.
-        let halfFarmer = row("Farmer's carry", edited("Farmers Walk", sets: [workingSet(lb: 100, seconds: 30)]))
-        if halfFarmer?.passed != false || abs((halfFarmer?.progress ?? 0) - 0.5) > 0.0001 {
-            errors.append("farmer's carry 100 lb × 30 sec should be 0.5 progress and fail, got \(String(describing: halfFarmer))")
+        // Farmer's carry at 100 lb for 20 m (Hevy's distance) is half progress and no pass; 30 sec is the same.
+        let halfFarmer = row("Farmer's carry", edited("Farmers Walk", sets: [workingSet(lb: 100, meters: 20)]))
+        let halfTimed = row("Farmer's carry", edited("Farmers Walk", sets: [workingSet(lb: 100, seconds: 30)]))
+        if halfFarmer?.passed != false || abs((halfFarmer?.progress ?? 0) - 0.5) > 0.0001 || abs((halfTimed?.progress ?? 0) - 0.5) > 0.0001 {
+            errors.append("farmer's carry 100 lb × 20 m should be 0.5 progress and fail, got \(String(describing: halfFarmer))")
         }
         // A carry with distance but no duration does not count: no usable set, so no data.
         dropsOut("Farmer's carry", edited("Farmers Walk", sets: [workingSet(lb: 100, reps: nil, seconds: nil)]))

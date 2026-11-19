@@ -715,12 +715,17 @@ final class GameStore: ObservableObject {
         }
     }
 
-    /// The run row's own checkbox: counts the run by hand, for a day with a long bike ride instead. There is no undo.
+    /// True when a lift row is logged in Hevy today but the app could not count it: the row then takes a hand check.
+    func hevyShowsDone(_ quest: Quest) -> Bool { quest.hevyShowsDone(dayData.hevy.workouts) }
+
+    /// A row's own checkbox: the run on a bike day, or a lift Hevy shows done that the app could not count. No undo.
     func checkOffByHand(id: String, now: Date = .now) {
         guard !startedNewDay(now: now) else { return }
-        guard let quest = snapshot.bundle.quests.first(where: { $0.id == id }), quest.allowsCheckOff, quest.status == .pending else { return }
+        guard let quest = snapshot.bundle.quests.first(where: { $0.id == id }), quest.status == .pending else { return }
+        let hevyShows = hevyShowsDone(quest)
+        guard quest.allowsCheckOff || hevyShows else { return }
         var next = snapshot
-        let outcome = next.applyLocalOverride(questId: id, now: now)
+        let outcome = next.applyLocalOverride(questId: id, now: now, hevyShows: hevyShows)
         next.checkHiddenQuests(integrations: dayData, now: now)
         snapshot = next
         clock = now

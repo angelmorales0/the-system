@@ -85,7 +85,9 @@ struct StravaActivityVerifier: Verifier {
 /// `exercise` (title without the equipment in brackets, so "Bench Press" matches "Bench Press (Barbell)"
 /// but not "Incline Bench Press (Dumbbell)"), or `templateId`.
 /// Set mode: `sets` (else the quest target); `minReps` and `minWeightKg` are the row's targets, and a set under them counts.
-/// Time mode: `minDurationSec` sums the timed sets, for stretches such as "Splits [0/3min]".
+/// Time mode: `minDurationSec` sums the timed sets, for stretches such as "Splits [0/3min]". When Hevy measures the
+/// exercise another way (distance or reps), each logged set counts as one full set of the row's time.
+/// Set mode counts a timed or distance set too: the row follows the measure Hevy logs.
 /// Rep mode: `totalReps` sums the reps of the exercise itself (no stand-ins), for the burpee penalty.
 /// Warm-up sets never count.
 struct HevySetsVerifier: Verifier {
@@ -134,9 +136,15 @@ struct HevySetsVerifier: Verifier {
             }
             func working(_ set: HevySet) -> Bool {
                 guard set.isWorking else { return false }
-                if minDuration != nil { return (set.durationSec ?? 0) > 0 }
-                return Double(set.reps ?? 0) + 0.001 >= minReps
+                if totalReps != nil { return Double(set.reps ?? 0) + 0.001 >= minReps }
+                // A timed row takes time, or distance when Hevy logs the exercise as distance (a farmer's walk).
+                if minDuration != nil { return (set.durationSec ?? 0) > 0 || (set.distanceMeters ?? 0) > 0 }
+                // A set row takes reps, time, or distance: whatever Hevy logs for the exercise.
+                return Double(set.reps ?? 0) + 0.001 >= minReps || (set.durationSec ?? 0) > 0 || (set.distanceMeters ?? 0) > 0
             }
+            // A distance set, on a timed row, counts as one full set of the row's time.
+            let rowSets = max(params["sets"]?.doubleValue ?? 1, 1)
+            let perSet = (minDuration ?? 0) / rowSets
             let sets = matching.flatMap(\.sets).filter { set in
                 guard working(set) else { return false }
                 guard let minWeight, minDuration == nil else { return true }
@@ -144,7 +152,7 @@ struct HevySetsVerifier: Verifier {
             } + standIns.flatMap(\.sets).filter(working)
             guard !sets.isEmpty else { continue }
             if minDuration != nil {
-                total += sets.reduce(0) { $0 + ($1.durationSec ?? 0) }
+                total += sets.reduce(0) { $0 + (($1.durationSec ?? 0) > 0 ? ($1.durationSec ?? 0) : perSet) }
             } else if totalReps != nil {
                 total += Double(sets.reduce(0) { $0 + ($1.reps ?? 0) })
             } else {

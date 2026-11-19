@@ -154,7 +154,7 @@ enum ContextBuilder {
         }
         strength += [
             MorningStrengthTarget(category: "Pistol squats", goal: goal("Pistol squats"), aliases: StrengthLevel.pistolAliases, targetLb: nil, targetReps: Int(StrengthLevel.pistolBand.target), unit: "reps per leg"),
-            MorningStrengthTarget(category: "Farmer's carry", goal: goal("Farmer's carry"), aliases: StrengthLevel.farmerAliases, targetLb: nil, targetReps: nil, unit: "lb per hand for time"),
+            MorningStrengthTarget(category: "Farmer's carry", goal: goal("Farmer's carry"), aliases: StrengthLevel.farmerAliases, targetLb: nil, targetReps: nil, unit: "lb per hand for distance"),
             MorningStrengthTarget(category: "Dead hang", goal: goal("Dead hang"), aliases: StrengthLevel.hangAliases, targetLb: nil, targetReps: nil, unit: "seconds",
                                   targetSeconds: StrengthLevel.hangBand.target),
         ]
