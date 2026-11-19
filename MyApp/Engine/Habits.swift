@@ -652,6 +652,8 @@ enum SystemsView {
         var handHabit: HandHabit? = nil
         /// Shown in place of the streak when set: "1/2 travel days".
         var summary: String? = nil
+        /// Today's quest day. Only today can be marked by hand.
+        var today: String? = nil
         var id: String { handHabit?.id ?? name }
 
         /// Done days in a row, ending today or yesterday (today may still be open).
@@ -687,7 +689,7 @@ enum SystemsView {
             let summary = habit.weeklyLimit.map { limit in
                 "\(saved.filter { $0.value && $0.key >= week && $0.key <= today }.count)/\(limit) travel days"
             }
-            return Track(name: habit.name, marks: marks, dayKeys: days, handHabit: habit, summary: summary)
+            return Track(name: habit.name, marks: marks, dayKeys: days, handHabit: habit, summary: summary, today: today)
         }
         let logged = keys.map { key -> Mark in game.habits.log[key] != nil ? .done : .none }
         return [

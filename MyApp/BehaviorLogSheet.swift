@@ -74,7 +74,7 @@ struct BehaviorLogSheet: View {
 }
 
 /// The habits as streaks: one row a habit, one dot a day for the last 28 days (today last), and the current streak.
-/// Hand-marked rows (No eating out, No caffeine, Only whole foods): tap a day, then Pass (glowing white) or Fail (red)
+/// Hand-marked rows (No eating out, No caffeine, Only whole foods): tap today, then Pass (glowing white) or Fail (red)
 /// in the bar that opens under the row. The day changes color at once.
 struct SystemsPanel: View {
     let tracks: [SystemsView.Track]
@@ -96,7 +96,7 @@ struct SystemsPanel: View {
                     }
                     HStack(spacing: 3) {
                         ForEach(Array(track.marks.enumerated()), id: \.offset) { index, mark in
-                            if let habit = track.handHabit, onMark != nil, index < track.dayKeys.count {
+                            if let habit = track.handHabit, onMark != nil, index < track.dayKeys.count, track.dayKeys[index] == track.today {
                                 let day = track.dayKeys[index]
                                 let selected = picking?.habit == habit && picking?.day == day
                                 Button { picking = selected ? nil : (habit, day) } label: {
@@ -108,7 +108,7 @@ struct SystemsPanel: View {
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("\(Contract.dateText(track.dayKeys[index])): \(label(mark))")
                             } else {
-                                dot(mark, white: false)
+                                dot(mark, white: track.handHabit != nil)
                             }
                         }
                     }
