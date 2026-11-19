@@ -54,7 +54,10 @@ extension WidgetData {
             hp: hp.current,
             maxHP: hp.max,
             gold: game.gold,
-            updatedAt: now
+            updatedAt: now,
+            ringStart: store.dayClock.startedAt,
+            ringEnd: store.dayClock.deadline,
+            warning: game.bundle.warningCopy.replacingOccurrences(of: "\n", with: " ")
         )
     }
 }

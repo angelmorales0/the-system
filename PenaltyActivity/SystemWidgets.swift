@@ -22,8 +22,10 @@ struct SystemProvider: TimelineProvider {
         let data = WidgetData.load()
         let now = Date.now
         var entries = [SystemEntry(date: now, data: data)]
-        if let ends = data?.dayEnds, ends > now {
-            entries.append(SystemEntry(date: ends, data: data))
+        // One entry each time a dash of the timer ring goes dark, then one as the day ends.
+        if let data {
+            entries += data.ringSteps(after: now).filter { $0 < data.dayEnds }.map { SystemEntry(date: $0, data: data) }
+            if data.dayEnds > now { entries.append(SystemEntry(date: data.dayEnds, data: data)) }
         }
         completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(30 * 60))))
     }
@@ -47,7 +49,7 @@ struct SystemWidgetView: View {
     var body: some View {
         Group {
             if let data = entry.data, entry.date < data.dayEnds {
-                design.view(data, size: size)
+                design.view(data, size: size, now: entry.date)
             } else {
                 VStack(spacing: 6) {
                     Image(systemName: "bolt.horizontal.circle")

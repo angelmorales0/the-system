@@ -12,7 +12,7 @@ enum WidgetGallery {
         let size: WidgetSize
         var data: WidgetData = .sample
         var note: String? = nil
-        var id: Int { number }
+        var id: String { "\(number)-\(size.rawValue)-\(note ?? "")" }
     }
 
     /// Every Systems row blue today, for the Red Systems empty state.
@@ -22,8 +22,17 @@ enum WidgetGallery {
         return data
     }
 
+    /// An hour before the deadline: the ring turns red.
+    static var urgent: WidgetData {
+        var data = WidgetData.sample
+        data.ringStart = Date().addingTimeInterval(-23 * 3600)
+        data.ringEnd = Date().addingTimeInterval(3600)
+        return data
+    }
+
     static let pageOne: [Item] = [
         Item(number: 1, design: .nextQuest, size: .small),
+        Item(number: 1, design: .nextQuest, size: .medium),
         Item(number: 2, design: .redSystems, size: .small),
         Item(number: 3, design: .redSystems, size: .medium),
         Item(number: 4, design: .systemsGrid, size: .medium),
@@ -35,6 +44,7 @@ enum WidgetGallery {
     ]
 
     static let pageThree: [Item] = [
+        Item(number: 1, design: .nextQuest, size: .small, data: urgent, note: "under 15% of the day left"),
         Item(number: 2, design: .redSystems, size: .small, data: allBlue, note: "all blue"),
         Item(number: 3, design: .redSystems, size: .medium, data: allBlue, note: "all blue"),
     ]
@@ -99,7 +109,7 @@ enum WidgetGallery {
         guard let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         let pages = [Page(title: "SMALL AND MEDIUM", items: pageOne),
                      Page(title: "LARGE", items: pageTwo),
-                     Page(title: "RED SYSTEMS WHEN ALL ARE BLUE", items: pageThree)]
+                     Page(title: "OTHER STATES", items: pageThree)]
         for (index, page) in pages.enumerated() {
             let renderer = ImageRenderer(content: page.environment(\.colorScheme, .dark))
             renderer.scale = 3

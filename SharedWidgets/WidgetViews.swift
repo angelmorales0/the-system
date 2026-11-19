@@ -22,7 +22,7 @@ enum WidgetDesign: String, CaseIterable, Identifiable {
 
     var summary: String {
         switch self {
-        case .nextQuest: "The first open quest, large, with its progress bar."
+        case .nextQuest: "The first open quest, the day's timer ring, and the penalty warning."
         case .redSystems: "The Systems rows that are not blue today, with their last 7 days."
         case .systemsGrid: "Every Systems row with its last 7 days."
         }
@@ -30,16 +30,16 @@ enum WidgetDesign: String, CaseIterable, Identifiable {
 
     var sizes: [WidgetSize] {
         switch self {
-        case .nextQuest: [.small]
+        case .nextQuest: [.small, .medium]
         case .redSystems: [.small, .medium, .large]
         case .systemsGrid: [.medium, .large]
         }
     }
 
     @ViewBuilder
-    func view(_ data: WidgetData, size: WidgetSize) -> some View {
+    func view(_ data: WidgetData, size: WidgetSize, now: Date = .now) -> some View {
         switch self {
-        case .nextQuest: NextQuestView(data: data)
+        case .nextQuest: NextQuestView(data: data, size: size, now: now)
         case .redSystems: SystemsGridView(data: data, size: size, onlyRed: true)
         case .systemsGrid: SystemsGridView(data: data, size: size, onlyRed: false)
         }
@@ -187,28 +187,120 @@ struct SystemsGridView: View {
     }
 }
 
-/// Small: the first open quest, large.
+/// The quest screen's timer ring: 28 dashes, one goes dark each 1/28 of the quest day.
+/// It turns penalty red under 15% of the day left.
+struct DayRing: View {
+    let remaining: Double
+
+    var body: some View {
+        let lit = Int((remaining * Double(WidgetData.ringSegments)).rounded(.up))
+        let urgent = remaining < WidgetData.urgentFraction
+        let tint = urgent ? WidgetPalette.red : WidgetPalette.ink
+        Canvas { context, size in
+            let dash = max(size.height * 0.15, 5)
+            let width = max(size.width * 0.055, 2.2)
+            for index in 0..<WidgetData.ringSegments {
+                var segment = context
+                segment.translateBy(x: size.width / 2, y: size.height / 2)
+                segment.rotate(by: .degrees(Double(index) * 360 / Double(WidgetData.ringSegments)))
+                let rect = CGRect(x: -width / 2, y: -size.height / 2 + 1, width: width, height: dash)
+                let path = Path(roundedRect: rect, cornerRadius: width * 0.35)
+                // The dark part grows clockwise from 12 o'clock, as on the quest screen.
+                let isLit = index >= WidgetData.ringSegments - lit
+                segment.fill(path, with: .color(tint.opacity(isLit ? 0.9 : 0.06)))
+                segment.stroke(path, with: .color(tint.opacity(isLit ? 1 : 0.35)), lineWidth: 0.5)
+            }
+        }
+        .shadow(color: urgent ? WidgetPalette.red.opacity(0.8) : WidgetPalette.cyan.opacity(0.8), radius: 3)
+    }
+}
+
+/// The quest screen's warning, with "penalty" in red.
+private struct WarningLine: View {
+    let text: String
+    var fontSize: CGFloat = 9
+
+    var body: some View {
+        let parts = text.components(separatedBy: "penalty")
+        var line = Text("WARNING: ").foregroundColor(WidgetPalette.ink.opacity(0.8))
+        for (index, part) in parts.enumerated() {
+            line = line + Text(part).foregroundColor(WidgetPalette.ink.opacity(0.8))
+            if index < parts.count - 1 { line = line + Text("penalty").foregroundColor(WidgetPalette.red) }
+        }
+        return line
+            .font(.system(size: fontSize))
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// The first open quest, the day's timer ring, and the warning.
+/// Small: the ring beside the label. Medium: a large ring with the time left inside it.
 struct NextQuestView: View {
     let data: WidgetData
+    var size: WidgetSize = .small
+    var now: Date = .now
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Caption(text: "Next quest")
+        let remaining = data.ringRemaining(at: now)
+        let warning = data.warning ?? WidgetData.defaultWarning
+        if size == .medium {
+            VStack(spacing: 8) {
+                HStack(alignment: .center, spacing: 14) {
+                    quest(titleSize: 22)
+                    VStack(spacing: 4) {
+                        DayRing(remaining: remaining)
+                            .frame(width: 64, height: 64)
+                        Group {
+                            if let end = data.ringEnd { Text(end, style: .timer) } else { Text("") }
+                        }
+                        .font(.system(size: 12, weight: .bold).monospacedDigit())
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(remaining < WidgetData.urgentFraction ? WidgetPalette.red : WidgetPalette.ink)
+                        .frame(width: 80)
+                    }
+                }
+                WarningLine(text: warning, fontSize: 10)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .center) {
+                    Caption(text: "Next quest")
+                    Spacer(minLength: 2)
+                    DayRing(remaining: remaining).frame(width: 34, height: 34)
+                }
+                quest(titleSize: 18, showsCaption: false)
+                WarningLine(text: warning, fontSize: 8.5)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+
+    @ViewBuilder
+    private func quest(titleSize: CGFloat, showsCaption: Bool = true) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if showsCaption { Caption(text: "Next quest") }
             if let row = data.questsLeft.first {
                 Text(row.title)
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.system(size: titleSize, weight: .bold))
                     .foregroundStyle(WidgetPalette.ink)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
                 Spacer(minLength: 0)
-                Text(row.progress)
-                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(WidgetPalette.cyan)
-                Bar(fraction: row.fraction, height: 5)
-                if data.questsLeft.count > 1 {
-                    Text("then \(data.questsLeft.count - 1) more")
-                        .font(.system(size: 10))
-                        .foregroundStyle(WidgetPalette.dim)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(row.progress)
+                        .font(.system(size: 14, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(WidgetPalette.cyan)
+                    Spacer(minLength: 2)
+                    if data.questsLeft.count > 1 {
+                        Text("+\(data.questsLeft.count - 1) more")
+                            .font(.system(size: 9))
+                            .foregroundStyle(WidgetPalette.dim)
+                    }
                 }
+                Bar(fraction: row.fraction, height: 4)
             } else {
                 ClearMark(title: "DAILY QUEST\nCLEAR")
             }

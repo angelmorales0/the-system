@@ -43,6 +43,28 @@ struct WidgetData: Codable, Equatable {
     var maxHP: Int
     var gold: Int
     var updatedAt: Date
+    /// The quest screen's timer ring: the day's start and its deadline (5:00 the next morning).
+    var ringStart: Date?
+    var ringEnd: Date?
+    /// The quest screen's warning line: "Failure to complete the daily quest will result in a penalty."
+    var warning: String?
+
+    static let defaultWarning = "Failure to complete the daily quest will result in a penalty."
+    static let ringSegments = 28
+    static let urgentFraction = 0.15
+
+    /// Share of the day left, 0...1.
+    func ringRemaining(at now: Date) -> Double {
+        guard let start = ringStart, let end = ringEnd, end > start else { return 1 }
+        return 1 - min(max(now.timeIntervalSince(start) / end.timeIntervalSince(start), 0), 1)
+    }
+
+    /// The times a dash of the ring goes dark, after `now`, for the widget timeline.
+    func ringSteps(after now: Date) -> [Date] {
+        guard let start = ringStart, let end = ringEnd, end > start else { return [] }
+        let step = end.timeIntervalSince(start) / Double(Self.ringSegments)
+        return (1...Self.ringSegments).map { start.addingTimeInterval(step * Double($0)) }.filter { $0 > now }
+    }
 
     var questsLeft: [Row] { quests.filter { $0.required && $0.state != .done } }
     var requiredCount: Int { quests.filter(\.required).count }
@@ -93,7 +115,10 @@ struct WidgetData: Codable, Equatable {
         hp: 812,
         maxHP: 1040,
         gold: 3_480,
-        updatedAt: Date()
+        updatedAt: Date(),
+        ringStart: Date().addingTimeInterval(-10 * 3600),
+        ringEnd: Date().addingTimeInterval(14 * 3600),
+        warning: defaultWarning
     )
 }
 
