@@ -37,12 +37,14 @@ struct HabitState: Codable, Equatable {
     var caffeineMarks: [String: Bool] = [:]
     /// Only whole foods, by quest day, the same way.
     var wholeFoodsMarks: [String: Bool] = [:]
+    /// Habits the player typed in for a contract. Each one is a Systems row, marked by hand like the others.
+    var customHabits: [CustomHabit] = []
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case eatOutPenaltyWeeks, beliefs, morningUnlockedDayKey, wokeAt, contracts, weights, tokenDebt, restDaysForfeited, homeSet, homeEvents
-        case morningDoneDays, log, eatOutMarks, caffeineMarks, wholeFoodsMarks
+        case morningDoneDays, log, eatOutMarks, caffeineMarks, wholeFoodsMarks, customHabits
     }
 
     init(from decoder: Decoder) throws {
@@ -62,6 +64,7 @@ struct HabitState: Codable, Equatable {
         eatOutMarks = try container.decodeIfPresent([String: Bool].self, forKey: .eatOutMarks) ?? [:]
         caffeineMarks = try container.decodeIfPresent([String: Bool].self, forKey: .caffeineMarks) ?? [:]
         wholeFoodsMarks = try container.decodeIfPresent([String: Bool].self, forKey: .wholeFoodsMarks) ?? [:]
+        customHabits = try container.decodeIfPresent([CustomHabit].self, forKey: .customHabits) ?? []
     }
 }
 
@@ -129,27 +132,37 @@ extension GameSnapshot {
 
 // MARK: - Contracts
 
-/// A promise the player signs on purpose: an action rule, checked each quest week until an end date the player picks.
-/// It cannot be changed or cancelled before the end date. Each broken week costs the same stake:
-/// 1 Full Recovery token and 1 rest day. With no token in the bank, the next token earned is taken.
-/// With no rest day left this week, next week has one fewer.
+/// A promise the player signs on purpose, checked each quest week until an end date the player picks.
+/// It cannot be changed or cancelled before the end date. It is one of two kinds:
+/// - a habit (a Systems row or one the player types in) that must pass on at least `daysPerWeek` days a week;
+/// - body weight on the right side of a straight line from the start weight to the target.
+/// The player picks the punishment at signing; the app takes it for each broken week. No partners: the app enforces it.
 struct Contract: Codable, Equatable, Identifiable {
     enum Kind: String, Codable, CaseIterable, Identifiable {
+        case habit
         /// Body weight on or under a straight line from the start weight to the target on the end date.
         case bodyWeight
         var id: String { rawValue }
-        var label: String { "Body weight" }
+        var label: String {
+            switch self {
+            case .habit: "Habit"
+            case .bodyWeight: "Body weight"
+            }
+        }
     }
 
     /// One judged week.
     struct Check: Codable, Equatable {
         /// The last quest day of the period: a Sunday, or the end date.
         var endDayKey: String
-        /// The line on that day, in lb.
+        /// The line on that day, in lb. 0 for a habit contract.
         var lineLb: Double
         /// The average of the period's weigh-ins. Nil when there was none.
         var averageLb: Double?
         var kept: Bool
+        /// A habit contract's passed days and the days it needed in the period.
+        var passedDays: Int? = nil
+        var requiredDays: Int? = nil
     }
 
     var id: String
@@ -160,13 +173,73 @@ struct Contract: Codable, Equatable, Identifiable {
     var targetLb: Double
     var signedAt: Date
     var checks: [Check] = []
+    /// The habit: a `ContractHabits` key. Nil for body weight.
+    var habitKey: String? = nil
+    /// The habit's name when signed.
+    var habitName: String? = nil
+    /// Passed days a full week needs, 1...7. A short first or last week needs its share, rounded up.
+    var daysPerWeek = 7
+    /// What each broken week costs.
+    var punishment = Punishment.classic
+
+    init(id: String, kind: Kind, startDayKey: String, endDayKey: String, startLb: Double = 0, targetLb: Double = 0, signedAt: Date,
+         habitKey: String? = nil, habitName: String? = nil, daysPerWeek: Int = 7, punishment: Punishment = .classic) {
+        self.id = id
+        self.kind = kind
+        self.startDayKey = startDayKey
+        self.endDayKey = endDayKey
+        self.startLb = startLb
+        self.targetLb = targetLb
+        self.signedAt = signedAt
+        self.habitKey = habitKey
+        self.habitName = habitName
+        self.daysPerWeek = daysPerWeek
+        self.punishment = punishment
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, startDayKey, endDayKey, startLb, targetLb, signedAt, checks, habitKey, habitName, daysPerWeek, punishment
+    }
+
+    /// A contract saved before habits and punishments existed is a body weight contract with the old stake.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        kind = try container.decode(Kind.self, forKey: .kind)
+        startDayKey = try container.decode(String.self, forKey: .startDayKey)
+        endDayKey = try container.decode(String.self, forKey: .endDayKey)
+        startLb = try container.decodeIfPresent(Double.self, forKey: .startLb) ?? 0
+        targetLb = try container.decodeIfPresent(Double.self, forKey: .targetLb) ?? 0
+        signedAt = try container.decode(Date.self, forKey: .signedAt)
+        checks = try container.decodeIfPresent([Check].self, forKey: .checks) ?? []
+        habitKey = try container.decodeIfPresent(String.self, forKey: .habitKey)
+        habitName = try container.decodeIfPresent(String.self, forKey: .habitName)
+        daysPerWeek = try container.decodeIfPresent(Int.self, forKey: .daysPerWeek) ?? 7
+        punishment = try container.decodeIfPresent(Punishment.self, forKey: .punishment) ?? .classic
+    }
+
+    /// Passed days a period from `start` to `end` needs: the weekly number, scaled to a short period and rounded up.
+    func requiredDays(start: String, end: String) -> Int {
+        guard let from = QuestDay.date(from: start), let to = QuestDay.date(from: end) else { return daysPerWeek }
+        let length = Int((to.timeIntervalSince(from) / 86_400).rounded()) + 1
+        return min(length, Int((Double(daysPerWeek * length) / 7).rounded(.up)))
+    }
 
     var title: String {
-        "Reach \(Contract.number(targetLb)) lb by \(Contract.dateText(endDayKey))"
+        switch kind {
+        case .habit: "\(habitName ?? "Habit"): \(daysPerWeek)/7 days a week until \(Contract.dateText(endDayKey))"
+        case .bodyWeight: "Reach \(Contract.number(targetLb)) lb by \(Contract.dateText(endDayKey))"
+        }
     }
 
     /// The rule in words, for the sign screen and the record.
     var terms: String {
+        if kind == .habit {
+            let days = daysPerWeek == 7 ? "every day" : "on at least \(daysPerWeek) of 7 days"
+            let name = habitName.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } ?? "the habit"
+            return "Each week, from \(Contract.dateText(startDayKey)) to \(Contract.dateText(endDayKey)), \(name) must pass \(days). "
+                + "A short first or last week needs its share of days. " + ContractHabits.source(habitKey ?? "")
+        }
         let side = targetLb > startLb ? "on or over" : "on or under"
         let from = startLb > 0 ? "\(Contract.number(startLb)) lb" : "your start weight"
         return "Each week, from \(Contract.dateText(startDayKey)) to \(Contract.dateText(endDayKey)), your average weigh-in must be \(side) "
@@ -174,8 +247,9 @@ struct Contract: Codable, Equatable, Identifiable {
             + "Weigh-ins come from Apple Health."
     }
 
-    static let stake = "Each broken week costs 1 Full Recovery token and 1 rest day. With no token, the next one you earn is taken. "
-        + "With no rest day left this week, next week has one fewer."
+    /// The general rule, for the contracts screen.
+    static let rules = "You pick the habit, the days a week, the end date, and the punishment. Each broken week, the app takes the punishment. "
+        + "With no token, the next one you earn is taken. With no rest day left this week, next week has one fewer."
 
     func isActive(on dayKey: String) -> Bool { startDayKey <= dayKey && dayKey <= endDayKey }
 
@@ -202,6 +276,16 @@ struct Contract: Codable, Equatable, Identifiable {
 
     /// Why the contract cannot be signed, or nil.
     var problem: String? {
+        if punishment.isEmpty { return "Pick at least one punishment." }
+        if endDayKey <= QuestDay.key(byAddingDays: 6, to: startDayKey) { return "Pick an end date at least a week away." }
+        if kind == .habit {
+            guard let habitKey, !habitKey.isEmpty else { return "Pick a habit." }
+            let name = (habitName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if name.isEmpty { return "Type a name for the habit." }
+            if name.count > CustomHabit.maxNameLength { return "Keep the habit name to \(CustomHabit.maxNameLength) characters." }
+            if !(1...7).contains(daysPerWeek) { return "Pick 1 to 7 days a week." }
+            return nil
+        }
         if !(50...500).contains(startLb) || !(50...500).contains(targetLb) { return "Type weights from 50 to 500 lb." }
         if abs(startLb - targetLb) < 0.5 { return "The target must differ from the start weight." }
         if endDayKey <= QuestDay.key(byAddingDays: 6, to: startDayKey) { return "Pick an end date at least a week away." }
@@ -217,7 +301,74 @@ struct Contract: Codable, Equatable, Identifiable {
     }
 }
 
+/// What a broken contract week costs. The player picks it at signing; the app takes it.
+struct Punishment: Codable, Equatable {
+    /// Gold taken. Gold does not go under 0.
+    var gold = 0
+    /// Full Recovery tokens taken. With none in the bank, the next ones earned are taken.
+    var tokens = 0
+    /// Rest days taken: this week's, else next week's.
+    var restDays = 0
+    /// Opens the penalty 10K run at once.
+    var penaltyRun = false
+
+    /// The stake contracts had before punishments could be picked.
+    static let classic = Punishment(tokens: 1, restDays: 1)
+    static let goldStep = 500
+    static let maxGold = 20_000
+
+    var isEmpty: Bool { gold <= 0 && tokens <= 0 && restDays <= 0 && !penaltyRun }
+
+    /// "1,000 gold, 1 Full Recovery token, 1 rest day, and the penalty 10K run".
+    var text: String {
+        var parts: [String] = []
+        if gold > 0 { parts.append("\(FinanceLevel.usd(Double(gold)).dropFirst()) gold") }
+        if tokens > 0 { parts.append("\(tokens) Full Recovery token\(tokens == 1 ? "" : "s")") }
+        if restDays > 0 { parts.append("\(restDays) rest day\(restDays == 1 ? "" : "s")") }
+        if penaltyRun { parts.append("the penalty 10K run") }
+        guard let last = parts.popLast() else { return "nothing" }
+        return parts.isEmpty ? last : parts.joined(separator: ", ") + " and " + last
+    }
+
+    var sentence: String { "Each broken week costs \(text)." }
+}
+
+/// The habits a contract can be about: the Systems rows the app checks, the hand-marked rows, and a new one the player types.
+enum ContractHabits {
+    static let homeBy = "homeBy"
+    static let screenTime = "screenTime"
+    static let log = "log"
+    /// A new habit, typed in at signing. Signing turns it into a custom habit and a Systems row.
+    static let new = "new"
+
+    /// Key and name of each habit the player can pick, in Systems order, then "New habit".
+    static func options(_ habits: HabitState) -> [(key: String, name: String)] {
+        [(homeBy, HomeBy.title), (screenTime, "Screen Time")] + habits.handHabits.map { ($0.id, $0.name) } + [(log, "Log written"), (new, "New habit…")]
+    }
+
+    /// Where the day's pass comes from, in words.
+    static func source(_ key: String) -> String {
+        switch key {
+        case homeBy: "The app checks it from your location at 9:00 pm. A day with no Home by 9 pm row fails."
+        case screenTime: "The app checks it from the Screen Time row."
+        case log: "A day passes when you write the log."
+        default: "You mark each day Pass or Fail on the Systems page. A day you do not mark fails."
+        }
+    }
+}
+
 extension GameSnapshot {
+    /// True when the contract habit passed on a quest day. A day with no record fails.
+    func habitPassed(_ key: String, on dayKey: String) -> Bool {
+        let rows = dayKey == bundle.dayKey ? GameSnapshot.questRecords(of: bundle) : questHistory.first { $0.dayKey == dayKey }?.quests ?? []
+        switch key {
+        case ContractHabits.homeBy: return rows.contains { $0.method == .homeBy && $0.status == .completed }
+        case ContractHabits.screenTime: return rows.contains { $0.method == .screenTimeLimit && $0.status == .completed }
+        case ContractHabits.log: return habits.log[dayKey] != nil
+        default: return habits.marks(id: key)[dayKey] == true
+        }
+    }
+
     /// Rest days the player can still spend in the week, after the ones a broken contract took.
     func restDaysForfeited(on dayKey: String) -> Int {
         habits.restDaysForfeited[RestDays.weekKey(of: dayKey)] ?? 0
@@ -229,9 +380,24 @@ extension GameSnapshot {
         contract.startDayKey = bundle.dayKey
         contract.signedAt = now
         contract.checks = []
+        contract.habitName = contract.habitName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if contract.kind == .bodyWeight { contract.habitKey = nil; contract.habitName = nil }
         if let problem = contract.problem { return problem }
-        if habits.contracts.contains(where: { $0.kind == contract.kind && $0.isActive(on: bundle.dayKey) }) {
-            return "A \(contract.kind.label.lowercased()) contract is already active. It ends on \(Contract.dateText(habits.contracts.last { $0.kind == contract.kind }?.endDayKey ?? ""))."
+        // A new habit must not share a name with a Systems row.
+        let isNew = contract.kind == .habit && contract.habitKey == ContractHabits.new
+        if isNew, let name = contract.habitName,
+           ContractHabits.options(habits).contains(where: { $0.key != ContractHabits.new && $0.name.lowercased() == name.lowercased() }) {
+            return "\(name) is already a Systems row. Pick it from the list."
+        }
+        if let active = habits.contracts.last(where: { $0.kind == contract.kind && $0.habitKey == contract.habitKey && $0.isActive(on: bundle.dayKey) }),
+           !isNew {
+            return "A contract on \(active.kind == .habit ? active.habitName ?? "this habit" : "body weight") is already active. "
+                + "It ends on \(Contract.dateText(active.endDayKey))."
+        }
+        if isNew, let name = contract.habitName {
+            let custom = CustomHabit(id: contract.id, name: name, createdDayKey: bundle.dayKey)
+            habits.customHabits.append(custom)
+            contract.habitKey = custom.handHabit.id
         }
         habits.contracts.append(contract)
         return nil
@@ -246,14 +412,32 @@ extension GameSnapshot {
         habits.weights = habits.weights.filter { $0.key >= oldest }
     }
 
-    /// Judges each period that has ended and takes the stake for each broken one. Returns the number broken now.
+    /// Judges each period that has ended and takes the punishment for each broken one. Returns the broken contract weeks.
+    /// `catalog` is needed only for a punishment that opens the penalty run.
     @discardableResult
-    mutating func judgeContracts(now: Date) -> Int {
+    mutating func judgeContracts(now: Date, catalog: FallbackCatalog? = nil) -> [Contract] {
         let today = QuestDay.key(for: now)
-        var broken = 0
+        var broken: [Contract] = []
         for index in habits.contracts.indices {
             let contract = habits.contracts[index]
             for period in contract.periods where period.end < today && !contract.checks.contains(where: { $0.endDayKey == period.end }) {
+                if contract.kind == .habit {
+                    var day = period.start
+                    var passed = 0
+                    while day <= period.end {
+                        if habitPassed(contract.habitKey ?? "", on: day) { passed += 1 }
+                        day = QuestDay.key(byAddingDays: 1, to: day)
+                    }
+                    let required = contract.requiredDays(start: period.start, end: period.end)
+                    let kept = passed >= required
+                    habits.contracts[index].checks.append(Contract.Check(endDayKey: period.end, lineLb: 0, averageLb: nil, kept: kept,
+                                                                         passedDays: passed, requiredDays: required))
+                    if !kept {
+                        broken.append(contract)
+                        takePunishment(contract.punishment, today: today, catalog: catalog, now: now)
+                    }
+                    continue
+                }
                 let weighIns = habits.weights.filter { $0.key >= period.start && $0.key <= period.end }.map(\.value)
                 let average = weighIns.isEmpty ? nil : weighIns.reduce(0, +) / Double(weighIns.count)
                 let line = contract.lineLb(on: period.end)
@@ -262,8 +446,8 @@ extension GameSnapshot {
                 habits.contracts[index].checks.append(Contract.Check(endDayKey: period.end, lineLb: (line * 10).rounded() / 10,
                                                                      averageLb: average.map { ($0 * 10).rounded() / 10 }, kept: kept))
                 if !kept {
-                    broken += 1
-                    takeStake(today: today)
+                    broken.append(contract)
+                    takePunishment(contract.punishment, today: today, catalog: catalog, now: now)
                 }
             }
         }
@@ -271,14 +455,24 @@ extension GameSnapshot {
         return broken
     }
 
-    /// 1 Full Recovery token (or a debt on the next one) and 1 rest day (this week's, else next week's).
-    private mutating func takeStake(today: String) {
-        habits.tokenDebt += 1
+    /// Takes a broken week's punishment: gold (not under 0), tokens (or a debt on the next ones), rest days (this week's,
+    /// else next week's), and the penalty run.
+    private mutating func takePunishment(_ punishment: Punishment, today: String, catalog: FallbackCatalog?, now: Date) {
+        gold = max(gold - max(punishment.gold, 0), 0)
+        habits.tokenDebt += max(punishment.tokens, 0)
         let week = RestDays.weekKey(of: today)
-        let left = max(RestDays.allowance(on: today) - restDaysUsed(on: today) - restDaysForfeited(on: today), 0)
-        let target = left > 0 ? week : QuestDay.key(byAddingDays: 7, to: week)
-        habits.restDaysForfeited[target, default: 0] += 1
+        for _ in 0..<max(punishment.restDays, 0) {
+            let left = max(RestDays.allowance(on: today) - restDaysUsed(on: today) - restDaysForfeited(on: today), 0)
+            let target = left > 0 ? week : QuestDay.key(byAddingDays: 7, to: week)
+            habits.restDaysForfeited[target, default: 0] += 1
+        }
         habits.restDaysForfeited = habits.restDaysForfeited.filter { $0.key >= QuestDay.key(byAddingDays: -21, to: week) }
+        if punishment.penaltyRun, let catalog {
+            player.penaltyOpen = true
+            // The contract's penalty: late work on the day that waits must not lift it.
+            endedDay?.monthPenalty = true
+            bundle = PenaltyQuests.ensure(in: bundle, open: true, band: trainingBand, catalog: catalog, now: now)
+        }
     }
 
     /// Takes owed tokens from the bank, as soon as there are any.
@@ -423,7 +617,7 @@ enum SystemsView {
         var dayKeys: [String] = []
         /// Set when the player marks each day by hand: a tap picks Pass or Fail.
         var handHabit: HandHabit? = nil
-        var id: String { name }
+        var id: String { handHabit?.id ?? name }
 
         /// Done days in a row, ending today or yesterday (today may still be open).
         var streak: Int {
@@ -450,7 +644,7 @@ enum SystemsView {
         func hand(_ habit: HandHabit) -> Track {
             let marks = keys.map { key -> Mark in
                 if let passed = game.habits.marks(habit)[key] { return passed ? .done : .missed }
-                if key >= today || key < HandHabit.firstDay { return .none }
+                if key >= today || key < habit.firstDay { return .none }
                 return .missed
             }
             return Track(name: habit.name, marks: marks, dayKeys: keys, handHabit: habit)
@@ -459,54 +653,74 @@ enum SystemsView {
         return [
             Track(name: "Home by 9 pm", marks: keys.map { mark($0) { $0.method == .homeBy } }),
             Track(name: "Screen Time", marks: keys.map { mark($0) { $0.method == .screenTimeLimit } }),
-            hand(.noEatingOut),
-            hand(.noCaffeine),
-            hand(.wholeFoods),
+        ] + game.habits.handHabits.map(hand) + [
             Track(name: "Log written", marks: logged),
         ]
     }
 }
 
-/// The habits the player marks by hand on the systems view: tap a day, then Pass or Fail.
-/// A past day without a mark fails.
-enum HandHabit: String, Equatable {
-    case noEatingOut, noCaffeine, wholeFoods
+/// A habit the player marks by hand on the systems view: tap a day, then Pass or Fail. A past day without a mark fails.
+/// The three built-in ones, and the custom ones typed in for a contract (id "custom:<uuid>").
+struct HandHabit: Hashable {
+    var id: String
+    var name: String
+    /// The first quest day the habit counts. Earlier days stay dim.
+    var firstDay: String
 
-    /// The first quest day these rules count. Earlier days stay dim.
-    static let firstDay = "2026-11-18"
+    static let builtInFirstDay = "2026-11-18"
+    static let noEatingOut = HandHabit(id: "noEatingOut", name: "No eating out", firstDay: builtInFirstDay)
+    static let noCaffeine = HandHabit(id: "noCaffeine", name: "No caffeine", firstDay: builtInFirstDay)
+    static let wholeFoods = HandHabit(id: "wholeFoods", name: "Only whole foods", firstDay: builtInFirstDay)
+    static let builtIns = [noEatingOut, noCaffeine, wholeFoods]
+    static let customPrefix = "custom:"
+}
 
-    var name: String {
-        switch self {
-        case .noEatingOut: "No eating out"
-        case .noCaffeine: "No caffeine"
-        case .wholeFoods: "Only whole foods"
-        }
-    }
+/// A habit the player typed in when signing a contract. It stays a Systems row after the contract ends.
+struct CustomHabit: Codable, Equatable, Identifiable {
+    var id: String
+    var name: String
+    var createdDayKey: String
+    /// By quest day: true passed, false failed.
+    var marks: [String: Bool] = [:]
+
+    static let maxNameLength = 40
+
+    var handHabit: HandHabit { HandHabit(id: HandHabit.customPrefix + id, name: name, firstDay: createdDayKey) }
 }
 
 extension HabitState {
-    func marks(_ habit: HandHabit) -> [String: Bool] {
-        switch habit {
-        case .noEatingOut: eatOutMarks
-        case .noCaffeine: caffeineMarks
-        case .wholeFoods: wholeFoodsMarks
+    /// The built-in hand habits, then the custom ones, oldest first.
+    var handHabits: [HandHabit] { HandHabit.builtIns + customHabits.map(\.handHabit) }
+
+    func marks(_ habit: HandHabit) -> [String: Bool] { marks(id: habit.id) }
+
+    func marks(id: String) -> [String: Bool] {
+        switch id {
+        case HandHabit.noEatingOut.id: return eatOutMarks
+        case HandHabit.noCaffeine.id: return caffeineMarks
+        case HandHabit.wholeFoods.id: return wholeFoodsMarks
+        default:
+            let custom = id.hasPrefix(HandHabit.customPrefix) ? String(id.dropFirst(HandHabit.customPrefix.count)) : id
+            return customHabits.first { $0.id == custom }?.marks ?? [:]
         }
     }
 }
 
 extension GameSnapshot {
     /// Marks a day of a hand habit: true passed, false failed. Days after today cannot be marked.
-    /// Marks older than 60 days are dropped.
+    /// Built-in marks older than 60 days are dropped; a custom habit keeps 400 days for its contracts.
     mutating func setHandMark(_ habit: HandHabit, _ dayKey: String, passed: Bool) {
         guard dayKey <= bundle.dayKey else { return }
-        let oldest = QuestDay.key(byAddingDays: -60, to: bundle.dayKey)
         var marks = habits.marks(habit)
         marks[dayKey] = passed
-        marks = marks.filter { $0.key >= oldest }
-        switch habit {
-        case .noEatingOut: habits.eatOutMarks = marks
-        case .noCaffeine: habits.caffeineMarks = marks
-        case .wholeFoods: habits.wholeFoodsMarks = marks
+        switch habit.id {
+        case HandHabit.noEatingOut.id: habits.eatOutMarks = marks.filter { $0.key >= QuestDay.key(byAddingDays: -60, to: bundle.dayKey) }
+        case HandHabit.noCaffeine.id: habits.caffeineMarks = marks.filter { $0.key >= QuestDay.key(byAddingDays: -60, to: bundle.dayKey) }
+        case HandHabit.wholeFoods.id: habits.wholeFoodsMarks = marks.filter { $0.key >= QuestDay.key(byAddingDays: -60, to: bundle.dayKey) }
+        default:
+            let custom = String(habit.id.dropFirst(HandHabit.customPrefix.count))
+            guard let index = habits.customHabits.firstIndex(where: { $0.id == custom }) else { return }
+            habits.customHabits[index].marks = marks.filter { $0.key >= QuestDay.key(byAddingDays: -400, to: bundle.dayKey) }
         }
     }
 }
@@ -754,13 +968,13 @@ enum HabitRules {
         signer.habits.weights = [today: line - 1]
         let weekTwo = (QuestDay.start(of: QuestDay.key(byAddingDays: 7, to: today)) ?? monday).addingTimeInterval(3600)
         let firstBroken = signer.judgeContracts(now: weekTwo)
-        if firstBroken != 0 || signer.habits.contracts[0].checks.first?.kept != true {
+        if !firstBroken.isEmpty || signer.habits.contracts[0].checks.first?.kept != true {
             errors.append("a week under the line should be kept, got \(signer.habits.contracts[0].checks)")
         }
         let weekThree = (QuestDay.start(of: QuestDay.key(byAddingDays: 14, to: today)) ?? monday).addingTimeInterval(3600)
         signer.bundle.dayKey = QuestDay.key(for: weekThree)
-        if signer.judgeContracts(now: weekThree) != 1 || signer.habits.tokenDebt != 1
-            || signer.restDaysForfeited(on: QuestDay.key(for: weekThree)) != 1 || signer.judgeContracts(now: weekThree) != 0 {
+        if signer.judgeContracts(now: weekThree).count != 1 || signer.habits.tokenDebt != 1
+            || signer.restDaysForfeited(on: QuestDay.key(for: weekThree)) != 1 || !signer.judgeContracts(now: weekThree).isEmpty {
             errors.append("a week with no weigh-in should be broken once: a token owed and a rest day taken")
         }
         signer.player.depositRecoveryToken()
@@ -770,6 +984,51 @@ enum HabitRules {
         }
         if signer.restDaysLeft(on: QuestDay.key(for: weekThree)) != RestDays.perWeek - 1 {
             errors.append("a taken rest day should leave one fewer this week")
+        }
+
+        // A habit contract: a new typed habit becomes a Systems row; a week passes with enough marked days; the picked
+        // punishment is taken: gold not under 0, 2 tokens owed, and the penalty run opened.
+        var habitSigner = GameSnapshot.fresh(catalog: catalog, now: monday)
+        habitSigner.gold = 700
+        habitSigner.player.fullRecoveryBank = 0
+        let habitDraft = Contract(id: "h1", kind: .habit, startDayKey: "", endDayKey: QuestDay.key(byAddingDays: 20, to: today), signedAt: monday,
+                                  habitKey: ContractHabits.new, habitName: "  Read 20 pages ", daysPerWeek: 5,
+                                  punishment: Punishment(gold: 1_000, tokens: 2, penaltyRun: true))
+        var noPunishment = habitDraft
+        noPunishment.punishment = Punishment()
+        var duplicate = habitDraft
+        duplicate.habitName = "no caffeine"
+        if habitSigner.signContract(noPunishment, now: monday) == nil || habitSigner.signContract(duplicate, now: monday) == nil
+            || habitSigner.signContract(habitDraft, now: monday) != nil {
+            errors.append("a habit contract needs a punishment and a new name, and should then sign")
+        }
+        let reading = habitSigner.habits.customHabits.first?.handHabit
+        let habitContract = habitSigner.habits.contracts.last
+        if reading?.name != "Read 20 pages" || habitContract?.habitKey != reading?.id
+            || SystemsView.tracks(habitSigner).contains(where: { $0.handHabit?.id == reading?.id }) != true
+            || habitContract?.requiredDays(start: today, end: QuestDay.key(byAddingDays: 6, to: today)) != 5
+            || habitContract?.requiredDays(start: today, end: QuestDay.key(byAddingDays: 2, to: today)) != 3 {
+            errors.append("a new habit should become a Systems row, and a short week should need its share of days")
+        }
+        if let reading {
+            for offset in 0..<5 { habitSigner.bundle.dayKey = QuestDay.key(byAddingDays: offset, to: today); habitSigner.setHandMark(reading, habitSigner.bundle.dayKey, passed: true) }
+            habitSigner.bundle.dayKey = QuestDay.key(byAddingDays: 7, to: today)
+            let keptWeek = habitSigner.judgeContracts(now: weekTwo, catalog: catalog)
+            habitSigner.bundle.dayKey = QuestDay.key(for: weekThree)
+            let brokenWeek = habitSigner.judgeContracts(now: weekThree, catalog: catalog)
+            let checks = habitSigner.habits.contracts.last?.checks ?? []
+            if !keptWeek.isEmpty || brokenWeek.count != 1 || checks.map(\.kept) != [true, false] || checks.first?.passedDays != 5
+                || habitSigner.gold != 0 || habitSigner.habits.tokenDebt != 2 || !habitSigner.player.penaltyOpen {
+                errors.append("a 5-of-7 habit week should pass with 5 marks, and a week with none should take the picked punishment, got \(checks)")
+            }
+        }
+        if Punishment(gold: 1_000, tokens: 1, restDays: 2, penaltyRun: true).text != "1,000 gold, 1 Full Recovery token, 2 rest days and the penalty 10K run" {
+            errors.append("the punishment text is wrong: \(Punishment(gold: 1_000, tokens: 1, restDays: 2, penaltyRun: true).text)")
+        }
+        // An old saved contract loads as body weight with the old stake.
+        let oldJSON = #"{"id":"o","kind":"bodyWeight","startDayKey":"2026-11-16","endDayKey":"2026-12-16","startLb":150,"targetLb":145,"signedAt":0,"checks":[]}"#
+        if (try? JSONDecoder().decode(Contract.self, from: Data(oldJSON.utf8)))?.punishment != .classic {
+            errors.append("an old contract should load with the old stake")
         }
 
         // Home by 9 pm: judged at 21:00 from the events, added only once a home is set, and not waived on a rest day.

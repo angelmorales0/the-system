@@ -798,7 +798,7 @@ final class GameStore: ObservableObject {
                 return BodyMassReading(kg: kg, date: date, source: "Apple Health")
             }
             next.recordWeights(dailyMass + (bodyMass.map { [$0] } ?? []))
-            let brokenContracts = next.judgeContracts(now: now)
+            let brokenContracts = next.judgeContracts(now: now, catalog: self.catalog)
             next.habits.homeEvents = HomeEvents.load()
             next.applyHomeBy(now: now)
             // After today's readiness, so a red recovery hits HP and sets the regeneration speed.
@@ -812,8 +812,9 @@ final class GameStore: ObservableObject {
             self.integrationsDayKey = dayKey
             if settled.liftedPenalty {
                 self.verificationNote = "The last quest day was completed. The penalty is lifted."
-            } else if brokenContracts > 0 {
-                self.verificationNote = "A contract week was broken: 1 Full Recovery token and 1 rest day are taken."
+            } else if let contract = brokenContracts.first {
+                self.verificationNote = "A contract week was broken (\(contract.kind == .habit ? contract.habitName ?? "habit" : "body weight")). "
+                    + "Taken: \(contract.punishment.text)."
             } else if unlocked {
                 self.verificationNote = "Morning workout found. Your apps are open."
             } else if eatOutPenalty {
