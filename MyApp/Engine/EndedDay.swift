@@ -121,7 +121,7 @@ extension GameSnapshot {
             let row = ended.bundle.quests[index]
             if !row.skippedWithPotion, row.status != .failed {
                 ended.bundle.quests[index].progress.current = Double(day.totalMinutes)
-                if day.overTotal { ended.bundle.quests[index].status = .failed }
+                if day.fails { ended.bundle.quests[index].status = .failed }
             }
             if ended.bundle.quests[index].status == .failed, !ended.missed {
                 // The day had passed. It is a miss now: its gold goes back and its penalty opens.

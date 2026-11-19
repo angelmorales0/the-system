@@ -79,7 +79,13 @@ struct ScreenTimeDay: Codable, Equatable {
     var totalMinutes: Int { phoneMinutes + workMinutes - sharedMinutes }
     /// Red line, no failure.
     var phoneOver: Bool { phoneMinutes > ScreenTime.phoneCapMinutes }
-    var workOver: Bool { workMinutes > ScreenTime.workCapMinutes }
+    /// The work cap of the day: 7 h, or 0 on the weekly day off.
+    var workCap: Int { DayOff.isDayOff(dayKey) ? 0 : ScreenTime.workCapMinutes }
+    var workOver: Bool { workMinutes > workCap }
+    /// The day off: Mac work past the small grace fails the quest.
+    var workOnDayOff: Bool { DayOff.isDayOff(dayKey) && workMinutes > DayOff.graceMinutes }
+    /// The quest fails: the total over the cap and its grace, or work on the day off.
+    var fails: Bool { overTotal || workOnDayOff }
     /// Yellow row: the total reached 8 h 20 m but is still inside the grace.
     var atCap: Bool { totalMinutes >= ScreenTime.totalCapMinutes && !overTotal }
     /// The only failure: the combined total more than 30 minutes over 8 h 20 m.
@@ -391,7 +397,7 @@ extension GameSnapshot {
         screenTime = day
         guard let index = bundle.quests.firstIndex(where: { $0.id == ScreenTime.questId }) else { return }
         bundle.quests[index].progress.current = Double(day.totalMinutes)
-        if bundle.quests[index].status == .failed && !day.overTotal {
+        if bundle.quests[index].status == .failed && !day.fails {
             bundle.quests[index].status = .pending
         }
     }
@@ -415,7 +421,7 @@ extension GameSnapshot {
         guard let index = bundle.quests.firstIndex(where: { $0.id == ScreenTime.questId }) else { return }
         var quest = bundle.quests[index]
         quest.progress.current = Double(day.totalMinutes)
-        if day.overTotal && quest.status == .pending {
+        if day.fails && quest.status == .pending {
             quest.status = .failed
         }
         bundle.quests[index] = quest

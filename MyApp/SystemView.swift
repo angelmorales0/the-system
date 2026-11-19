@@ -472,7 +472,7 @@ private struct ScreenTimeSplit: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            line("Work", day.workMinutes, ScreenTime.workCapMinutes, over: day.workOver, measured: day.workMeasured)
+            line(DayOff.isDayOff(day.dayKey) ? "Work (day off)" : "Work", day.workMinutes, day.workCap, over: day.workOver, measured: day.workMeasured)
             line("Phone", day.phoneMinutes, ScreenTime.phoneCapMinutes, over: day.phoneOver, measured: day.phoneMeasured)
             // Minutes on the phone while a Mac was counting too. The row's total counts them once.
             // Before the Macs report their minutes, the full possible overlap is taken out.

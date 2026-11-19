@@ -865,7 +865,7 @@ struct GameSnapshot: Codable, Equatable {
         if let day = screenTime, day.dayKey == copy.dayKey, day.hasReading,
            let index = copy.quests.firstIndex(where: { $0.id == ScreenTime.questId && $0.status != .completed }) {
             copy.quests[index].progress.current = Double(day.totalMinutes)
-            if day.overTotal, copy.quests[index].status == .pending { copy.quests[index].status = .failed }
+            if day.fails, copy.quests[index].status == .pending { copy.quests[index].status = .failed }
         }
         if let checks = stretchChecks, checks.dayKey == copy.dayKey,
            let index = copy.quests.firstIndex(where: { $0.id == DailyStretch.questId && $0.status == .pending }),

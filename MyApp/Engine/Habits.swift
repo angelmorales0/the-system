@@ -267,6 +267,21 @@ extension GameSnapshot {
     }
 }
 
+// MARK: - Day off
+
+/// One day a week with no knowledge work: every Sunday. The only rule: 0 Mac work minutes. The other rows stay.
+/// A few minutes of grace cover a Mac that wakes for an update or a quick look. Past them, the Screen Time quest fails.
+enum DayOff {
+    /// Sunday in `Calendar.weekday` (Sunday is 1).
+    static let weekday = 1
+    static let graceMinutes = 5
+
+    static func isDayOff(_ dayKey: String) -> Bool {
+        guard let date = QuestDay.date(from: dayKey) else { return false }
+        return QuestDay.calendar.component(.weekday, from: date) == weekday
+    }
+}
+
 // MARK: - Beliefs
 
 /// The identity first: decide who you are, then let the habits prove it. Up to 10 lines, like commandments.
@@ -511,6 +526,26 @@ enum HabitRules {
         }
         if signer.restDaysLeft(on: QuestDay.key(for: weekThree)) != RestDays.perWeek - 1 {
             errors.append("a taken rest day should leave one fewer this week")
+        }
+
+        // Day off: Sundays. Work past the grace fails the Screen Time quest; a weekday keeps the 7-hour work cap.
+        let sunday = "2026-11-22"
+        if !DayOff.isDayOff(sunday) || DayOff.isDayOff("2026-11-16") {
+            errors.append("Sunday should be the day off and Monday not")
+        }
+        if let sundayDate = QuestDay.date(from: sunday) {
+            var off = GameSnapshot.fresh(catalog: catalog, now: sundayDate)
+            off.applyScreenTime(phoneMinutes: 30, workMinutes: DayOff.graceMinutes)
+            let graceOK = off.bundle.quests.first { $0.id == ScreenTime.questId }?.status == .pending
+            off.applyScreenTime(phoneMinutes: 30, workMinutes: 20)
+            if !graceOK || off.bundle.quests.first(where: { $0.id == ScreenTime.questId })?.status != .failed || off.screenTimeToday.workCap != 0 {
+                errors.append("work on the day off should fail the Screen Time quest past the grace")
+            }
+        }
+        var weekday = GameSnapshot.fresh(catalog: catalog, now: monday)
+        weekday.applyScreenTime(phoneMinutes: 30, workMinutes: 300)
+        if weekday.bundle.quests.first(where: { $0.id == ScreenTime.questId })?.status != .pending || weekday.screenTimeToday.workCap != ScreenTime.workCapMinutes {
+            errors.append("a weekday should keep the 7-hour work cap")
         }
 
         // Beliefs: cleaned to 10 lines, and the days run through them in order.
