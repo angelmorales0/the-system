@@ -11,17 +11,84 @@ struct HabitState: Codable, Equatable {
     var eatOutPenaltyWeeks: [String] = []
     /// The player's beliefs: who they decide to be. The quest screen shows one each day.
     var beliefs: [String] = Beliefs.defaults
+    /// The quest day whose morning workout ended the morning lock.
+    var morningUnlockedDayKey: String?
+    /// The wake time WHOOP gave for a quest day, kept so the lock knows its start without a new read.
+    var wokeAt: [String: Date] = [:]
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case eatOutPenaltyWeeks, beliefs
+        case eatOutPenaltyWeeks, beliefs, morningUnlockedDayKey, wokeAt
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         eatOutPenaltyWeeks = try container.decodeIfPresent([String].self, forKey: .eatOutPenaltyWeeks) ?? []
         beliefs = try container.decodeIfPresent([String].self, forKey: .beliefs) ?? Beliefs.defaults
+        morningUnlockedDayKey = try container.decodeIfPresent(String.self, forKey: .morningUnlockedDayKey)
+        wokeAt = try container.decodeIfPresent([String: Date].self, forKey: .wokeAt) ?? [:]
+    }
+}
+
+// MARK: - Morning lock
+
+/// Every app except the allowed ones (Spotify, Strava, The System) is blocked from wake time until the first workout
+/// of the day. Wake time is the end of the WHOOP night sleep; without one, the lock starts at 7:00. A wake after 7:00
+/// does not move the start: the lock is already on. A rest day (free rest day or Full Recovery) has no lock.
+/// No shop item skips it. Any of these ends it: a Hevy workout with a set (stretches count), a Strava activity, or an
+/// Apple Health workout of 10 minutes or more, started after waking (after 5:00 without a wake time).
+enum MorningLock {
+    static let fallbackHour = 7
+    static let minHealthSeconds = 10.0 * 60
+
+    /// 7:00 on the quest day, or the wake time when it is earlier and on that quest day.
+    static func start(dayKey: String, wokeAt: Date?) -> Date? {
+        guard let dayStart = QuestDay.start(of: dayKey) else { return nil }
+        let seven = dayStart.addingTimeInterval(Double(fallbackHour - QuestDay.startHour) * 3600)
+        guard let wokeAt, QuestDay.key(for: wokeAt) == dayKey else { return seven }
+        return min(wokeAt, seven)
+    }
+
+    /// The first workout that ends the lock: started after `after`, from Hevy, Strava, or Apple Health.
+    static func unlockingWorkout(_ data: DayIntegrationSnapshot, after: Date) -> Date? {
+        let hevy = data.hevy.workouts.filter { $0.start >= after && $0.exercises.contains { !$0.sets.isEmpty } }.map(\.start)
+        let strava = data.strava.activities.filter { $0.start >= after }.map(\.start)
+        let health = data.health.workouts.filter { $0.start >= after && $0.end.timeIntervalSince($0.start) >= minHealthSeconds }.map(\.start)
+        return (hevy + strava + health).min()
+    }
+}
+
+extension GameSnapshot {
+    /// No lock today: a rest day, a Full Recovery day, or the morning workout is done.
+    var morningLockOff: Bool {
+        let today = bundle.dayKey
+        return restDue(on: today) || fullRecoveryDayKey == today || bundle.mode == .fullRecovery || habits.morningUnlockedDayKey == today
+    }
+
+    /// When today's lock starts, from the saved wake time.
+    var morningLockStart: Date? { MorningLock.start(dayKey: bundle.dayKey, wokeAt: habits.wokeAt[bundle.dayKey]) }
+
+    /// True while the lock holds now.
+    func morningLockOn(now: Date) -> Bool {
+        guard !morningLockOff, let start = morningLockStart, QuestDay.key(for: now) == bundle.dayKey else { return false }
+        return now >= start
+    }
+
+    /// Saves today's wake time and ends the lock once a morning workout is found. Returns true when it ended it now.
+    @discardableResult
+    mutating func checkMorningLock(integrations: DayIntegrationSnapshot, wokeAt: Date?) -> Bool {
+        let today = bundle.dayKey
+        if let wokeAt, QuestDay.key(for: wokeAt) == today {
+            habits.wokeAt[today] = wokeAt
+            habits.wokeAt = habits.wokeAt.filter { $0.key >= QuestDay.key(byAddingDays: -7, to: today) }
+        }
+        // Only workouts that start after today's wake (or 5:00) count, so yesterday's data never ends today's lock.
+        guard habits.morningUnlockedDayKey != today, let dayStart = QuestDay.start(of: today) else { return false }
+        let after = habits.wokeAt[today] ?? dayStart
+        guard MorningLock.unlockingWorkout(integrations, after: after) != nil else { return false }
+        habits.morningUnlockedDayKey = today
+        return true
     }
 }
 
@@ -197,6 +264,39 @@ enum HabitRules {
         if EatOutAlerts.due(share: 0.8, sent: []) != 75 || EatOutAlerts.due(share: 0.8, sent: [50, 75]) != nil || EatOutAlerts.due(share: 1.2, sent: [50]) != 100 {
             errors.append("eat-out notices should send the highest step reached, once")
         }
+
+        // Morning lock: from 7:00 or an earlier wake, until a workout started after waking. Off on rest days.
+        let seven = (QuestDay.start(of: "2026-11-16") ?? monday).addingTimeInterval(2 * 3600)
+        if MorningLock.start(dayKey: "2026-11-16", wokeAt: nil) != seven
+            || MorningLock.start(dayKey: "2026-11-16", wokeAt: seven.addingTimeInterval(-3600)) != seven.addingTimeInterval(-3600)
+            || MorningLock.start(dayKey: "2026-11-16", wokeAt: seven.addingTimeInterval(3600)) != seven {
+            errors.append("the morning lock should start at 7:00, or at an earlier wake time")
+        }
+        var lock = GameSnapshot.fresh(catalog: catalog, now: monday)
+        if lock.morningLockOn(now: seven.addingTimeInterval(-60)) || !lock.morningLockOn(now: seven) {
+            errors.append("the morning lock should hold from 7:00")
+        }
+        func run(_ start: Date, minutes: Double, source: String = "strava") -> WorkoutEvent {
+            WorkoutEvent(source: source, externalId: "\(start.timeIntervalSince1970)", sport: "Run", start: start,
+                         end: start.addingTimeInterval(minutes * 60), movingTimeSec: minutes * 60)
+        }
+        var data = DayIntegrationSnapshot.empty(dayKey: lock.bundle.dayKey)
+        data.health = HealthDaySummary(access: .requested, workouts: [run(seven.addingTimeInterval(600), minutes: 5, source: "health")])
+        if lock.checkMorningLock(integrations: data, wokeAt: seven.addingTimeInterval(-1800)) || lock.habits.wokeAt[lock.bundle.dayKey] == nil {
+            errors.append("a 5-minute Health workout should not end the lock, and the wake time should be kept")
+        }
+        data.strava = StravaDayReading(available: true, configured: true, reason: "", dayKey: lock.bundle.dayKey,
+                                       activities: [run(seven.addingTimeInterval(-3600), minutes: 30)])
+        if lock.checkMorningLock(integrations: data, wokeAt: nil) {
+            errors.append("a run before the wake time should not end the lock")
+        }
+        data.strava.activities.append(run(seven.addingTimeInterval(900), minutes: 30))
+        if !lock.checkMorningLock(integrations: data, wokeAt: nil) || lock.morningLockOn(now: seven.addingTimeInterval(3600)) {
+            errors.append("a run after waking should end the lock for the day")
+        }
+        var rest = GameSnapshot.fresh(catalog: catalog, now: monday)
+        rest.restDayKeys = [rest.bundle.dayKey]
+        if rest.morningLockOn(now: seven) { errors.append("a rest day should have no morning lock") }
 
         // Beliefs: cleaned to 10 lines, and the days run through them in order.
         let lines = Beliefs.cleaned(["  I live below my means. ", "", String(repeating: "x", count: 200)] + Array(repeating: "Line", count: 12))

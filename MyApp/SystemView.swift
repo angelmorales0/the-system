@@ -64,6 +64,16 @@ struct SystemView: View {
                     .padding(.horizontal, 12)
                     .accessibilityLabel("Today's belief: \(belief)")
             }
+            // The morning lock holds until the first workout of the day.
+            if store.snapshot.morningLockOn(now: store.clock) {
+                Text("MORNING LOCK · apps open after your first workout")
+                    .font(.caption2.weight(.semibold))
+                    .tracking(0.8)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(QuestLight.penalty)
+                    .padding(.top, 8)
+                    .accessibilityIdentifier("morningLockLine")
+            }
             // The Rest Day says why it rests: the planner's reason, or the app's own signals offline.
             if store.snapshot.isRestDay, !store.bundle.narrative.isEmpty {
                 Text(store.bundle.narrative)

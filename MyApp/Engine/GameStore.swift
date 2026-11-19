@@ -723,6 +723,7 @@ final class GameStore: ObservableObject {
             self.recomputeStatLevels(now: now)
             next.applyMonthlyPenalty(board: self.monthlyBoard, catalog: self.catalog, now: now)
             let eatOutPenalty = next.applyEatOutCap(catalog: self.catalog, now: now)
+            let unlocked = next.checkMorningLock(integrations: day, wokeAt: remote.whoop.wokeAt)
             // After today's readiness, so a red recovery hits HP and sets the regeneration speed.
             next.applyHitPoints(integrations: day, maxHP: HitPoints.maxHP(for: self.statLevels), now: now)
             // After today's screen time too, so only the new minutes add fatigue.
@@ -734,6 +735,8 @@ final class GameStore: ObservableObject {
             self.integrationsDayKey = dayKey
             if settled.liftedPenalty {
                 self.verificationNote = "The last quest day was completed. The penalty is lifted."
+            } else if unlocked {
+                self.verificationNote = "Morning workout found. Your apps are open."
             } else if eatOutPenalty {
                 self.verificationNote = "Eating out went over \(FinanceLevel.usd(EatOut.capUsd)) this week. A penalty is open."
             } else if settled.openedPenalty {
@@ -847,6 +850,8 @@ final class GameStore: ObservableObject {
             // A penalty that waits through a token day or a rest day comes back tomorrow: the monitor locks at 5:00.
             owedDayKey: snapshot.player.penaltyOpen && !visible ? snapshot.bundle.dayKey : nil
         )
+        guard persistence == .standard else { return }
+        MorningLockEnforcement.sync(lockNow: snapshot.morningLockOn(now: .now), offToday: snapshot.morningLockOff, dayKey: snapshot.bundle.dayKey)
     }
 
     /// "Penalty 10K [3.2/10km]", like the quest row.

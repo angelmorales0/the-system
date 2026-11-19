@@ -67,6 +67,8 @@ nonisolated struct WhoopDayReading: Codable, Equatable {
     var dayStrain: Double?
     var scored: Bool
     var workouts: [WorkoutEvent]
+    /// The end of the newest night sleep (not a nap): the wake time. Nil without one, or on an old save.
+    var wokeAt: Date? = nil
 
     static func disconnected(dayKey: String, reason: String) -> WhoopDayReading {
         WhoopDayReading(

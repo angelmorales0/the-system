@@ -20,6 +20,10 @@ class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
             PenaltyMonitorShields.lockIfDayMissed(now: Date())
             return
         }
+        if activity.rawValue == MorningLockMonitor.activity {
+            MorningLockMonitor.start(now: Date())
+            return
+        }
         PenaltyMonitorShields.reassert()
     }
 
@@ -29,7 +33,7 @@ class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
             return
         }
         if PhoneScreenMonitor.activities.contains(activity.rawValue) { return }
-        if activity.rawValue == PenaltyMonitorGroup.dawnActivity { return }
+        if activity.rawValue == PenaltyMonitorGroup.dawnActivity || activity.rawValue == MorningLockMonitor.activity { return }
         PenaltyMonitorShields.reassert()
     }
 
@@ -126,6 +130,37 @@ enum PenaltyMonitorShields {
             : date
         let parts = calendar.dateComponents([.year, .month, .day], from: local)
         return String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
+    }
+}
+
+/// Mirrors `MorningLockEnforcement` in the app. Keep the strings in step.
+/// At 7:00 it blocks every app except the allowed ones, unless the app wrote that today has no lock
+/// (a rest day, or the morning workout is done). Only the app ends the lock.
+enum MorningLockMonitor {
+    static let activity = "morningLock"
+    static let storeName = "morningLock"
+    static let offDayKey = "morningLockOffDayKey"
+
+    nonisolated static func start(now: Date) {
+        let defaults = UserDefaults(suiteName: PenaltyMonitorGroup.suiteName) ?? .standard
+        let today = PenaltyMonitorShields.questDayKey(for: now)
+        guard defaults.string(forKey: offDayKey) != today else { return }
+        var allowed = Set<ApplicationToken>()
+        if let data = defaults.data(forKey: PenaltyMonitorGroup.allowedSelectionKey),
+           let selection = try? PropertyListDecoder().decode(FamilyActivitySelection.self, from: data) {
+            allowed = selection.applicationTokens
+        }
+        let store = ManagedSettingsStore(named: .init(storeName))
+        store.shield.applications = nil
+        store.shield.webDomains = nil
+        store.shield.applicationCategories = .all(except: allowed)
+        store.shield.webDomainCategories = .all()
+        let content = UNMutableNotificationContent()
+        content.title = "MORNING LOCK"
+        content.body = "Your apps are locked until your morning workout. Log it in Hevy, Strava, or Apple Health, then open The System."
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "morning-lock-\(today)", content: content, trigger: nil))
     }
 }
 

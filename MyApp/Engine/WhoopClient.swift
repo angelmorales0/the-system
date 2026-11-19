@@ -40,7 +40,7 @@ enum WhoopClient {
     /// Pure: the snapshot from the four collection replies.
     static func reading(dayKey: String, recovery: JSONValue?, cycle: JSONValue?, sleep: JSONValue?, workouts: JSONValue?) -> WhoopDayReading {
         let score = firstScore(recovery)
-        return WhoopDayReading(
+        var reading = WhoopDayReading(
             available: true,
             configured: true,
             reason: "",
@@ -53,6 +53,9 @@ enum WhoopClient {
             scored: firstRecord(recovery)?["score_state"]?.stringValue == "SCORED",
             workouts: events(workouts)
         )
+        reading.wokeAt = (sleep?["records"]?.arrayValue ?? []).first { $0.objectValue != nil && !$0["nap"].truthy }?["end"]?.stringValue
+            .flatMap(OnDeviceTime.parse)
+        return reading
     }
 
     /// Cycles, recoveries, and sleeps from `start` to `end`, for the training history.
