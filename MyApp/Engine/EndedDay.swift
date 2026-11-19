@@ -24,7 +24,7 @@ struct EndedDay: Codable, Equatable {
     var screenTime: ScreenTimeDay?
     /// Gold the day was paid as it ended.
     var paidGold = 0
-    /// A penalty that is not the day's (the eat-out cap) opened after this day ended. No late work on this day lifts it.
+    /// A penalty that is not the day's (a broken contract's penalty run) opened after this day ended. No late work on this day lifts it.
     /// The saved name stays for old saves.
     var monthPenalty = false
 

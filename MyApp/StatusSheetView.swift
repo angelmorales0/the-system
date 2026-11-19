@@ -32,15 +32,6 @@ struct StatusSheetView: View {
                             VStack(spacing: 18) {
                                 StatusTitleBox()
                                 SystemsPanel(tracks: store.systemsTracks) { store.setHandMark($0, $1, passed: $2) }
-                                StatusFrame {
-                                    VStack(spacing: 0) {
-                                        statusLink("INVENTORY") { showInventory = true; SystemSound.systemOpen.play() }
-                                        Rectangle().fill(QuestLight.ink.opacity(0.25)).frame(height: 0.5)
-                                        statusLink("CONTRACTS") { showContracts = true; SystemSound.systemOpen.play() }
-                                        Rectangle().fill(QuestLight.ink.opacity(0.25)).frame(height: 0.5)
-                                        statusLink("BELIEFS") { showBeliefs = true; SystemSound.systemOpen.play() }
-                                    }
-                                }
                             }
                         } else {
                         StatusSheetContent(
@@ -55,7 +46,8 @@ struct StatusSheetView: View {
                             onSettings: { showSettings = true; SystemSound.systemOpen.play() },
                             onShop: { showShop = true; SystemSound.systemOpen.play() },
                             onBeliefs: { showBeliefs = true; SystemSound.systemOpen.play() },
-                            onContracts: { showContracts = true; SystemSound.systemOpen.play() }
+                            onContracts: { showContracts = true; SystemSound.systemOpen.play() },
+                            onInventory: { showInventory = true; SystemSound.systemOpen.play() }
                         )
                         }
                         }
@@ -95,25 +87,6 @@ struct StatusSheetView: View {
         .onChange(of: store.bundle.dayKey) { _, _ in closeSheets() }
     }
 
-    private func statusLink(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack {
-                Text(title)
-                    .font(.footnote.weight(.semibold))
-                    .tracking(1.6)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .opacity(0.7)
-            }
-            .foregroundStyle(QuestLight.ink)
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title.capitalized)
-    }
-
     private func closeSheets() {
         selectedStat = nil
         showSettings = false
@@ -139,6 +112,7 @@ private struct StatusSheetContent: View {
     var onShop: () -> Void = {}
     var onBeliefs: () -> Void = {}
     var onContracts: () -> Void = {}
+    var onInventory: () -> Void = {}
     var body: some View {
         VStack(spacing: 22) {
             StatusTitleBox()
@@ -183,6 +157,8 @@ private struct StatusSheetContent: View {
             }
             StatusFrame {
                 VStack(spacing: 0) {
+                    linkButton("INVENTORY", action: onInventory)
+                    Rectangle().fill(QuestLight.ink.opacity(0.25)).frame(height: 0.5)
                     linkButton("CONTRACTS", action: onContracts)
                     Rectangle().fill(QuestLight.ink.opacity(0.25)).frame(height: 0.5)
                     linkButton("BELIEFS", action: onBeliefs)

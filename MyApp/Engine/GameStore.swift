@@ -903,7 +903,6 @@ final class GameStore: ObservableObject {
             // The stat levels first: max HP is built from them.
             self.statInputs = (remote.codeforces, remote.monkeytype, remote.financeMonths, bodyMass, focusDays, self.statInputs?.inputs ?? StatInputs())
             self.recomputeStatLevels(now: now)
-            let eatOutPenalty = next.applyEatOutCap(catalog: self.catalog, now: now)
             let unlocked = next.checkMorningLock(integrations: day, wokeAt: remote.whoop.wokeAt)
             // Weigh-ins: today's newest from Apple Health, and the daily ones of the last 30 days once they are loaded.
             let dailyMass = (self.statInputs?.inputs.recoveryDays ?? []).compactMap { day -> BodyMassReading? in
@@ -920,7 +919,6 @@ final class GameStore: ObservableObject {
             next.applyFatigue(integrations: day, now: now)
             self.snapshot = next
             self.sendScreenTimeAlerts()
-            if self.persistence == .standard, let week = next.eatOutWeek { EatOutAlerts.update(week: week) }
             self.integrations = day
             self.integrationsDayKey = dayKey
             if settled.liftedPenalty {
@@ -930,9 +928,7 @@ final class GameStore: ObservableObject {
                     + "Taken: \(contract.punishment.text)."
             } else if unlocked {
                 self.verificationNote = "Morning workout found. Your apps are open."
-            } else if eatOutPenalty {
-                self.verificationNote = "Eating out went over \(FinanceLevel.usd(EatOut.capUsd)) this week. A penalty is open."
-            } else if settled.openedPenalty {
+                        } else if settled.openedPenalty {
                 self.verificationNote = "The Macs' screen time put the last quest day over the limit. A penalty is open."
             }
             if rebuilt {

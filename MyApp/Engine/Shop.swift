@@ -32,17 +32,15 @@ enum Gold {
 /// Every item has a 36-hour cooldown.
 enum Potion: String, Codable, CaseIterable, Equatable {
     case nightfall, idleHours, ironblood, secondWind, quicksilver
-    /// Today's eat-out charges do not count toward the weekly eat-out cap.
-    case banquetSeal
     /// Skips tonight's Home by 9 pm, for a night out.
     case moonlitPass
 
-    /// A rule skip, not the stat's potion. The Banquet Seal clears no quest; the Moonlit Pass clears Home by 9 pm only.
-    var isRuleSkip: Bool { self == .banquetSeal || self == .moonlitPass }
+    /// A rule skip, not the stat's potion: the Moonlit Pass clears Home by 9 pm only.
+    /// The Banquet Seal left with the eat-out cap on 2026-11-18; a saved use of it is dropped on load.
+    var isRuleSkip: Bool { self == .moonlitPass }
 
     var stat: Stat {
         switch self {
-        case .banquetSeal: .FIN
         case .moonlitPass: .REC
         case .nightfall: .REC
         case .idleHours: .FOC
@@ -64,7 +62,6 @@ enum Potion: String, Codable, CaseIterable, Equatable {
         case .ironblood: "Ironblood Draught"
         case .secondWind: "Second Wind Tonic"
         case .quicksilver: "Quicksilver Vial"
-        case .banquetSeal: "Banquet Seal"
         case .moonlitPass: "Moonlit Pass"
         }
     }
@@ -77,7 +74,6 @@ enum Potion: String, Codable, CaseIterable, Equatable {
         case .ironblood: "Skips today's lifts."
         case .secondWind: "Skips today's run."
         case .quicksilver: "Skips today's stretch."
-        case .banquetSeal: "Today's eat-out charges do not count toward the \(FinanceLevel.usd(MercuryClient.eatOutWeeklyCapUsd)) weekly cap."
         case .moonlitPass: "Skips tonight's Home by 9 pm, for a night out."
         }
     }
@@ -90,7 +86,7 @@ enum Potion: String, Codable, CaseIterable, Equatable {
         case .ironblood, .secondWind: 3_600
         case .quicksilver: 1_200
         // About half of a perfect week's gold (7 × 1,200).
-        case .banquetSeal, .moonlitPass: 4_200
+        case .moonlitPass: 4_200
         }
     }
 
@@ -236,7 +232,7 @@ extension GameSnapshot {
                 // The night out and the tired morning after it.
                 excuses.recoveryDayKeys.insert(use.dayKey)
                 excuses.recoveryDayKeys.insert(QuestDay.key(byAddingDays: 1, to: use.dayKey))
-            case .ironblood, .secondWind, .quicksilver, .banquetSeal, .moonlitPass:
+            case .ironblood, .secondWind, .quicksilver, .moonlitPass:
                 break
             }
         }
@@ -360,10 +356,9 @@ enum ShopRules {
         if old.potionReady(.ironblood) != QuestDay.start(of: dayKey)?.addingTimeInterval(Potion.cooldown) {
             errors.append("an old potion use should count from the start of its day")
         }
-        // The eat-out skip is a rule skip: FIN, 4,200 gold, and it clears no quest.
-        if Potion.banquetSeal.basePrice != 4_200 || !Potion.banquetSeal.isRuleSkip || !excuse.potionTargets(.banquetSeal).isEmpty
-            || Potion(stat: .FIN) != nil {
-            errors.append("Banquet Seal should be a 4,200 gold FIN rule skip that clears no quest")
+        // FIN has no item since the eat-out cap left; the Moonlit Pass is the only rule skip.
+        if Potion(stat: .FIN) != nil || Potion.allCases.filter(\.isRuleSkip) != [.moonlitPass] {
+            errors.append("the Moonlit Pass should be the only rule skip, and FIN should have no item")
         }
         excuse.player.penaltyOpen = true
         if excuse.potionBlocker(.moonlitPass)?.contains("penalty") != true || !excuse.buyFullRecovery().contains("penalty") {

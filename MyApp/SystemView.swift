@@ -169,9 +169,9 @@ struct SystemView: View {
                 }
             }
 
-            // The week's money, on the quest screen so it is seen every day: eating out and all discretionary spend.
-            if let week = store.snapshot.eatOutWeek {
-                MoneyRows(week: week)
+            // The week's discretionary spend, on the quest screen so it is seen every day.
+            if let spend = store.snapshot.weekSpendUsd {
+                MoneyRows(spend: spend)
                     .padding(.top, 10)
             }
 
@@ -441,20 +441,21 @@ private enum GoalRow: Identifiable {
     }
 }
 
-/// This week's eating out against its $40 cap, with a bar, and the week's discretionary spend against $280.
-/// Yellow from 75%, red from 100%. Over the eat-out cap, a penalty opens 8 hours after the charge that went over.
+/// This week's discretionary spend against $280, with a bar. Yellow from 75%, red from 100%. It opens no penalty.
 private struct MoneyRows: View {
-    let week: EatOut.Week
+    let spend: Double
+
+    private var share: Double { spend / MercuryClient.weeklySoftCapUsd }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 11) {
-                Text("Eating out")
+                Text("Spend this week")
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text("[\(FinanceLevel.usd(week.spentUsd))/\(FinanceLevel.usd(week.capUsd))]")
+                Text("[\(FinanceLevel.usd(spend))/\(FinanceLevel.usd(MercuryClient.weeklySoftCapUsd))]")
                     .monospacedDigit()
-                    .foregroundStyle(color(week.share))
-                    .shadow(color: color(week.share).opacity(0.6), radius: 5)
+                    .foregroundStyle(color)
+                    .shadow(color: color.opacity(0.6), radius: 5)
             }
             .font(.subheadline)
             .foregroundStyle(QuestLight.ink)
@@ -462,35 +463,19 @@ private struct MoneyRows: View {
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
                     Capsule().fill(QuestLight.ink.opacity(0.15))
-                    Capsule().fill(color(week.share)).frame(width: proxy.size.width * min(max(week.share, 0), 1))
-                        .shadow(color: color(week.share).opacity(0.7), radius: 4)
+                    Capsule().fill(color).frame(width: proxy.size.width * min(max(share, 0), 1))
+                        .shadow(color: color.opacity(0.7), radius: 4)
                 }
             }
             .frame(height: 5)
-            HStack(spacing: 14) {
-                if let spend = week.discretionaryUsd {
-                    let share = spend / MercuryClient.weeklySoftCapUsd
-                    Text("Spend this week \(FinanceLevel.usd(spend))/\(FinanceLevel.usd(MercuryClient.weeklySoftCapUsd))")
-                        .foregroundStyle(share >= 0.75 ? color(share) : QuestLight.ink.opacity(0.75))
-                }
-                if week.overAt != nil {
-                    Text("Over the cap: penalty")
-                        .foregroundStyle(QuestLight.penalty)
-                }
-                Spacer(minLength: 0)
-            }
-            .font(.caption.monospacedDigit())
-            .padding(.leading, 12)
         }
         .frame(minHeight: 44)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Eating out this week")
-        .accessibilityValue("\(FinanceLevel.usd(week.spentUsd)) of \(FinanceLevel.usd(week.capUsd))")
+        .accessibilityLabel("Spend this week")
+        .accessibilityValue("\(FinanceLevel.usd(spend)) of \(FinanceLevel.usd(MercuryClient.weeklySoftCapUsd))")
     }
 
-    private func color(_ share: Double) -> Color {
-        share >= 1 ? QuestLight.penalty : share >= 0.75 ? Color.yellow : QuestLight.ink
-    }
+    private var color: Color { share >= 1 ? QuestLight.penalty : share >= 0.75 ? Color.yellow : QuestLight.ink }
 }
 
 /// Work and phone under the Screen Time row. A line over its own cap turns red; only the total can fail the quest.

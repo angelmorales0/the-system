@@ -98,7 +98,6 @@ enum MercuryClient {
     static let dailySoftCapUsd = 40.0
     static let weeklySoftCapUsd = 280.0
     /// Eating out: about one meal with friends a week. Restaurants and FoodDelivery count.
-    static let eatOutWeeklyCapUsd = 40.0
     static let eatOutCategories: Set<String> = ["Restaurants", "FoodDelivery"]
     static let balanceHardFloorUsd = 500.0
     static let paceNormal = 0.75
