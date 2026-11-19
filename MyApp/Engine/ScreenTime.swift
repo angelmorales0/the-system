@@ -495,6 +495,9 @@ enum ScreenTimeRules {
             || snapshot.questHistory.first?.quests.first(where: { $0.title == ScreenTime.title })?.status != .failed {
             errors.append("a failed Screen Time day should stay red in the record, open no penalty, and start the next day at 0, got penalty \(snapshot.player.penaltyOpen)")
         }
+        if snapshot.lastGoldReward == nil || snapshot.gold == 0 {
+            errors.append("a red Screen Time row should keep the day's gold, got gold \(snapshot.gold)")
+        }
 
         // 7 h + 1.5 h is 510, inside the grace: both lines stay normal and the row is yellow.
         var exact = ScreenTimeDay(dayKey: "x")

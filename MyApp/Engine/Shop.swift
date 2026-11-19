@@ -127,10 +127,11 @@ extension GameSnapshot {
     }
 
     /// Every required quest of the day is done by real work. A potion or a Full Recovery breaks it.
+    /// The Screen Time row does not count: over the limit it only turns red, and the day keeps its gold.
     var isPerfectDay: Bool {
         guard bundle.mode != .fullRecovery, !signals.spendingFullRecovery, fullRecoveryDayKey != bundle.dayKey,
               !potionUsedToday else { return false }
-        let required = bundle.quests.filter { $0.kind != .optional }
+        let required = bundle.quests.filter { $0.kind != .optional && $0.id != ScreenTime.questId }
         return !required.isEmpty && required.allSatisfy { $0.status == .completed && !$0.skippedWithPotion }
     }
 

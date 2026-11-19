@@ -163,7 +163,7 @@ extension GameSnapshot {
                 // The day is complete now. If the Macs' minutes arrive later and put it over the limit,
                 // it fails like a day that was complete on time: gold back, penalty open.
                 ended.missed = false
-                let required = past.bundle.quests.filter { $0.kind != .optional }
+                let required = past.bundle.quests.filter { $0.kind != .optional && $0.id != ScreenTime.questId }
                 let perfect = !required.isEmpty && required.allSatisfy { $0.status == .completed && !$0.skippedWithPotion }
                     && !potionLog.contains { $0.dayKey == dayKey }
                 if perfect, ended.paidGold == 0 {
