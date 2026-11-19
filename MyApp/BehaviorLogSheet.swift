@@ -16,7 +16,7 @@ struct BehaviorLogSheet: View {
     var body: some View {
         NavigationStack {
             QuestSheet(title: "Behavior log") {
-                Text("What did you do today that could be better? Write it down, so the habit you do not see becomes one you see.")
+                Text("What could you have done better today? Write it down, so you see the habit.")
                     .font(.footnote)
                     .foregroundStyle(SystemTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -81,10 +81,6 @@ struct SystemsPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("The 1% steps of each day. Cyan: done. Red: missed. Dim: no rule or no data. On a row you mark by hand, tap a day for Pass or Fail. A day you do not mark fails. Traveling: mark the days you travel; a third in a week fails.")
-                .font(.caption)
-                .foregroundStyle(QuestLight.ink.opacity(0.7))
-                .fixedSize(horizontal: false, vertical: true)
             ForEach(tracks) { track in
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
