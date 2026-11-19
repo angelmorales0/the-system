@@ -9,6 +9,7 @@ struct StatusSheetView: View {
     @State private var selectedStat: Stat?
     @State private var showSettings = false
     @State private var showShop = false
+    @State private var showBeliefs = false
 
     var body: some View {
         ZStack {
@@ -26,7 +27,8 @@ struct StatusSheetView: View {
                             gold: store.snapshot.gold,
                             onSelectStat: { selectedStat = $0; SystemSound.systemOpen.play() },
                             onSettings: { showSettings = true; SystemSound.systemOpen.play() },
-                            onShop: { showShop = true; SystemSound.systemOpen.play() }
+                            onShop: { showShop = true; SystemSound.systemOpen.play() },
+                            onBeliefs: { showBeliefs = true; SystemSound.systemOpen.play() }
                         )
                     }
                     .frame(maxWidth: 460)
@@ -47,6 +49,9 @@ struct StatusSheetView: View {
         .sheet(isPresented: $showShop, onDismiss: { SystemSound.systemClose.play() }) {
             ShopSheet()
         }
+        .sheet(isPresented: $showBeliefs, onDismiss: { SystemSound.systemClose.play() }) {
+            BeliefsSheet()
+        }
         // A penalty covers every page, and a new day replaces the quests a sheet was opened for. Close the sheets,
         // so no setting, token, or potion is used above the penalty screen or on a day the player did not choose it for.
         .onChange(of: store.openPenaltyQuest?.id) { _, penalty in
@@ -59,6 +64,7 @@ struct StatusSheetView: View {
         selectedStat = nil
         showSettings = false
         showShop = false
+        showBeliefs = false
     }
 }
 
@@ -75,6 +81,7 @@ private struct StatusSheetContent: View {
     var onSelectStat: (Stat) -> Void = { _ in }
     var onSettings: () -> Void = {}
     var onShop: () -> Void = {}
+    var onBeliefs: () -> Void = {}
     var body: some View {
         VStack(spacing: 22) {
             StatusTitleBox()
@@ -117,7 +124,30 @@ private struct StatusSheetContent: View {
                     .minimumScaleFactor(0.8)
                 }
             }
+            StatusFrame {
+                beliefsButton
+            }
         }
+    }
+
+    /// Opens the beliefs page.
+    private var beliefsButton: some View {
+        Button(action: onBeliefs) {
+            HStack {
+                Text("BELIEFS")
+                    .font(.footnote.weight(.semibold))
+                    .tracking(1.6)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .opacity(0.7)
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Beliefs")
+        .accessibilityHint("Opens your beliefs")
     }
 
     /// "Gold: 12,340" that opens the shop.

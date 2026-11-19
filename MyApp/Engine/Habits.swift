@@ -9,16 +9,43 @@ import UserNotifications
 struct HabitState: Codable, Equatable {
     /// Quest weeks (their Monday) whose eat-out cap already opened a penalty. One penalty a week at most.
     var eatOutPenaltyWeeks: [String] = []
+    /// The player's beliefs: who they decide to be. The quest screen shows one each day.
+    var beliefs: [String] = Beliefs.defaults
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case eatOutPenaltyWeeks
+        case eatOutPenaltyWeeks, beliefs
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         eatOutPenaltyWeeks = try container.decodeIfPresent([String].self, forKey: .eatOutPenaltyWeeks) ?? []
+        beliefs = try container.decodeIfPresent([String].self, forKey: .beliefs) ?? Beliefs.defaults
+    }
+}
+
+// MARK: - Beliefs
+
+/// The identity first: decide who you are, then let the habits prove it. Up to 10 lines, like commandments.
+enum Beliefs {
+    static let defaults = [
+        "I live below my means.",
+        "I take care of where I live and the places I visit.",
+    ]
+    static let maxCount = 10
+    static let maxLength = 120
+
+    /// Trims each line, drops empty ones, cuts long ones, and keeps the first 10.
+    static func cleaned(_ lines: [String]) -> [String] {
+        Array(lines.map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(maxLength)) }.filter { !$0.isEmpty }.prefix(maxCount))
+    }
+
+    /// The belief of the day. Days run through the list in order, so each one comes back.
+    static func today(_ beliefs: [String], dayKey: String) -> String? {
+        guard !beliefs.isEmpty, let date = QuestDay.date(from: dayKey) else { return nil }
+        let day = Int((date.timeIntervalSince1970 / 86_400).rounded(.down))
+        return beliefs[((day % beliefs.count) + beliefs.count) % beliefs.count]
     }
 }
 
@@ -171,8 +198,19 @@ enum HabitRules {
             errors.append("eat-out notices should send the highest step reached, once")
         }
 
+        // Beliefs: cleaned to 10 lines, and the days run through them in order.
+        let lines = Beliefs.cleaned(["  I live below my means. ", "", String(repeating: "x", count: 200)] + Array(repeating: "Line", count: 12))
+        if lines.count != 10 || lines[0] != "I live below my means." || lines[1].count != Beliefs.maxLength {
+            errors.append("beliefs should be trimmed, cut to \(Beliefs.maxLength) characters, and kept to 10, got \(lines.count)")
+        }
+        let shown = ["2026-11-16", "2026-11-17", "2026-11-18"].compactMap { Beliefs.today(["A", "B"], dayKey: $0) }
+        if shown.count != 3 || shown[0] == shown[1] || shown[0] != shown[2] || Beliefs.today([], dayKey: "2026-11-16") != nil {
+            errors.append("the daily belief should run through the list in order, got \(shown)")
+        }
+
         // Old saves load with no habit records.
-        if (try? JSONDecoder().decode(HabitState.self, from: Data("{}".utf8))) != HabitState() {
+        if (try? JSONDecoder().decode(HabitState.self, from: Data("{}".utf8)))?.beliefs != Beliefs.defaults
+            || (try? JSONDecoder().decode(HabitState.self, from: Data("{}".utf8))) != HabitState() {
             errors.append("an empty habit save should load")
         }
         return errors

@@ -52,6 +52,18 @@ struct SystemView: View {
                 .foregroundStyle(QuestLight.ink)
                 .shadow(color: QuestLight.blue.opacity(0.7), radius: 5)
                 .fixedSize(horizontal: false, vertical: true)
+            // Today's belief: who the player decided to be.
+            if let belief = store.beliefToday {
+                Text("“\(belief)”")
+                    .font(.system(.footnote, design: .serif).italic())
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(QuestLight.ink.opacity(0.8))
+                    .shadow(color: QuestLight.cyan.opacity(0.5), radius: 4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 10)
+                    .padding(.horizontal, 12)
+                    .accessibilityLabel("Today's belief: \(belief)")
+            }
             // The Rest Day says why it rests: the planner's reason, or the app's own signals offline.
             if store.snapshot.isRestDay, !store.bundle.narrative.isEmpty {
                 Text(store.bundle.narrative)

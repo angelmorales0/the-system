@@ -345,6 +345,18 @@ final class GameStore: ObservableObject {
         saveStatTargets(next)
     }
 
+    /// Saves the player's beliefs: trimmed, empty lines dropped, 10 at most.
+    func setBeliefs(_ lines: [String]) {
+        var next = snapshot
+        next.habits.beliefs = Beliefs.cleaned(lines)
+        guard next != snapshot else { return }
+        snapshot = next
+        persist()
+    }
+
+    /// Today's belief, for the quest screen.
+    var beliefToday: String? { Beliefs.today(snapshot.habits.beliefs, dayKey: snapshot.bundle.dayKey) }
+
     /// The split with the player's goals and edits, for the editor.
     var editedRotation: [GymSplit.Day] { GymSplit.rotation(with: statTargets.custom, edits: statTargets.split) }
 
