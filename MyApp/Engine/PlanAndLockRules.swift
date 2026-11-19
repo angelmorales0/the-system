@@ -784,10 +784,10 @@ enum PlanAndLockRules {
         // The repeat price holds 30 days later, when the 36-hour cooldown is long over.
         var shop = GameSnapshot.fresh(catalog: catalog, now: morning)
         shop.gold = 1_000_000
-        _ = shop.usePotion(.gildedIndulgence, now: morning)
+        _ = shop.usePotion(.nightfall, now: morning)
         shop.bundle.dayKey = QuestDay.key(byAddingDays: Potion.repeatWindowDays, to: shop.bundle.dayKey)
-        if shop.potionBlocker(.gildedIndulgence, now: morning.addingTimeInterval(Double(Potion.repeatWindowDays) * 86_400)) != nil || shop.potionPrice(.gildedIndulgence) != Potion.gildedIndulgence.basePrice * 3 / 2 {
-            errors.append("a second Gilded Indulgence on the first free day should cost 150%, got \(shop.potionPrice(.gildedIndulgence))")
+        if shop.potionBlocker(.nightfall, now: morning.addingTimeInterval(Double(Potion.repeatWindowDays) * 86_400)) != nil || shop.potionPrice(.nightfall) != Potion.nightfall.basePrice * 3 / 2 {
+            errors.append("a second Insomniac's Elixir on the first free day should cost 150%, got \(shop.potionPrice(.nightfall))")
         }
 
         // One history row that cannot be read costs that row, not the save.

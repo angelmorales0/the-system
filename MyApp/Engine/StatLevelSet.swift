@@ -55,7 +55,7 @@ struct StatLevelSet: Equatable {
         excuses: PotionExcuses = .none,
         now: Date
     ) -> StatLevelSet {
-        // Potion days do not count against FOC, REC, or FIN.
+        // Potion days do not count against FOC or REC.
         let focusDays = focusDays.filter { !excuses.focusDayKeys.contains($0.dayKey) }
         // Today's food log is not finished: a breakfast alone would fail the protein and carb rules until dinner.
         // The day's food counts from tomorrow. Its sleep is complete, so that stays.
@@ -66,7 +66,6 @@ struct StatLevelSet: Equatable {
             (open.caffeineMg, open.proteinG, open.fatG, open.carbsG, open.caloriesKcal, open.maintenanceKcal) = (nil, nil, nil, nil, nil, nil)
             return open
         }
-        let financeMonths = financeMonths.map(excuses.excusing)
         let reports: [Stat: StatLevelReport] = [
             .STR: StrengthLevel.evaluate(workouts: inputs.hevyWorkouts, custom: targets.custom, now: now),
             .END: EnduranceLevel.evaluate(efforts: inputs.runEfforts, swims: inputs.swimEfforts, vo2: inputs.vo2, zoneTwo: inputs.zoneTwo, bodyMass: bodyMass, now: now),

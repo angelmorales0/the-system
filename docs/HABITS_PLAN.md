@@ -55,7 +55,7 @@ an item, you cannot use that same item again for 36 hours. This changes the poti
 
 | Potion | Cooldown today | New cooldown |
 |---|---|---|
-| Gilded Indulgence Philter (FIN) | 30 days | 36 hours |
+| Gilded Indulgence Philter (FIN) | 30 days | Removed (2026-11-18) |
 | Insomniac's Elixir (REC) | 14 days | 36 hours |
 | Veil of Hours (FOC) | 14 days | 36 hours |
 | Ironblood Draught (STR) | None | 36 hours |

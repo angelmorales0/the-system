@@ -25,12 +25,13 @@ enum Gold {
     }
 }
 
-/// One potion per stat that has a forced daily quest. INT has none: reading is never forced.
+/// One potion per stat that has a forced daily quest. INT and FIN have none. The FIN potion, the Gilded Indulgence,
+/// was removed on 2026-11-18: FIN no longer reads spending. A saved use of it is dropped on load (`LossyArray`).
 /// Rule skips are extra items: each one skips one always-on rule for one day (see `isRuleSkip`).
 /// You buy a potion at the moment you drink it. A day that uses any potion pays no gold.
 /// Every item has a 36-hour cooldown.
 enum Potion: String, Codable, CaseIterable, Equatable {
-    case gildedIndulgence, nightfall, idleHours, ironblood, secondWind, quicksilver
+    case nightfall, idleHours, ironblood, secondWind, quicksilver
     /// Today's eat-out charges do not count toward the weekly eat-out cap.
     case banquetSeal
     /// Skips tonight's Home by 9 pm, for a night out.
@@ -41,7 +42,7 @@ enum Potion: String, Codable, CaseIterable, Equatable {
 
     var stat: Stat {
         switch self {
-        case .gildedIndulgence, .banquetSeal: .FIN
+        case .banquetSeal: .FIN
         case .moonlitPass: .REC
         case .nightfall: .REC
         case .idleHours: .FOC
@@ -58,7 +59,6 @@ enum Potion: String, Codable, CaseIterable, Equatable {
 
     var name: String {
         switch self {
-        case .gildedIndulgence: "Gilded Indulgence Philter"
         case .nightfall: "Insomniac's Elixir"
         case .idleHours: "Veil of Hours"
         case .ironblood: "Ironblood Draught"
@@ -72,7 +72,6 @@ enum Potion: String, Codable, CaseIterable, Equatable {
     /// One line: what the potion does.
     var details: String {
         switch self {
-        case .gildedIndulgence: "Spend \(FinanceLevel.usd(Self.indulgenceUsd)) over budget today, not counted."
         case .nightfall: "A sleepless night does not count against REC."
         case .idleHours: "No screen time cap today. FOC ignores it."
         case .ironblood: "Skips today's lifts."
@@ -86,7 +85,6 @@ enum Potion: String, Codable, CaseIterable, Equatable {
     /// Price before the repeat rule.
     var basePrice: Int {
         switch self {
-        case .gildedIndulgence: 25_000
         case .nightfall: 8_000
         case .idleHours: 6_000
         case .ironblood, .secondWind: 3_600
@@ -99,11 +97,9 @@ enum Potion: String, Codable, CaseIterable, Equatable {
     /// Time after a use before the same item can be used again. The same for every item.
     static let cooldown: TimeInterval = 36 * 60 * 60
 
-    /// These potions clear the stat's open daily quests, so they need one. FIN has no daily quest.
+    /// These potions clear the stat's open daily quests, so they need one.
     var needsQuest: Bool { self == .ironblood || self == .secondWind || self == .quicksilver }
 
-    /// Dollars of spending the FIN potion excuses from the month.
-    static let indulgenceUsd = 150.0
     /// Each use in this many days raises the next price by 50%.
     static let repeatWindowDays = 30
 }
@@ -117,20 +113,12 @@ struct PotionUse: Codable, Equatable {
     var time: Date? { usedAt ?? QuestDay.start(of: dayKey) }
 }
 
-/// Days and dollars that potions remove from the FOC, REC, and FIN scores.
+/// Days that potions remove from the FOC and REC scores.
 struct PotionExcuses: Equatable {
     var focusDayKeys: Set<String> = []
     var recoveryDayKeys: Set<String> = []
-    /// "YYYY-MM" → excused dollars.
-    var spendUsdByMonth: [String: Double] = [:]
 
     static let none = PotionExcuses()
-
-    func excusing(_ month: FinanceMonth) -> FinanceMonth {
-        var copy = month
-        copy.spendingUsd = max(0, month.spendingUsd - (spendUsdByMonth[month.month] ?? 0))
-        return copy
-    }
 }
 
 extension GameSnapshot {
@@ -248,9 +236,6 @@ extension GameSnapshot {
                 // The night out and the tired morning after it.
                 excuses.recoveryDayKeys.insert(use.dayKey)
                 excuses.recoveryDayKeys.insert(QuestDay.key(byAddingDays: 1, to: use.dayKey))
-            case .gildedIndulgence:
-                let month = String(use.dayKey.prefix(7))
-                excuses.spendUsdByMonth[month, default: 0] += Potion.indulgenceUsd
             case .ironblood, .secondWind, .quicksilver, .banquetSeal, .moonlitPass:
                 break
             }
@@ -265,8 +250,8 @@ enum ShopRules {
         if Gold.perfectDayRange.lowerBound * 10 < Gold.fullRecoveryPrice {
             errors.append("10 perfect days must always afford one Full Recovery")
         }
-        if Potion(stat: .INT) != nil || Potion.allCases.filter({ !$0.isRuleSkip }).count != Stat.allCases.count - 1 {
-            errors.append("every stat except INT needs exactly one potion")
+        if Potion(stat: .INT) != nil || Potion(stat: .FIN) != nil || Potion.allCases.filter({ !$0.isRuleSkip }).count != Stat.allCases.count - 2 {
+            errors.append("every stat except INT and FIN needs exactly one potion")
         }
 
         // Rewards stay in range, repeat for the same day, and vary across days.
@@ -335,7 +320,7 @@ enum ShopRules {
             || shop.gold != 100_000 - potion.basePrice {
             errors.append("\(potion.name) should clear its quests for \(potion.basePrice) gold")
         }
-        if shop.potionBlocker(.gildedIndulgence) == nil {
+        if shop.potionBlocker(.nightfall) == nil {
             errors.append("a second potion on the same day should be refused")
         }
         finishRequired(&shop, now: dayOne)
@@ -377,18 +362,12 @@ enum ShopRules {
         }
         // The eat-out skip is a rule skip: FIN, 4,200 gold, and it clears no quest.
         if Potion.banquetSeal.basePrice != 4_200 || !Potion.banquetSeal.isRuleSkip || !excuse.potionTargets(.banquetSeal).isEmpty
-            || Potion(stat: .FIN) != .gildedIndulgence {
+            || Potion(stat: .FIN) != nil {
             errors.append("Banquet Seal should be a 4,200 gold FIN rule skip that clears no quest")
         }
         excuse.player.penaltyOpen = true
-        if excuse.potionBlocker(.gildedIndulgence)?.contains("penalty") != true || !excuse.buyFullRecovery().contains("penalty") {
+        if excuse.potionBlocker(.moonlitPass)?.contains("penalty") != true || !excuse.buyFullRecovery().contains("penalty") {
             errors.append("the shop should be closed during a penalty")
-        }
-        excuse.player.penaltyOpen = false
-        _ = excuse.usePotion(.gildedIndulgence)
-        let month = FinanceMonth(month: String(excuse.bundle.dayKey.prefix(7)), postTaxIncomeUsd: 5_000, spendingUsd: 1_100, budgetUsd: 1_000, complete: true)
-        if excuse.potionExcuses.excusing(month).spendingUsd != 1_100 - Potion.indulgenceUsd {
-            errors.append("Gilded Indulgence should excuse $\(Int(Potion.indulgenceUsd)), got \(excuse.potionExcuses.excusing(month).spendingUsd)")
         }
         return errors
     }
