@@ -6,8 +6,9 @@ import WidgetKit
 struct PenaltyActivityBundle: WidgetBundle {
     var body: some Widget {
         PenaltyLiveActivity()
-        HomeScreenWidgets().body
-        LockScreenWidgets().body
+        NextQuestWidget()
+        RedSystemsWidget()
+        SystemsGridWidget()
     }
 }
 

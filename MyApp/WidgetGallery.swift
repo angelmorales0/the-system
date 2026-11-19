@@ -15,35 +15,28 @@ enum WidgetGallery {
         var id: Int { number }
     }
 
-    static var penaltyData: WidgetData {
+    /// Every Systems row blue today, for the Red Systems empty state.
+    static var allBlue: WidgetData {
         var data = WidgetData.sample
-        data.penalty = "Penalty Run [0/10km]"
+        data.systems = data.systems.map { var row = $0; row.today = .done; return row }
         return data
     }
 
     static let pageOne: [Item] = [
-        Item(number: 1, design: .questsLeft, size: .small),
+        Item(number: 1, design: .nextQuest, size: .small),
         Item(number: 2, design: .redSystems, size: .small),
-        Item(number: 3, design: .countdown, size: .small),
-        Item(number: 4, design: .status, size: .small),
-        Item(number: 5, design: .nextQuest, size: .small),
-        Item(number: 6, design: .penalty, size: .small, note: "no penalty"),
-        Item(number: 7, design: .questList, size: .medium),
-        Item(number: 8, design: .redSystems, size: .medium),
-        Item(number: 9, design: .systemsGrid, size: .medium),
+        Item(number: 3, design: .redSystems, size: .medium),
+        Item(number: 4, design: .systemsGrid, size: .medium),
     ]
 
     static let pageTwo: [Item] = [
-        Item(number: 10, design: .questList, size: .large),
-        Item(number: 11, design: .systemsGrid, size: .large),
-        Item(number: 12, design: .dailyBoard, size: .large),
+        Item(number: 5, design: .redSystems, size: .large),
+        Item(number: 6, design: .systemsGrid, size: .large),
     ]
 
     static let pageThree: [Item] = [
-        Item(number: 6, design: .penalty, size: .small, data: penaltyData, note: "penalty open"),
-        Item(number: 13, design: .lockProgress, size: .circular),
-        Item(number: 14, design: .lockSummary, size: .rectangular),
-        Item(number: 15, design: .lockInline, size: .inline),
+        Item(number: 2, design: .redSystems, size: .small, data: allBlue, note: "all blue"),
+        Item(number: 3, design: .redSystems, size: .medium, data: allBlue, note: "all blue"),
     ]
 
     static func frame(_ size: WidgetSize) -> CGSize {
@@ -51,9 +44,6 @@ enum WidgetGallery {
         case .small: CGSize(width: 170, height: 170)
         case .medium: CGSize(width: 364, height: 170)
         case .large: CGSize(width: 364, height: 382)
-        case .circular: CGSize(width: 76, height: 76)
-        case .rectangular: CGSize(width: 172, height: 76)
-        case .inline: CGSize(width: 260, height: 22)
         }
     }
 
@@ -61,19 +51,14 @@ enum WidgetGallery {
         let item: Item
         var body: some View {
             let size = WidgetGallery.frame(item.size)
-            let lock = [.circular, .rectangular, .inline].contains(item.size)
             VStack(alignment: .leading, spacing: 6) {
                 item.design.view(item.data, size: item.size)
-                    .padding(lock ? 0 : 16)
+                    .padding(16)
                     .frame(width: size.width, height: size.height)
-                    .background {
-                        if !lock { WidgetPalette.background }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: lock ? 0 : 22, style: .continuous))
+                    .background(WidgetPalette.background)
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .overlay {
-                        if !lock {
-                            RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1)
-                        }
+                        RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1)
                     }
                 Text("\(item.number). \(item.design.name)" + (item.note.map { " (\($0))" } ?? ""))
                     .font(.system(size: 11, weight: .semibold))
@@ -93,14 +78,14 @@ enum WidgetGallery {
                     .font(.system(size: 13, weight: .heavy))
                     .tracking(2)
                     .foregroundStyle(.white)
-                let smalls = items.filter { $0.size == .small || $0.size == .circular || $0.size == .rectangular }
+                let smalls = items.filter { $0.size == .small }
                 let rows = stride(from: 0, to: smalls.count, by: 2).map { Array(smalls[$0..<min($0 + 2, smalls.count)]) }
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     HStack(alignment: .top, spacing: 24) {
                         ForEach(row) { Tile(item: $0) }
                     }
                 }
-                ForEach(items.filter { $0.size == .medium || $0.size == .large || $0.size == .inline }) { Tile(item: $0) }
+                ForEach(items.filter { $0.size != .small }) { Tile(item: $0) }
             }
             .padding(19)
             .frame(width: 402, alignment: .topLeading)
@@ -112,9 +97,9 @@ enum WidgetGallery {
     /// Saves the three pages as PNGs in Documents.
     static func export() {
         guard let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
-        let pages = [Page(title: "HOME SCREEN · SMALL AND MEDIUM", items: pageOne),
-                     Page(title: "HOME SCREEN · LARGE", items: pageTwo),
-                     Page(title: "PENALTY OPEN AND LOCK SCREEN", items: pageThree)]
+        let pages = [Page(title: "SMALL AND MEDIUM", items: pageOne),
+                     Page(title: "LARGE", items: pageTwo),
+                     Page(title: "RED SYSTEMS WHEN ALL ARE BLUE", items: pageThree)]
         for (index, page) in pages.enumerated() {
             let renderer = ImageRenderer(content: page.environment(\.colorScheme, .dark))
             renderer.scale = 3

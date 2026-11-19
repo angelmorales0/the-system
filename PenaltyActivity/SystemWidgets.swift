@@ -40,22 +40,14 @@ struct SystemWidgetView: View {
         case .systemSmall: .small
         case .systemMedium: .medium
         case .systemLarge, .systemExtraLarge: .large
-        case .accessoryCircular: .circular
-        case .accessoryRectangular: .rectangular
-        case .accessoryInline: .inline
         default: .small
         }
     }
-
-    private var isLock: Bool { [.circular, .rectangular, .inline].contains(size) }
 
     var body: some View {
         Group {
             if let data = entry.data, entry.date < data.dayEnds {
                 design.view(data, size: size)
-            } else if isLock {
-                Text(size == .inline ? "Open The System" : "OPEN THE SYSTEM")
-                    .font(.system(size: 12, weight: .bold))
             } else {
                 VStack(spacing: 6) {
                     Image(systemName: "bolt.horizontal.circle")
@@ -73,9 +65,7 @@ struct SystemWidgetView: View {
                 }
             }
         }
-        .containerBackground(for: .widget) {
-            if isLock { Color.clear } else { WidgetPalette.background }
-        }
+        .containerBackground(for: .widget) { WidgetPalette.background }
     }
 }
 
@@ -85,9 +75,6 @@ private extension WidgetSize {
         case .small: .systemSmall
         case .medium: .systemMedium
         case .large: .systemLarge
-        case .circular: .accessoryCircular
-        case .rectangular: .accessoryRectangular
-        case .inline: .accessoryInline
         }
     }
 }
@@ -112,38 +99,6 @@ struct SystemDesignWidget {
     }
 }
 
-struct QuestsLeftWidget: Widget { var body: some WidgetConfiguration { SystemDesignWidget(.questsLeft).body } }
-struct QuestListWidget: Widget { var body: some WidgetConfiguration { SystemDesignWidget(.questList).body } }
+struct NextQuestWidget: Widget { var body: some WidgetConfiguration { SystemDesignWidget(.nextQuest).body } }
 struct RedSystemsWidget: Widget { var body: some WidgetConfiguration { SystemDesignWidget(.redSystems).body } }
 struct SystemsGridWidget: Widget { var body: some WidgetConfiguration { SystemDesignWidget(.systemsGrid).body } }
-struct DailyBoardWidget: Widget { var body: some WidgetConfiguration { SystemDesignWidget(.dailyBoard).body } }
-struct CountdownWidget: Widget { var body: some WidgetConfiguration { SystemDesignWidget(.countdown).body } }
-struct StatusWidget: Widget { var body: some WidgetConfiguration { SystemDesignWidget(.status).body } }
-struct NextQuestWidget: Widget { var body: some WidgetConfiguration { SystemDesignWidget(.nextQuest).body } }
-struct PenaltyWatchWidget: Widget { var body: some WidgetConfiguration { SystemDesignWidget(.penalty).body } }
-struct LockProgressWidget: Widget { var body: some WidgetConfiguration { SystemDesignWidget(.lockProgress).body } }
-struct LockSummaryWidget: Widget { var body: some WidgetConfiguration { SystemDesignWidget(.lockSummary).body } }
-struct LockInlineWidget: Widget { var body: some WidgetConfiguration { SystemDesignWidget(.lockInline).body } }
-
-/// A bundle lists at most 10 widgets, so the designs come in two groups.
-struct HomeScreenWidgets: WidgetBundle {
-    var body: some Widget {
-        QuestsLeftWidget()
-        QuestListWidget()
-        RedSystemsWidget()
-        SystemsGridWidget()
-        DailyBoardWidget()
-        CountdownWidget()
-        StatusWidget()
-        NextQuestWidget()
-        PenaltyWatchWidget()
-    }
-}
-
-struct LockScreenWidgets: WidgetBundle {
-    var body: some Widget {
-        LockProgressWidget()
-        LockSummaryWidget()
-        LockInlineWidget()
-    }
-}

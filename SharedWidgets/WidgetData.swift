@@ -49,18 +49,9 @@ struct WidgetData: Codable, Equatable {
     var requiredDone: Int { quests.filter { $0.required && $0.state == .done }.count }
     /// Systems that are not blue today: failed, or still open (a hand habit not marked fails at midnight).
     var redSystems: [System] { systems.filter { $0.today != .done } }
-    /// What opens the penalty at midnight if it stays open: required quests (not Stretching), and failed or unmarked
-    /// hand habits. Home by 9 pm is a quest already; Screen Time, Stretching, and the log open no penalty.
-    var penaltyRisk: Int {
-        let noPenalty: Set<String> = ["Home by 9 pm", "Screen Time", "Stretching", "Log written"]
-        return questsLeft.filter { $0.title != "Stretching" }.count + redSystems.filter { !noPenalty.contains($0.name) }.count
-    }
 
     static let suite = "group.com.angelmorales.thesystem"
     static let key = "com.angelmorales.thesystem.widgetData.v1"
-    /// The widget kind ids, for reloads.
-    static let kinds = ["questsLeft", "questList", "redSystems", "systemsGrid", "dailyBoard", "countdown",
-                        "status", "nextQuest", "penalty", "lockProgress", "lockSummary", "lockInline"]
 
     static func load() -> WidgetData? {
         guard let data = UserDefaults(suiteName: suite)?.data(forKey: key) else { return nil }
