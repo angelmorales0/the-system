@@ -413,6 +413,15 @@ final class GameStore: ObservableObject {
         return nil
     }
 
+    /// Saves a weigh-in the player typed, as today's. Returns false when it was refused.
+    func logWeighIn(_ lb: Double) -> Bool {
+        var next = snapshot
+        guard next.logWeighIn(lb) else { return false }
+        snapshot = next
+        persist()
+        return true
+    }
+
     /// The newest weigh-in, in lb, for the contract form.
     var latestWeightLb: Double? {
         statInputs?.bodyMass.map { ($0.pounds * 10).rounded() / 10 } ?? snapshot.habits.weights.max { $0.key < $1.key }?.value

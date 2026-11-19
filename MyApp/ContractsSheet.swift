@@ -6,6 +6,15 @@ struct ContractsSheet: View {
     @EnvironmentObject private var store: GameStore
 
     private var contracts: [Contract] { store.snapshot.habits.contracts.reversed() }
+    @State private var weighing = false
+    @State private var weighInText = ""
+    @State private var weighInProblem: String?
+
+    /// The 145 lb contract waits here until a body weight contract is active.
+    private var offerWeightGoal: Bool {
+        !store.snapshot.habits.contracts.contains { $0.kind == .bodyWeight && $0.isActive(on: store.snapshot.bundle.dayKey) }
+            && store.snapshot.bundle.dayKey < WeightGoal.endDayKey
+    }
 
     var body: some View {
         NavigationStack {
@@ -15,6 +24,31 @@ struct ContractsSheet: View {
                     .font(.footnote)
                     .foregroundStyle(SystemTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if offerWeightGoal {
+                    NavigationLink {
+                        CreateContractView(kind: .bodyWeight, targetLb: WeightGoal.targetLb, endDayKey: WeightGoal.endDayKey)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("READY TO SIGN")
+                                .font(.caption2.weight(.semibold))
+                                .tracking(1)
+                                .foregroundStyle(QuestLight.penalty)
+                            Text("Reach \(Contract.number(WeightGoal.targetLb)) lb by \(Contract.dateText(WeightGoal.endDayKey))")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(QuestLight.ink)
+                            Text("Type your start weight, pick the punishment, and sign. Weigh in every week.")
+                                .font(.caption)
+                                .foregroundStyle(SystemTheme.muted)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .overlay { Rectangle().stroke(QuestLight.penalty.opacity(0.8), lineWidth: 1) }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("signWeightGoalButton")
+                }
 
                 NavigationLink {
                     CreateContractView()
@@ -36,6 +70,18 @@ struct ContractsSheet: View {
             }
             .font(.subheadline)
             .tint(SystemTheme.accent)
+            .alert("Log weigh-in", isPresented: $weighing) {
+                TextField("Weight (lb)", text: $weighInText)
+                    .keyboardType(.decimalPad)
+                Button("Save") {
+                    let lb = Double(weighInText.replacingOccurrences(of: ",", with: ".")) ?? 0
+                    weighInProblem = store.logWeighIn(lb) ? nil : "Type a weight from 50 to 500 lb."
+                    weighInText = ""
+                }
+                Button("Cancel", role: .cancel) { weighInText = "" }
+            } message: {
+                Text("Today's weight in lb. It counts toward this week's average.")
+            }
         }
     }
 
@@ -62,9 +108,23 @@ struct ContractsSheet: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(QuestLight.ink.opacity(0.85))
             } else if active {
-                Text("Line today: \(Contract.number((contract.lineLb(on: store.snapshot.bundle.dayKey) * 10).rounded() / 10)) lb")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(QuestLight.ink.opacity(0.85))
+                if let week = store.snapshot.weightWeek(contract) {
+                    let line = Contract.number((week.lineLb * 10).rounded() / 10)
+                    Text(week.average.map { "This week: \(Contract.number(($0 * 10).rounded() / 10)) lb average, line \(line) lb. "
+                        + (week.onTrack == true ? "On track." : "Not on track.") }
+                         ?? "This week: no weigh-in yet. The line is \(line) lb. A week with no weigh-in is broken.")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(week.onTrack == true ? QuestLight.cyan : QuestLight.penalty)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Button { weighing = true } label: { boxLabel("LOG WEIGH-IN") }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("logWeighInButton")
+                if let weighInProblem {
+                    Text(weighInProblem)
+                        .font(.caption)
+                        .foregroundStyle(QuestLight.penalty)
+                }
             }
             Text(contract.punishment.sentence)
                 .font(.caption)
@@ -125,9 +185,22 @@ struct CreateContractView: View {
     @State private var startWeight = ""
     @State private var targetWeight = "145"
     @State private var endDate = Calendar.current.date(byAdding: .month, value: 1, to: .now) ?? .now
+    /// True for a preset contract: its target and end date are set, not picked.
+    private let preset: Bool
+
+    init() { preset = false }
+
+    /// A preset body weight contract: the target and the end date are fixed. The player types the start weight.
+    init(kind: Contract.Kind, targetLb: Double, endDayKey: String) {
+        preset = true
+        _kind = State(initialValue: kind)
+        _targetWeight = State(initialValue: Contract.number(targetLb))
+        _endDate = State(initialValue: QuestDay.date(from: endDayKey).map { $0.addingTimeInterval(12 * 3600) } ?? .now)
+    }
     @State private var punishment = Punishment.classic
     @State private var confirming = false
     @State private var problem: String?
+    @FocusState private var typing: Bool
 
     private var options: [(key: String, name: String)] { ContractHabits.options(store.snapshot.habits) }
 
@@ -145,19 +218,33 @@ struct CreateContractView: View {
 
     var body: some View {
         QuestSheet(title: "Create a contract") {
-            Picker("Kind", selection: $kind) {
-                ForEach(Contract.Kind.allCases) { Text($0.label).tag($0) }
+            if !preset {
+                Picker("Kind", selection: $kind) {
+                    ForEach(Contract.Kind.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
             }
-            .pickerStyle(.segmented)
 
             if kind == .habit {
                 habitSection
             } else {
                 field("Start weight (lb)", text: $startWeight, hint: store.latestWeightLb.map { "Your newest weigh-in: \(Contract.number($0)) lb" })
-                field("Target weight (lb)", text: $targetWeight, hint: nil)
+                if preset {
+                    Text("Target: \(targetWeight) lb by \(Contract.dateText(QuestDay.key(for: endDate)))")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(QuestLight.ink)
+                } else {
+                    field("Target weight (lb)", text: $targetWeight, hint: nil)
+                }
+                Text("Weigh in every week: Apple Health, or Log weigh-in on the contract. A week with no weigh-in is broken.")
+                    .font(.caption2)
+                    .foregroundStyle(SystemTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            DatePicker("End date", selection: $endDate, in: Date.now.addingTimeInterval(7 * 86_400)..., displayedComponents: .date)
-                .foregroundStyle(QuestLight.ink)
+            if !preset {
+                DatePicker("End date", selection: $endDate, in: Date.now.addingTimeInterval(7 * 86_400)..., displayedComponents: .date)
+                    .foregroundStyle(QuestLight.ink)
+            }
 
             punishmentSection
 
@@ -194,8 +281,12 @@ struct CreateContractView: View {
         }
         .font(.subheadline)
         .tint(SystemTheme.accent)
-        .onAppear {
-            if startWeight.isEmpty, let latest = store.latestWeightLb { startWeight = Contract.number(latest) }
+        // The number pad has no return key: Done closes it.
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { typing = false }
+            }
         }
         .alert("Sign this contract?", isPresented: $confirming) {
             Button("Sign", role: .destructive) {
@@ -226,6 +317,7 @@ struct CreateContractView: View {
         if habitKey == ContractHabits.new {
             VStack(alignment: .leading, spacing: 4) {
                 TextField("Habit name, for example Read 20 pages", text: $newHabitName)
+                    .focused($typing)
                     .foregroundStyle(QuestLight.ink)
                     .padding(.horizontal, 8)
                     .frame(minHeight: 40)
@@ -258,6 +350,7 @@ struct CreateContractView: View {
                 .foregroundStyle(SystemTheme.muted)
             TextField(label, text: text)
                 .keyboardType(.decimalPad)
+                .focused($typing)
                 .foregroundStyle(QuestLight.ink)
                 .padding(.horizontal, 8)
                 .frame(minHeight: 40)

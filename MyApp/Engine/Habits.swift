@@ -240,11 +240,11 @@ struct Contract: Codable, Equatable, Identifiable {
             return "Each week, from \(Contract.dateText(startDayKey)) to \(Contract.dateText(endDayKey)), \(name) must pass \(days). "
                 + "A short first or last week needs its share of days. " + ContractHabits.source(habitKey ?? "")
         }
-        let side = targetLb > startLb ? "on or over" : "on or under"
+        let side = startLb > 0 && targetLb > startLb ? "on or over" : "on or under"
         let from = startLb > 0 ? "\(Contract.number(startLb)) lb" : "your start weight"
         return "Each week, from \(Contract.dateText(startDayKey)) to \(Contract.dateText(endDayKey)), your average weigh-in must be \(side) "
             + "a straight line from \(from) to \(Contract.number(targetLb)) lb. A week with no weigh-in is broken. "
-            + "Weigh-ins come from Apple Health."
+            + "Weigh-ins come from Apple Health or Log weigh-in on the contract."
     }
 
     /// The general rule, for the contracts screen.
@@ -299,6 +299,13 @@ struct Contract: Codable, Equatable, Identifiable {
     static func dateText(_ dayKey: String) -> String {
         QuestDay.date(from: dayKey)?.formatted(date: .abbreviated, time: .omitted) ?? dayKey
     }
+}
+
+/// The body weight contract the app offers until one is signed: 145 lb by May 1, 2027.
+/// The player types the start weight and picks the punishment at signing.
+enum WeightGoal {
+    static let targetLb = 145.0
+    static let endDayKey = "2027-05-01"
 }
 
 /// What a broken contract week costs. The player picks it at signing; the app takes it.
@@ -401,6 +408,26 @@ extension GameSnapshot {
         }
         habits.contracts.append(contract)
         return nil
+    }
+
+    /// Saves a weigh-in the player typed, as today's. 50 to 500 lb. Returns false when refused.
+    @discardableResult
+    mutating func logWeighIn(_ lb: Double) -> Bool {
+        guard (50...500).contains(lb) else { return false }
+        habits.weights[bundle.dayKey] = (lb * 10).rounded() / 10
+        return true
+    }
+
+    /// This week's weigh-ins for a weight contract: their average and the line at the week's end. Nil when the contract
+    /// has no period this week.
+    func weightWeek(_ contract: Contract) -> (average: Double?, lineLb: Double, onTrack: Bool?)? {
+        let today = bundle.dayKey
+        guard contract.kind == .bodyWeight, let period = contract.periods.first(where: { $0.start <= today && today <= $0.end }) else { return nil }
+        let values = habits.weights.filter { $0.key >= period.start && $0.key <= today }.map(\.value)
+        let average = values.isEmpty ? nil : values.reduce(0, +) / Double(values.count)
+        let line = contract.lineLb(on: period.end)
+        let losing = contract.targetLb < contract.startLb
+        return (average, line, average.map { losing ? $0 <= line + 0.05 : $0 >= line - 0.05 })
     }
 
     /// Saves the newest weigh-in of each quest day.
@@ -1030,6 +1057,19 @@ enum HabitRules {
         if (try? JSONDecoder().decode(Contract.self, from: Data(oldJSON.utf8)))?.punishment != .classic {
             errors.append("an old contract should load with the old stake")
         }
+
+        // A typed weigh-in counts as today's and shows on or off track for the week.
+        var weigher = GameSnapshot.fresh(catalog: catalog, now: monday)
+        _ = weigher.signContract(Contract(id: "w", kind: .bodyWeight, startDayKey: "", endDayKey: WeightGoal.endDayKey, startLb: 160,
+                                          targetLb: WeightGoal.targetLb, signedAt: monday), now: monday)
+        let noneYet = weigher.weightWeek(weigher.habits.contracts[0])
+        if weigher.logWeighIn(20) || !weigher.logWeighIn(159.96) || weigher.habits.weights[weigher.bundle.dayKey] != 160
+            || noneYet?.average != nil || noneYet?.onTrack != nil
+            || weigher.weightWeek(weigher.habits.contracts[0])?.onTrack != false {
+            errors.append("a typed weigh-in should be saved as today's, and 160 lb should be off the line by the week's end")
+        }
+        weigher.logWeighIn(150)
+        if weigher.weightWeek(weigher.habits.contracts[0])?.onTrack != true { errors.append("150 lb should be on track") }
 
         // Home by 9 pm: judged at 21:00 from the events, added only once a home is set, and not waived on a rest day.
         var home = GameSnapshot.fresh(catalog: catalog, now: monday)
