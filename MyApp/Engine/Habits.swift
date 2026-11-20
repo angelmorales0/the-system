@@ -37,6 +37,8 @@ struct HabitState: Codable, Equatable {
     var wholeFoodsMarks: [String: Bool] = [:]
     /// Traveling to see friends, by quest day: true traveled, false stayed. 2 travel days a week are allowed.
     var travelMarks: [String: Bool] = [:]
+    /// Two 1-hour study blocks, by quest day: true passed, false failed. A past day without a mark fails.
+    var studyMarks: [String: Bool] = [:]
     /// Habits the player typed in for a contract. Each one is a Systems row, marked by hand like the others.
     var customHabits: [CustomHabit] = []
 
@@ -44,7 +46,7 @@ struct HabitState: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case beliefs, morningUnlockedDayKey, wokeAt, contracts, weights, tokenDebt, restDaysForfeited, homeSet, homeEvents
-        case morningDoneDays, log, eatOutMarks, caffeineMarks, wholeFoodsMarks, travelMarks, customHabits
+        case morningDoneDays, log, eatOutMarks, caffeineMarks, wholeFoodsMarks, travelMarks, studyMarks, customHabits
     }
 
     init(from decoder: Decoder) throws {
@@ -64,6 +66,7 @@ struct HabitState: Codable, Equatable {
         caffeineMarks = try container.decodeIfPresent([String: Bool].self, forKey: .caffeineMarks) ?? [:]
         wholeFoodsMarks = try container.decodeIfPresent([String: Bool].self, forKey: .wholeFoodsMarks) ?? [:]
         travelMarks = try container.decodeIfPresent([String: Bool].self, forKey: .travelMarks) ?? [:]
+        studyMarks = try container.decodeIfPresent([String: Bool].self, forKey: .studyMarks) ?? [:]
         customHabits = try container.decodeIfPresent([CustomHabit].self, forKey: .customHabits) ?? []
     }
 }
@@ -734,7 +737,9 @@ struct HandHabit: Hashable {
     static let noCaffeine = HandHabit(id: "noCaffeine", name: "No caffeine", firstDay: builtInFirstDay)
     static let wholeFoods = HandHabit(id: "wholeFoods", name: "Only whole foods", firstDay: builtInFirstDay)
     static let travel = HandHabit(id: "travel", name: "Traveling (max 2 days a week)", firstDay: builtInFirstDay, weeklyLimit: 2)
-    static let builtIns = [noEatingOut, noCaffeine, wholeFoods, travel]
+    /// Two study blocks of 1 hour each. It counts from 2026-11-20, the day after it was added.
+    static let study = HandHabit(id: "study", name: "Study (2× 1 h blocks)", firstDay: "2026-11-20")
+    static let builtIns = [noEatingOut, noCaffeine, wholeFoods, study, travel]
     /// The first ending day whose failed habit opens the penalty (added 2026-11-19).
     static let penaltyFirstDay = "2026-11-19"
     static let customPrefix = "custom:"
@@ -765,6 +770,7 @@ extension HabitState {
         case HandHabit.noCaffeine.id: return caffeineMarks
         case HandHabit.wholeFoods.id: return wholeFoodsMarks
         case HandHabit.travel.id: return travelMarks
+        case HandHabit.study.id: return studyMarks
         default:
             let custom = id.hasPrefix(HandHabit.customPrefix) ? String(id.dropFirst(HandHabit.customPrefix.count)) : id
             return customHabits.first { $0.id == custom }?.marks ?? [:]
@@ -784,6 +790,7 @@ extension GameSnapshot {
         case HandHabit.noCaffeine.id: habits.caffeineMarks = marks.filter { $0.key >= QuestDay.key(byAddingDays: -60, to: bundle.dayKey) }
         case HandHabit.wholeFoods.id: habits.wholeFoodsMarks = marks.filter { $0.key >= QuestDay.key(byAddingDays: -60, to: bundle.dayKey) }
         case HandHabit.travel.id: habits.travelMarks = marks.filter { $0.key >= QuestDay.key(byAddingDays: -60, to: bundle.dayKey) }
+        case HandHabit.study.id: habits.studyMarks = marks.filter { $0.key >= QuestDay.key(byAddingDays: -60, to: bundle.dayKey) }
         default:
             let custom = String(habit.id.dropFirst(HandHabit.customPrefix.count))
             guard let index = habits.customHabits.firstIndex(where: { $0.id == custom }) else { return }
@@ -1034,10 +1041,10 @@ enum HabitRules {
         tracked.habits.log = [QuestDay.key(byAddingDays: -2, to: tracked.bundle.dayKey): "a", QuestDay.key(byAddingDays: -1, to: tracked.bundle.dayKey): "b"]
         let tracks = SystemsView.tracks(tracked)
         if tracks.map(\.name) != ["Home by 9 pm", "Screen Time", "Stretching", "No eating out", "No caffeine", "Only whole foods",
-                                    "Traveling (max 2 days a week)", "Log written"]
+                                    "Study (2× 1 h blocks)", "Traveling (max 2 days a week)", "Log written"]
             || tracks.contains(where: { $0.marks.count != ($0.handHabit?.weeklyLimit == nil ? SystemsView.days : 7) })
             || tracks.first(where: { $0.name == "Log written" })?.streak != 2 {
-            errors.append("the systems view should show 8 habits of 28 days with a 2-day log streak, got \(tracks.map { "\($0.name) \($0.streak)" })")
+            errors.append("the systems view should show 9 habits of 28 days with a 2-day log streak, got \(tracks.map { "\($0.name) \($0.streak)" })")
         }
 
         // Hand habits: dim before the first day, red for an unmarked past day, open today until marked, and each mark shows.
