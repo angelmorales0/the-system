@@ -10,11 +10,12 @@ struct ContentView: View {
         // each page. Let it fill the screen; the pages still receive the safe-area insets,
         // so their backgrounds bleed to the edges while the content stays clear of the notch.
         TabView(selection: $selectedPage) {
+            // The penalty screen covers every page: their animations pause under it.
             SystemView()
-                .environment(\.isPageVisible, selectedPage == 0)
+                .environment(\.isPageVisible, selectedPage == 0 && store.openPenaltyQuest == nil)
                 .tag(0)
             StatusSheetView()
-                .environment(\.isPageVisible, selectedPage == 1)
+                .environment(\.isPageVisible, selectedPage == 1 && store.openPenaltyQuest == nil)
                 .tag(1)
         }
         .tabViewStyle(.page(indexDisplayMode: .never))

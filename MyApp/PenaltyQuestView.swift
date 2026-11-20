@@ -12,6 +12,7 @@ import SwiftUI
 struct PenaltyQuestView: View {
     @EnvironmentObject private var store: GameStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     let quest: Quest
     let startedAt: Date
     @State private var arrived = false
@@ -30,8 +31,12 @@ struct PenaltyQuestView: View {
     }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { timeline in
-            let hours = Self.previewHours ?? PenaltyDecay.hours(since: startedAt, now: timeline.date)
+        // No frames while the app is in the background or behind a system alert.
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion || scenePhase != .active)) { timeline in
+            // The decay moves over hours, so it steps once a minute. A value that changed every frame
+            // made the blurred gray copy of the scene render again 30 times a second, and CPU climbed for hours.
+            let rawHours = Self.previewHours ?? PenaltyDecay.hours(since: startedAt, now: timeline.date)
+            let hours = (rawHours * 60).rounded(.down) / 60
             let clear = PenaltyDecay.clear(hours: hours)
             let blood = PenaltyDecay.blood(hours: hours)
             let beat = PenaltyDecay.beat(hours: hours)
