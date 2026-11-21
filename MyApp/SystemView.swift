@@ -350,10 +350,6 @@ struct SystemView: View {
         // A lift Hevy shows done that the app could not count takes a hand check too.
         let handCheck = (quest.allowsCheckOff || store.hevyShowsDone(quest)) && quest.status == .pending
         return HStack(spacing: 11) {
-        // The day's 10K Run and its 300 burpees swap with one icon, while nothing is logged on the row.
-        if RunBurpees.canSwap(quest) || RunBurpees.canSwapBack(quest) {
-            RunSwapButton(quest: quest)
-        }
         Button {
             store.handleQuestTap(id: quest.id)
         } label: {
@@ -365,6 +361,11 @@ struct SystemView: View {
                             .tracking(1)
                     }
                     Text(quest.title)
+                    // The day's 10K Run and its 300 burpees swap with one icon, while nothing is logged on the row.
+                    // It is its own button: a tap on it swaps and does not open the row.
+                    if RunBurpees.canSwap(quest) || RunBurpees.canSwapBack(quest) {
+                        RunSwapButton(quest: quest)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Text(isOptionalLift(quest) ? "[\(quest.liftSets.done)/0]" : store.rowLabel(for: quest))
