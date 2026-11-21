@@ -545,7 +545,7 @@ enum HevyRoutine {
         holds.mode = .performanceTraining
         holds.headerLine = "Deadlift Day"
         holds.quests = [GymSplit.quest(for: GymSplit.Exercise(exercise: "Dead Hang", aliases: [], role: .accessory, sets: 3, minReps: 0, maxReps: 0, secondsPerSet: 60, target: "grip"),
-                                       band: .green, dayKey: "2026-10-05", now: now)]
+                                       dayKey: "2026-10-05", now: now)]
         let hang = HevyRoutine.plan(for: holds, history: [], templates: ["dead hang": "HANG"], types: ["HANG": "duration"])
         let hangOnReps = HevyRoutine.plan(for: holds, history: [], templates: ["dead hang": "HANG"], types: ["HANG": "reps_only"])
         if hang?.exercises.first?.sets.map(\.seconds) != [60, 60, 60] || repRange(holds.quests[0]) != nil || hangOnReps?.exercises.first?.sets.first != SetPlan()

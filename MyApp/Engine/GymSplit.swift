@@ -205,17 +205,16 @@ enum GymSplit {
         return row
     }
 
-    /// Puts an edit on today's open rows of that exercise: the sets the split now asks (one fewer for a main lift on
-    /// a yellow or red day), and the optional mark. A finished row stays as it is.
-    static func applyingEdit(_ bundle: QuestBundle, day: Day, exercise name: String, band: ReadinessBand) -> QuestBundle {
+    /// Puts an edit on today's open rows of that exercise: the sets the split now asks, and the optional mark.
+    /// A finished row stays as it is.
+    static func applyingEdit(_ bundle: QuestBundle, day: Day, exercise name: String) -> QuestBundle {
         guard let planned = day.exercises.first(where: { StrengthLevel.normalizedName($0.exercise) == StrengthLevel.normalizedName(name) }) else { return bundle }
         var copy = bundle
         for index in copy.quests.indices {
             let quest = copy.quests[index]
             guard quest.verification.method == .hevySets, quest.id != DailyStretch.questId, quest.status != .completed,
                   quest.kind == .daily || quest.kind == .optional, exercise(of: quest, in: day) == planned else { continue }
-            let sets = planned.role == .main && band != .green ? max(1, planned.sets - 1) : planned.sets
-            var row = withSets(quest, sets)
+            var row = withSets(quest, planned.sets)
             row.kind = planned.optional ? .optional : .daily
             copy.quests[index] = row
         }
@@ -420,7 +419,7 @@ enum GymSplit {
 
     /// Swaps the catalog's strength rows for the split day's exercises, without loads.
     /// The generator writes the loads; this is the plan when it is offline. Yellow and red take one set off each main lift.
-    static func apply(_ day: Day, to bundle: QuestBundle, band: ReadinessBand, now: Date) -> QuestBundle {
+    static func apply(_ day: Day, to bundle: QuestBundle, now: Date) -> QuestBundle {
         // Optional lift rows (pistol squats) are the split's too, so a second pass does not repeat them.
         func isLift(_ quest: Quest) -> Bool {
             TrainingDay.isStrength(quest) && quest.id != DailyStretch.questId && (quest.kind == .daily || quest.kind == .optional)
@@ -429,7 +428,7 @@ enum GymSplit {
         var copy = bundle
         copy.headerLine = day.name
         copy.quests.removeAll(where: isLift)
-        let rows = day.exercises.map { quest(for: $0, band: band, dayKey: bundle.dayKey, now: now) }
+        let rows = day.exercises.map { quest(for: $0, dayKey: bundle.dayKey, now: now) }
         let insertAt = copy.quests.lastIndex { $0.kind == .daily }.map { $0 + 1 } ?? copy.quests.count
         copy.quests.insert(contentsOf: rows, at: insertAt)
         return copy
@@ -452,8 +451,9 @@ enum GymSplit {
         return copy
     }
 
-    static func quest(for exercise: Exercise, band: ReadinessBand, dayKey: String, now: Date) -> Quest {
-        let sets = exercise.role == .main && band != .green ? max(1, exercise.sets - 1) : exercise.sets
+    /// The split's sets and reps, with no weight: the player picks the weight in the gym. Readiness does not change it.
+    static func quest(for exercise: Exercise, dayKey: String, now: Date) -> Quest {
+        let sets = exercise.sets
         var params: [String: JSONValue] = ["exercise": .string(exercise.exercise), "sets": .number(Double(sets))]
         let title: String
         let progress: QuestProgress
@@ -491,8 +491,8 @@ enum GymSplit {
         var errors: [String] = []
         guard let now = QuestDay.date(from: "2026-10-05") else { return ["quest day failed to parse"] }
         // A Deadlift Day saved before the light squat left the split loses that row; a row with sets done stays.
-        let deadliftDay = apply(deadlift, to: FallbackCatalog.bundled().makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), band: .green, now: now)
-        var oldRow = quest(for: lift("Squat", .light, 3, 8...8, target: "Squat", aliases: []), band: .green, dayKey: "2026-10-05", now: now)
+        let deadliftDay = apply(deadlift, to: FallbackCatalog.bundled().makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), now: now)
+        var oldRow = quest(for: lift("Squat", .light, 3, 8...8, target: "Squat", aliases: []), dayKey: "2026-10-05", now: now)
         var saved = deadliftDay
         saved.quests.append(oldRow)
         if withoutOldRows(saved).quests != deadliftDay.quests {
@@ -607,12 +607,12 @@ enum GymSplit {
         }
 
         // Squat Day: pistol squats are an optional row, so the day is done without them.
-        let squatDay = GymSplit.apply(squat, to: catalog.makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), band: .green, now: now)
+        let squatDay = GymSplit.apply(squat, to: catalog.makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), now: now)
         let pistolRows = squatDay.quests.filter { $0.title.hasPrefix("Pistol Squat") }
         if pistolRows.count != 1 || pistolRows.first?.kind != .optional {
             errors.append("Squat Day should have one optional Pistol Squat row, got \(squatDay.quests.map { "\($0.title) \($0.kind)" })")
         }
-        if apply(squat, to: squatDay, band: .green, now: now).quests.filter({ $0.title.hasPrefix("Pistol Squat") }).count != 1 {
+        if apply(squat, to: squatDay, now: now).quests.filter({ $0.title.hasPrefix("Pistol Squat") }).count != 1 {
             errors.append("applying Squat Day twice should not repeat the optional pistol row")
         }
         var skipped = GameSnapshot.fresh(catalog: catalog, now: now)
@@ -651,13 +651,13 @@ enum GymSplit {
             errors.append("pull-ups should be volume on Bench, weighted on Press, and max effort first on Arms Day, got \(pullUps.map { "\($0.0) \($0.1.role)" })")
         }
 
-        // Yellow takes one set off the main lift only; the other rows keep their sets.
-        let yellow = apply(squat, to: catalog.makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), band: .yellow, now: now)
-        if yellow.quests.first(where: { $0.title.hasPrefix("Squat") })?.title != "Squat 2×1-5"
-            || !yellow.quests.contains(where: { $0.title == "Standing Calf Raise 2×10-15" }) {
-            errors.append("yellow should take a set off the main lift only, got \(yellow.quests.map(\.title))")
+        // A red or yellow day keeps every set: readiness does not cut the split.
+        let yellow = apply(squat, to: catalog.makeBundle(mode: .performanceTraining, band: .yellow, dayKey: "2026-10-05", now: now), now: now)
+        if yellow.quests.first(where: { $0.title.hasPrefix("Squat") })?.title != "Squat 3×1-5"
+            || yellow.quests.contains(where: { $0.verification.params["minWeightKg"] != nil }) {
+            errors.append("a yellow day should keep the split's sets and set no weight, got \(yellow.quests.map(\.title))")
         }
-        let lower = apply(deadlift, to: catalog.makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), band: .yellow, now: now)
+        let lower = apply(deadlift, to: catalog.makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), now: now)
         if lower.headerLine != "Lower Day" || lower.quests.contains(where: { ($0.verification.params["exercise"]?.stringValue ?? "").hasPrefix("Deadlift") }) {
             errors.append("Lower Day should have no deadlift, got \(lower.quests.map(\.title))")
         }
@@ -710,8 +710,8 @@ enum GymSplit {
             errors.append("the editor should offer 1-4 sets for pull-ups and 1-3 for the rest")
         }
         // Today's open row takes the edit; a finished row stays; the optional row never misses the day.
-        let armsDay = apply(arms, to: catalog.makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), band: .green, now: now)
-        var changed = applyingEdit(armsDay, day: edited, exercise: "Face Pull", band: .green)
+        let armsDay = apply(arms, to: catalog.makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), now: now)
+        var changed = applyingEdit(armsDay, day: edited, exercise: "Face Pull")
         let row = changed.quests.first { $0.title.hasPrefix("Face Pull") }
         if row?.kind != .optional || row?.title != "Face Pull 3×12-15" || row?.verification.params["sets"]?.doubleValue != 3 {
             errors.append("an edit should make today's Face Pull row optional with 3 sets, got \(String(describing: row))")
@@ -731,7 +731,7 @@ enum GymSplit {
         if let index = changed.quests.firstIndex(where: { $0.title.hasPrefix("Toes To Bar") }) {
             changed.quests[index].status = .completed
             let done = changed.quests[index]
-            if applyingEdit(changed, day: editing(arms, [editKey(day: "arms", exercise: "Toes To Bar"): SplitEdit(sets: 1)]), exercise: "Toes To Bar", band: .green)
+            if applyingEdit(changed, day: editing(arms, [editKey(day: "arms", exercise: "Toes To Bar"): SplitEdit(sets: 1)]), exercise: "Toes To Bar")
                 .quests[index] != done {
                 errors.append("an edit should not change a finished row")
             }
@@ -748,10 +748,10 @@ enum GymSplit {
         }
 
         // A day saved as Deadlift Day: it is Lower Day now, and its untouched deadlift row goes.
-        var saved = apply(deadlift, to: catalog.makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), band: .green, now: now)
+        var saved = apply(deadlift, to: catalog.makeBundle(mode: .performanceTraining, band: .green, dayKey: "2026-10-05", now: now), now: now)
         let clean = saved
         saved.headerLine = "Deadlift Day"
-        saved.quests.insert(quest(for: lift("Deadlift", .main, 3, 1...5, target: "Deadlift", aliases: []), band: .green, dayKey: "2026-10-05", now: now), at: 0)
+        saved.quests.insert(quest(for: lift("Deadlift", .main, 3, 1...5, target: "Deadlift", aliases: []), dayKey: "2026-10-05", now: now), at: 0)
         if withoutOldRows(saved) != clean || day(named: "Deadlift Day")?.id != "deadlift" {
             errors.append("a saved Deadlift Day should become Lower Day without its deadlift row")
         }

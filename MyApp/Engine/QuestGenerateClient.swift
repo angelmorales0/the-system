@@ -23,10 +23,9 @@ extension QuestGenerating {
     }
 }
 
-/// Makes the quest generator. Planning runs on the phone; no server or base URL is needed.
+/// Makes the quest generator. The app plans the day itself: no server, no key, and no model call.
 enum QuestGenerateClient {
-    /// Claude thinks at high effort over 30 days of training, with up to 100 seconds for retries.
-    /// The catalog quests stay on screen while it runs. Other short calls use this as their upper bound too.
+    /// The upper bound for the app's short network calls (Hevy, Strava, WHOOP, and the others).
     static let timeout: TimeInterval = 150
 
     static func make(catalog: FallbackCatalog) -> any QuestGenerating {
@@ -34,6 +33,8 @@ enum QuestGenerateClient {
     }
 }
 
+/// The day from the catalog and the gym split: the split's sets and reps with no weights (the player picks them),
+/// one 10K Run, and the day's narrative from `DailyLines`. Readiness does not cut sets.
 struct MockQuestGenerateClient: QuestGenerating {
     var catalog: FallbackCatalog
 
@@ -42,42 +43,34 @@ struct MockQuestGenerateClient: QuestGenerating {
     }
 
     func bundle(for context: MorningContext, now: Date) -> QuestBundle {
-        let mode = context.modeDecision.selectedMode
-        let band = context.modeDecision.trainingBand
-        var built = catalog.makeBundle(mode: mode, band: band, dayKey: context.player.localDate, now: now)
-        if let today = context.split?.today {
-            built = GymSplit.apply(today, to: built, band: band, now: now)
-        }
+        var built = splitDay(context: context, now: now)
         built.generatedBy = "mock"
         if let accepted = QuestSafety.accepting(built, context: context, assignedAt: now) {
             return accepted
         }
         return catalogFallback(context: context, now: now)
     }
-}
 
-extension MockQuestGenerateClient {
     func catalogFallback(context: MorningContext, now: Date) -> QuestBundle {
-        var built = catalog.makeBundle(
-            mode: context.modeDecision.selectedMode,
-            band: context.modeDecision.trainingBand,
-            dayKey: context.player.localDate,
-            now: now
-        )
-        if let today = context.split?.today {
-            built = GymSplit.apply(today, to: built, band: context.modeDecision.trainingBand, now: now)
-        }
+        var built = splitDay(context: context, now: now)
         built.generatedBy = "fallback"
+        return built
+    }
+
+    private func splitDay(context: MorningContext, now: Date) -> QuestBundle {
+        let dayKey = context.player.localDate
+        var built = catalog.makeBundle(mode: context.modeDecision.selectedMode, band: .green, dayKey: dayKey, now: now)
+        if let today = context.split?.today {
+            built = GymSplit.apply(today, to: built, now: now)
+        }
+        if built.mode == .performanceTraining { built.narrative = DailyLines.narrative(dayKey: dayKey) }
         return built
     }
 }
 
-/// Plans the day on the phone: 30 days of Hevy, Strava, and WHOOP, then Claude with the key from the Keychain.
-/// Without a key it is the offline mock. Every plan Claude writes is rejected → the template. No reply → the catalog stays.
+/// Plans the day on the phone with the app's own rules. The app's rest signals pick the week's rest day when it is open.
 struct OnDeviceQuestGenerateClient: QuestGenerating {
     var catalog: FallbackCatalog
-
-    static var hasKey: Bool { SecretStore.has(.anthropicApiKey) }
 
     func generate(context: MorningContext) async -> QuestBundle {
         await generateResult(context: context).bundle
@@ -85,50 +78,11 @@ struct OnDeviceQuestGenerateClient: QuestGenerating {
 
     func generateResult(context: MorningContext) async -> QuestGeneration {
         let now = Date()
-        let mock = MockQuestGenerateClient(catalog: catalog)
-        guard let key = SecretStore.read(.anthropicApiKey) else {
-            // No planner: the app's own rest signals pick the week's rest day when it is open.
-            if let rest = context.rest, rest.available, rest.scoreSaysRest {
-                let reason = RestScore.Result(points: RestScore.restAt, signals: rest.signals).reason
-                return QuestGeneration(bundle: mock.catalogFallback(context: context, now: now), retryLater: false, restToday: true, restReason: reason)
-            }
-            return QuestGeneration(bundle: mock.bundle(for: context, now: now), retryLater: false)
+        let plan = MockQuestGenerateClient(catalog: catalog)
+        if let rest = context.rest, rest.available, rest.scoreSaysRest {
+            let reason = RestScore.Result(points: RestScore.restAt, signals: rest.signals).reason
+            return QuestGeneration(bundle: plan.catalogFallback(context: context, now: now), retryLater: false, restToday: true, restReason: reason)
         }
-        let fallback = QuestGeneration(bundle: mock.catalogFallback(context: context, now: now), retryLater: false)
-        guard let body = JSONValue.from(context), QuestPlanner.validateRequest(body).isEmpty else { return fallback }
-        let training = await TrainingHistory.build(context: body)
-        let full = QuestPlanner.withHistory(body, training: training)
-        let outcome = await QuestPlanner.claudeOrNone(full) { request, timeout in
-            await QuestPlanner.callClaude(request, apiKey: key, timeout: timeout)
-        }
-        // Claude's status for the connection warning: no answer is a failure, any answer is a working key.
-        if case .unreachable = outcome {
-            ConnectionStatusStore.record(.claude, ok: false, message: "Claude did not answer. Check the Anthropic key and its credit.")
-        } else {
-            ConnectionStatusStore.record(.claude, ok: true)
-        }
-        let raw: JSONValue
-        switch outcome {
-        case .accepted(let plan):
-            raw = plan
-        case .rest(let reason):
-            return QuestGeneration(bundle: fallback.bundle, retryLater: false, restToday: true, restReason: reason)
-        case .rejected:
-            raw = QuestPlanner.templateBundle(full)
-        case .unreachable:
-            return QuestGeneration(bundle: fallback.bundle, retryLater: true)
-        }
-        let bundle = QuestPlanner.sanitize(raw, full)
-        guard QuestPlanner.validateBundle(bundle, full).isEmpty,
-              let decoded = QuestPlanner.decodedBundle(bundle),
-              let accepted = QuestSafety.accepting(decoded, context: context, assignedAt: Date()) else { return fallback }
-        return QuestGeneration(bundle: accepted, retryLater: false)
-    }
-}
-
-extension QuestPlanner {
-    /// The sanitized bundle as the app's model. Nil when it does not decode.
-    static func decodedBundle(_ bundle: JSONValue) -> QuestBundle? {
-        bundle.decode(QuestBundle.self)
+        return QuestGeneration(bundle: plan.bundle(for: context, now: now), retryLater: false)
     }
 }

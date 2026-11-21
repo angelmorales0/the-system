@@ -20,8 +20,6 @@ enum ConnectionTester {
             outcome = await MonkeytypeClient.test()
         case .mercury:
             outcome = await MercuryClient.test()
-        case .claude:
-            outcome = await QuestPlanner.test()
         }
         ConnectionStatusStore.record(connection, ok: outcome.ok, message: outcome.message)
         return outcome
