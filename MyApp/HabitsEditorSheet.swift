@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings > HABITS: the hand-marked Systems rows. Add, rename, order, remove, and turn each row's penalty on or off.
+/// Settings > HABITS: the Home by time, and the hand-marked Systems rows. Add, rename, order, remove, and turn each row's penalty on or off.
 /// The rules (`HabitEditor.rules`) keep a change from helping on the day it is made.
 struct HabitsEditorSheet: View {
     @EnvironmentObject private var store: GameStore
@@ -13,6 +13,8 @@ struct HabitsEditorSheet: View {
     @State private var renameText = ""
     @State private var removing: HandHabit?
     @FocusState private var typing: Bool
+    /// The Home by time picked here, before it is saved. Nil shows tomorrow's time.
+    @State private var homeByPick: Int?
 
     private var today: String { store.snapshot.bundle.dayKey }
     private var tomorrow: String { QuestDay.key(byAddingDays: 1, to: today) }
@@ -31,6 +33,8 @@ struct HabitsEditorSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("habitProblem")
             }
+            homeBySection
+            SystemDivider()
             VStack(spacing: 0) {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { index, habit in
                     row(habit, index: index)
@@ -99,6 +103,44 @@ struct HabitsEditorSheet: View {
         }
         .padding(.vertical, 12)
         .accessibilityElement(children: .contain)
+    }
+
+    /// Home by: the time the phone must be home. A new time starts tomorrow and starts a new streak.
+    private var homeBySection: some View {
+        let habits = store.snapshot.habits
+        let now = habits.homeByMinutes(on: today)
+        let next = habits.homeByMinutes(on: tomorrow)
+        let pick = homeByPick ?? next
+        return VStack(alignment: .leading, spacing: 10) {
+            QuestSectionTitle(text: "Home by")
+            Stepper(value: Binding(get: { pick }, set: { homeByPick = $0 }), in: HomeBy.minutesRange, step: HomeBy.step) {
+                Text(HomeBy.timeText(pick))
+                    .font(.title3.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(QuestLight.ink)
+            }
+            .accessibilityLabel("Home by time")
+            .accessibilityValue(HomeBy.timeText(pick))
+            Text(now == next ? "Today: \(HomeBy.timeText(now)). A new time starts tomorrow, and the row's streak starts again."
+                 : "Today: \(HomeBy.timeText(now)). From tomorrow: \(HomeBy.timeText(next)). The row's streak starts again then.")
+                .font(.caption2)
+                .foregroundStyle(SystemTheme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            if pick != next {
+                Button {
+                    run { $0.setHomeByTime(pick) } done: { homeByPick = nil }
+                } label: {
+                    Text("SAVE \(HomeBy.timeText(pick).uppercased()) FROM TOMORROW")
+                        .font(.caption2.weight(.semibold))
+                        .tracking(0.8)
+                        .foregroundStyle(QuestLight.ink)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .overlay { Rectangle().stroke(QuestLight.ink.opacity(0.6), lineWidth: 0.8) }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("saveHomeByButton")
+            }
+        }
     }
 
     private var addSection: some View {

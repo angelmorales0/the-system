@@ -454,7 +454,7 @@ final class GameStore: ObservableObject {
             next.habits.homeSet = true
             next.habits.homeEvents = HomeEvents.load()
             self.snapshot = next
-            self.verificationNote = "Home saved. Home by 9 pm starts tomorrow."
+            self.verificationNote = "Home saved. Home by starts tomorrow."
             self.persist()
         }
         tracker.setHomeHere()

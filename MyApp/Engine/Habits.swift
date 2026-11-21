@@ -46,13 +46,15 @@ struct HabitState: Codable, Equatable {
     var habitRows: [HandHabit]? = nil
     /// Marks of the rows the player added in the habit editor, by row id, then by quest day.
     var rowMarks: [String: [String: Bool]] = [:]
+    /// Home by: the time (minutes after midnight) from each quest day the player changed it. Empty: 9:00 pm.
+    var homeByTimes: [String: Int] = [:]
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case beliefs, morningUnlockedDayKey, wokeAt, contracts, weights, tokenDebt, restDaysForfeited, homeSet, homeEvents
         case morningDoneDays, log, eatOutMarks, caffeineMarks, wholeFoodsMarks, travelMarks, studyMarks, customHabits
-        case habitRows, rowMarks
+        case habitRows, rowMarks, homeByTimes
     }
 
     init(from decoder: Decoder) throws {
@@ -76,6 +78,7 @@ struct HabitState: Codable, Equatable {
         customHabits = try container.decodeIfPresent([CustomHabit].self, forKey: .customHabits) ?? []
         habitRows = try? container.decodeIfPresent([HandHabit].self, forKey: .habitRows)
         rowMarks = (try? container.decodeIfPresent([String: [String: Bool]].self, forKey: .rowMarks)) ?? [:]
+        homeByTimes = (try? container.decodeIfPresent([String: Int].self, forKey: .homeByTimes)) ?? [:]
     }
 }
 
@@ -356,13 +359,13 @@ enum ContractHabits {
 
     /// Key and name of each habit the player can pick, in Systems order, then "New habit".
     static func options(_ habits: HabitState) -> [(key: String, name: String)] {
-        [(homeBy, HomeBy.title), (screenTime, "Screen Time"), (stretching, DailyStretch.title)] + habits.allHandHabits.filter { $0.endDay == nil }.map { ($0.id, $0.name) } + [(new, "New habit…")]
+        [(homeBy, "Home by")] + habits.allHandHabits.filter { $0.endDay == nil }.map { ($0.id, $0.name) } + [(new, "New habit…")]
     }
 
     /// Where the day's pass comes from, in words.
     static func source(_ key: String) -> String {
         switch key {
-        case homeBy: "The app checks it from your location at 9:00 pm. A day with no Home by 9 pm row fails."
+        case homeBy: "The app checks it from your location at your Home by time. A day with no Home by row fails."
         case screenTime: "The app checks it from the Screen Time row."
         case log: "A day passes when you write the log."
         case stretching: "The app checks it from the Stretching row (Hevy)."
@@ -550,12 +553,31 @@ enum HomeEvents {
 /// anywhere else fails it, and a failed row opens a penalty at the day's end like any required quest.
 enum HomeBy {
     static let questId = "daily_home_by_9"
-    static let title = "Home by 9 pm"
-    static let hour = 21
+    /// 9:00 pm, the time until the player picks another one.
+    static let defaultMinutes = 21 * 60
+    /// The times the player can pick: noon to 11:45 pm, in steps of 15 minutes.
+    static let minutesRange = (12 * 60)...(23 * 60 + 45)
+    static let step = 15
+    static let title = title(defaultMinutes)
 
-    /// 9:00 pm of the quest day.
-    static func deadline(_ dayKey: String) -> Date? {
-        QuestDay.start(of: dayKey)?.addingTimeInterval(Double(hour - QuestDay.startHour) * 3600)
+    /// "Home by 9 pm", "Home by 10:30 pm".
+    static func title(_ minutes: Int) -> String { "Home by \(timeText(minutes))" }
+
+    /// "9 pm", "10:30 pm", "12 pm".
+    static func timeText(_ minutes: Int) -> String {
+        let hour = minutes / 60, minute = minutes % 60
+        let shown = hour % 12 == 0 ? 12 : hour % 12
+        return minute == 0 ? "\(shown) \(hour < 12 ? "am" : "pm")" : String(format: "%d:%02d %@", shown, minute, hour < 12 ? "am" : "pm")
+    }
+
+    /// The row's time on the quest day.
+    static func deadline(_ dayKey: String, minutes: Int = defaultMinutes) -> Date? {
+        QuestDay.start(of: dayKey)?.addingTimeInterval(Double(minutes - QuestDay.startHour * 60) * 60)
+    }
+
+    /// The time a row was made with. Rows from before the setting existed are 9:00 pm.
+    static func minutes(of quest: Quest) -> Int {
+        quest.verification.params["minutes"]?.doubleValue.map { Int($0) } ?? defaultMinutes
     }
 
     /// Home or not at a moment: the newest event at or before it. Nil with no event before it.
@@ -563,13 +585,13 @@ enum HomeBy {
         events.filter { $0.at <= date }.max { $0.at < $1.at }?.inside
     }
 
-    static func quest(mode: QuestMode, now: Date) -> Quest {
+    static func quest(mode: QuestMode, minutes: Int = defaultMinutes, now: Date) -> Quest {
         Quest(
             id: questId,
-            title: title,
+            title: title(minutes),
             kind: .daily,
             stat: .REC,
-            verification: VerificationSpec(method: .homeBy, params: ["hour": .number(Double(hour))]),
+            verification: VerificationSpec(method: .homeBy, params: ["hour": .number(Double(minutes / 60)), "minutes": .number(Double(minutes))]),
             deadline: QuestDay.endOfDay(now),
             difficulty: .normal,
             mode: mode,
@@ -580,12 +602,12 @@ enum HomeBy {
     }
 
     /// Adds the row once, before Stretching and after the other required rows.
-    static func ensure(in bundle: QuestBundle, homeSet: Bool, now: Date) -> QuestBundle {
+    static func ensure(in bundle: QuestBundle, homeSet: Bool, minutes: Int = defaultMinutes, now: Date) -> QuestBundle {
         guard homeSet, !bundle.quests.contains(where: { $0.id == questId }) else { return bundle }
         var copy = bundle
         let insertAt = copy.quests.firstIndex { $0.id == DailyStretch.questId }
             ?? copy.quests.lastIndex(where: { $0.kind != .optional }).map { $0 + 1 } ?? copy.quests.count
-        copy.quests.insert(quest(mode: bundle.mode, now: now), at: insertAt)
+        copy.quests.insert(quest(mode: bundle.mode, minutes: minutes, now: now), at: insertAt)
         return copy
     }
 }
@@ -594,7 +616,7 @@ extension GameSnapshot {
     /// Moves the row: before 9:00 pm it shows home or not; at 9:00 pm it completes at home and fails elsewhere.
     mutating func applyHomeBy(now: Date) {
         guard let index = bundle.quests.firstIndex(where: { $0.id == HomeBy.questId }), bundle.quests[index].status == .pending,
-              let deadline = HomeBy.deadline(bundle.dayKey) else { return }
+              let deadline = HomeBy.deadline(bundle.dayKey, minutes: HomeBy.minutes(of: bundle.quests[index])) else { return }
         let events = habits.homeEvents
         if now >= deadline {
             let home = HomeBy.home(at: deadline, events: events) == true
@@ -607,13 +629,42 @@ extension GameSnapshot {
 
     /// The row of a day that is ending is judged at its 9:00 pm, so a closed app still gets an answer.
     mutating func settleHomeBy() {
-        guard let deadline = HomeBy.deadline(bundle.dayKey) else { return }
+        guard let row = bundle.quests.first(where: { $0.id == HomeBy.questId }),
+              let deadline = HomeBy.deadline(bundle.dayKey, minutes: HomeBy.minutes(of: row)) else { return }
         applyHomeBy(now: deadline)
     }
 
     /// True when today's Home by 9 pm row is not done. A rest day does not waive it.
     var homeByMissed: Bool {
         bundle.quests.contains { $0.id == HomeBy.questId && $0.status != .completed }
+    }
+
+    /// A new Home by time from tomorrow. Refused while a penalty is open. Returns why it was refused, or nil.
+    /// The Systems row starts a new streak on the day the new time starts.
+    mutating func setHomeByTime(_ minutes: Int) -> String? {
+        guard HomeBy.minutesRange.contains(minutes), minutes % HomeBy.step == 0 else { return "Pick a time from 12 pm to 11:45 pm." }
+        if player.penaltyOpen { return "A penalty is open. You cannot change the Home by time until it is done." }
+        let tomorrow = QuestDay.key(byAddingDays: 1, to: bundle.dayKey)
+        if habits.homeByMinutes(on: tomorrow) == minutes { return nil }
+        // A pick equal to today's time takes back a change that has not started: no change, no new streak.
+        if minutes == habits.homeByMinutes(on: bundle.dayKey) {
+            habits.homeByTimes[tomorrow] = nil
+        } else {
+            habits.homeByTimes[tomorrow] = minutes
+        }
+        return nil
+    }
+}
+
+extension HabitState {
+    /// The Home by time on a quest day: the newest change on or before it.
+    func homeByMinutes(on dayKey: String) -> Int {
+        homeByTimes.filter { $0.key <= dayKey }.max { $0.key < $1.key }?.value ?? HomeBy.defaultMinutes
+    }
+
+    /// The first day of the Home by streak: the newest change that has started. Nil: no change yet.
+    func homeByStreakStart(on dayKey: String) -> String? {
+        homeByTimes.keys.filter { $0 <= dayKey }.max()
     }
 }
 
@@ -701,19 +752,24 @@ enum SystemsView {
             // A limit habit shows this quest week, Monday to Sunday, and the days used.
             let week = RestDays.weekKey(of: today)
             let days = habit.weeklyLimit == nil ? keys : (0..<7).map { QuestDay.key(byAddingDays: $0, to: week) }
+            // Screen Time and Stretching were checked by the app before they were marked by hand: those days keep the app's mark.
+            let checked = HandHabit.recordMatch(habit.id)
             let marks = days.map { key -> Mark in
-                key > today ? .none : habit.passed(on: key, marks: saved, today: today).map { $0 ? .done : .missed } ?? .none
+                if key > today { return .none }
+                if key < habit.firstDay, let checked { return mark(key, checked) }
+                return habit.passed(on: key, marks: saved, today: today).map { $0 ? .done : .missed } ?? .none
             }
             let summary = habit.weeklyLimit.map { limit in
                 "\(saved.filter { $0.value && $0.key >= week && $0.key <= today }.count)/\(limit) days"
             }
             return Track(name: habit.name, marks: marks, dayKeys: days, handHabit: habit, summary: summary, today: today)
         }
-        return [
-            Track(name: "Home by 9 pm", marks: keys.map { mark($0) { $0.method == .homeBy } }),
-            Track(name: "Screen Time", marks: keys.map { mark($0) { $0.method == .screenTimeLimit } }),
-            Track(name: DailyStretch.title, marks: keys.map { mark($0) { $0.params[DailyStretch.dayParam] != nil } }),
-        ] + game.habits.handHabits(on: today).map(hand)
+        // Home by: a new time starts a new streak, so the days before it stay dim.
+        let homeStart = game.habits.homeByStreakStart(on: today)
+        let home = Track(name: HomeBy.title(game.habits.homeByMinutes(on: today)), marks: keys.map { key in
+            homeStart.map { key < $0 } == true ? .none : mark(key) { $0.method == .homeBy }
+        })
+        return [home] + game.habits.handHabits(on: today).map(hand)
     }
 }
 
@@ -770,6 +826,21 @@ struct HandHabit: Codable, Hashable {
     /// Two study blocks of 1 hour each. Added 2026-11-19: that day shows its mark, but only from 2026-11-20 a fail opens the penalty.
     static let study = HandHabit(id: "study", name: "Study (2× 1 h blocks)", firstDay: "2026-11-19", penaltyFrom: "2026-11-20")
     static let builtIns = [noEatingOut, noCaffeine, wholeFoods, study]
+    /// The day Screen Time and Stretching became hand-marked rows. Earlier days keep the app's mark.
+    static let handMarkedFrom = "2026-11-21"
+    static let screenTime = HandHabit(id: rowPrefix + "screenTime", name: "Screen Time", firstDay: handMarkedFrom)
+    static let stretching = HandHabit(id: rowPrefix + "stretching", name: DailyStretch.title, firstDay: handMarkedFrom)
+    /// Rows every list holds first, until the player removes them.
+    static let systemRows = [screenTime, stretching]
+
+    /// For the rows the app checked before they were marked by hand: the day's quest rows that held them.
+    static func recordMatch(_ id: String) -> ((QuestRecord) -> Bool)? {
+        switch id {
+        case screenTime.id: { $0.method == .screenTimeLimit }
+        case stretching.id: { $0.params[DailyStretch.dayParam] != nil }
+        default: nil
+        }
+    }
     /// The first ending day whose failed habit opens the penalty (added 2026-11-19).
     static let penaltyFirstDay = "2026-11-19"
     static let customPrefix = "custom:"
@@ -794,7 +865,8 @@ extension HabitState {
     /// Every hand-marked row, removed ones too, in the player's order. Contract habits the list does not hold yet
     /// come last. Removed rows still count for the days before they went.
     var allHandHabits: [HandHabit] {
-        let rows = habitRows ?? HandHabit.builtIns
+        let saved = habitRows ?? HandHabit.builtIns
+        let rows = HandHabit.systemRows.filter { row in !saved.contains { $0.id == row.id } } + saved
         return rows + customHabits.map(\.handHabit).filter { custom in !rows.contains { $0.id == custom.id } }
     }
 

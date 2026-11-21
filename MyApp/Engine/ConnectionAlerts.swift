@@ -48,7 +48,7 @@ enum ConnectionAlerts {
         }
         if locationAlways == false {
             result.append(ConnectionProblem(id: "location", title: "Location is not set to Always",
-                                            detail: "Home by 9 pm cannot check when you get home. Set The System to Always in Settings → Privacy → Location Services."))
+                                            detail: "Home by cannot check when you get home. Set The System to Always in Settings → Privacy → Location Services."))
         }
         return result
     }

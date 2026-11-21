@@ -877,7 +877,7 @@ struct GameSnapshot: Codable, Equatable {
             day.headerLine = Self.restDayHeader
             day.narrative = ""
         }
-        let screen = HomeBy.ensure(in: ScreenTime.ensure(in: day, now: now), homeSet: habits.homeSet, now: now)
+        let screen = HomeBy.ensure(in: ScreenTime.ensure(in: day, now: now), homeSet: habits.homeSet, minutes: habits.homeByMinutes(on: day.dayKey), now: now)
         let stretch = StretchSplit.today(history: questHistory, dayKey: day.dayKey)
         return PenaltyQuests.ensure(
             in: measured(restDay ? screen : DailyStretch.ensure(in: screen, now: now, day: stretch)),

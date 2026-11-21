@@ -23,8 +23,8 @@ enum HabitEditor {
         var game = GameSnapshot.fresh(catalog: catalog, now: monday)
         let today = game.bundle.dayKey
         let tomorrow = QuestDay.key(byAddingDays: 1, to: today)
-        if game.habits.handHabits(on: today).map(\.id) != HandHabit.builtIns.map(\.id) {
-            errors.append("an unedited save should show the built-in rows")
+        if game.habits.handHabits(on: today).map(\.id) != (HandHabit.systemRows + HandHabit.builtIns).map(\.id) {
+            errors.append("an unedited save should show Screen Time, Stretching, and the built-in rows")
         }
 
         // Add: a Pass or Fail row with the penalty on. It starts tomorrow.
@@ -87,6 +87,44 @@ enum HabitEditor {
         if let refused = signed.signContract(contract, now: monday) { errors.append("the editor check's contract should sign: \(refused)") }
         if signed.removeHabit(id: HandHabit.study.id) == nil { errors.append("a row an active contract checks should not be removed") }
 
+        // Screen Time and Stretching are marked by hand. Days before the switch keep the app's mark.
+        var hand = GameSnapshot.fresh(catalog: catalog, now: monday)
+        hand.setHandMark(.screenTime, today, passed: true)
+        hand.setHandMark(.stretching, today, passed: false)
+        let handTracks = SystemsView.tracks(hand)
+        if handTracks.first(where: { $0.handHabit == .screenTime })?.marks.last != .done
+            || handTracks.first(where: { $0.handHabit == .stretching })?.marks.last != .missed
+            || handTracks.filter({ $0.name == "Screen Time" || $0.name == DailyStretch.title }).count != 2 {
+            errors.append("Screen Time and Stretching should be one hand-marked row each, got \(handTracks.map(\.name))")
+        }
+        if HandHabit.screenTime.opensPenalty(on: tomorrow) || HandHabit.stretching.opensPenalty(on: tomorrow) {
+            errors.append("Screen Time and Stretching rows should open no penalty")
+        }
+
+        // Home by: a new time starts tomorrow, renames the row, and starts a new streak. A pick of today's time takes it back.
+        var homeBy = GameSnapshot.fresh(catalog: catalog, now: monday)
+        if homeBy.setHomeByTime(22 * 60 + 30) != nil || homeBy.habits.homeByMinutes(on: today) != HomeBy.defaultMinutes
+            || homeBy.habits.homeByMinutes(on: tomorrow) != 22 * 60 + 30 {
+            errors.append("a new Home by time should start tomorrow")
+        }
+        if HomeBy.title(22 * 60 + 30) != "Home by 10:30 pm" || HomeBy.title(HomeBy.defaultMinutes) != "Home by 9 pm" {
+            errors.append("the Home by title should read the time, got \(HomeBy.title(22 * 60 + 30))")
+        }
+        if HomeBy.quest(mode: .performanceTraining, minutes: 22 * 60 + 30, now: monday).title != "Home by 10:30 pm"
+            || HomeBy.deadline(tomorrow, minutes: 22 * 60 + 30) != QuestDay.start(of: tomorrow)?.addingTimeInterval(22.5 * 3600) {
+            errors.append("the Home by row should be judged at its own time")
+        }
+        if homeBy.habits.homeByStreakStart(on: tomorrow) != tomorrow || homeBy.habits.homeByStreakStart(on: today) != nil {
+            errors.append("a new Home by time should start a new streak on its first day")
+        }
+        _ = homeBy.setHomeByTime(HomeBy.defaultMinutes)
+        if !homeBy.habits.homeByTimes.isEmpty { errors.append("a pick of today's time should take back the change") }
+        var lockedTime = homeBy
+        lockedTime.player.penaltyOpen = true
+        if lockedTime.setHomeByTime(23 * 60) == nil || homeBy.setHomeByTime(23 * 60 + 50) == nil {
+            errors.append("a Home by change should be refused while a penalty is open, and off the 15-minute steps")
+        }
+
         // The saved list loads back.
         if let data = try? JSONEncoder().encode(game.habits), let loaded = try? JSONDecoder().decode(HabitState.self, from: data) {
             if loaded.habitRows != game.habits.habitRows { errors.append("the edited rows should load back") }
@@ -112,7 +150,7 @@ extension GameSnapshot {
         if trimmed.isEmpty { return (nil, "Type a name for the habit.") }
         if trimmed.count > CustomHabit.maxNameLength { return (nil, "Keep the name to \(CustomHabit.maxNameLength) characters.") }
         let taken = habits.handHabits(on: bundle.dayKey).contains { $0.id != id && $0.name.lowercased() == trimmed.lowercased() }
-            || ["home by 9 pm", "screen time", DailyStretch.title.lowercased()].contains(trimmed.lowercased())
+            || trimmed.lowercased().hasPrefix("home by")
         if taken { return (nil, "\(trimmed) is already a Systems row.") }
         return (trimmed, nil)
     }
