@@ -15,8 +15,12 @@ import UserNotifications
 enum ScreenTime {
     static let questId = "daily_screen_time"
     static let title = "Screen Time"
+    /// The limit until the player picks another one, and the highest one: the phone monitor counts to its fail point.
     static let totalCapMinutes = 500
-    /// Minutes over the total cap before the quest fails.
+    /// The limits the player can pick: 1 h to 8 h 20 m, in steps of 15 minutes.
+    static let capRange = 60...totalCapMinutes
+    static let capStep = 15
+    /// Minutes over the total cap before the day fails.
     static let graceMinutes = 30
     static var failAfterMinutes: Int { totalCapMinutes + graceMinutes }
     static let workCapMinutes = 420
@@ -64,6 +68,9 @@ struct ScreenTimeDay: Codable, Equatable {
     /// True once the phone or a Mac reported minutes for the day.
     var hasReading: Bool { phoneMeasured || workMeasured }
     var workMeasured = false
+    /// The total limit of the day, from the player's setting. Nil on days saved before it existed: 8 h 20 m.
+    var capMinutes: Int? = nil
+    var cap: Int { capMinutes ?? ScreenTime.totalCapMinutes }
     /// Phone minutes that surely happened while a Mac was also counting (see `ScreenOverlap`). Counted once.
     /// Nil until the Macs' minute bitmap arrives. Optional, so days saved before it existed still load.
     var overlapMinutes: Int?
@@ -87,9 +94,9 @@ struct ScreenTimeDay: Codable, Equatable {
     /// The quest fails: the total over the cap and its grace, or work on the day off.
     var fails: Bool { overTotal || workOnDayOff }
     /// Yellow row: the total reached 8 h 20 m but is still inside the grace.
-    var atCap: Bool { totalMinutes >= ScreenTime.totalCapMinutes && !overTotal }
-    /// The only failure: the combined total more than 30 minutes over 8 h 20 m.
-    var overTotal: Bool { totalMinutes > ScreenTime.failAfterMinutes }
+    var atCap: Bool { totalMinutes >= cap && !overTotal }
+    /// The only failure: the combined total more than 30 minutes over the day's limit.
+    var overTotal: Bool { totalMinutes > cap + ScreenTime.graceMinutes }
 }
 
 /// Notices at 50, 75, 90, 95, and 100 percent of the 500-minute total cap. One notice per step per quest day.
@@ -103,17 +110,19 @@ enum ScreenTimeAlerts {
     /// Quest day → ["work": Mac minutes, "overlap": measured overlap]. The monitor adds its phone count to these.
     static let baseKey = "screenTimeAlertBase"
 
-    static func minutes(for percent: Int) -> Int { ScreenTime.totalCapMinutes * percent / 100 }
+    /// The player's limits by the quest day they start, for the monitor: it reads the day's limit from these.
+    static let capsKey = "screenTimeCaps"
+
+    static func minutes(for percent: Int, cap: Int = ScreenTime.totalCapMinutes) -> Int { cap * percent / 100 }
 
     /// The highest step that `totalMinutes` reached and that was not sent. Lower steps it skipped are not sent.
-    static func due(totalMinutes: Int, sent: Set<Int>) -> Int? {
-        percents.filter { totalMinutes >= minutes(for: $0) }.max().flatMap { sent.contains($0) ? nil : $0 }
+    static func due(totalMinutes: Int, sent: Set<Int>, cap: Int = ScreenTime.totalCapMinutes) -> Int? {
+        percents.filter { totalMinutes >= minutes(for: $0, cap: cap) }.max().flatMap { sent.contains($0) ? nil : $0 }
     }
 
-    static func message(percent: Int, totalMinutes: Int) -> (title: String, body: String) {
-        let cap = ScreenTime.totalCapMinutes
+    static func message(percent: Int, totalMinutes: Int, cap: Int = ScreenTime.totalCapMinutes) -> (title: String, body: String) {
         if percent >= 100 {
-            return ("Screen Time: 100%", "You reached \(ScreenTime.clock(cap)) today. The quest fails past \(ScreenTime.clock(ScreenTime.failAfterMinutes)).")
+            return ("Screen Time: 100%", "You reached \(ScreenTime.clock(cap)) today. Screen Time fails past \(ScreenTime.clock(cap + ScreenTime.graceMinutes)).")
         }
         return ("Screen Time: \(percent)%", "\(ScreenTime.clock(totalMinutes)) of \(ScreenTime.clock(cap)) used today. \(ScreenTime.clock(max(cap - totalMinutes, 0))) left.")
     }
@@ -129,12 +138,12 @@ enum ScreenTimeAlerts {
 
         var sentDays = defaults.dictionary(forKey: sentKey) as? [String: [Int]] ?? [:]
         let sent = Set(sentDays[day.dayKey] ?? [])
-        guard let percent = due(totalMinutes: day.totalMinutes, sent: sent) else { return }
+        guard let percent = due(totalMinutes: day.totalMinutes, sent: sent, cap: day.cap) else { return }
         sentDays[day.dayKey] = Array(sent.union(percents.filter { $0 <= percent })).sorted()
         for old in sentDays.keys.sorted().dropLast(3) { sentDays.removeValue(forKey: old) }
         defaults.set(sentDays, forKey: sentKey)
         #if os(iOS)
-        let text = message(percent: percent, totalMinutes: day.totalMinutes)
+        let text = message(percent: percent, totalMinutes: day.totalMinutes, cap: day.cap)
         let content = UNMutableNotificationContent()
         content.title = text.title
         content.body = text.body
@@ -417,6 +426,7 @@ extension GameSnapshot {
         if let overlapMinutes {
             day.overlapMinutes = overlapMinutes
         }
+        day.capMinutes = habits.screenTimeCap(on: bundle.dayKey)
         screenTime = day
         guard let index = bundle.quests.firstIndex(where: { $0.id == ScreenTime.questId }) else { return }
         var quest = bundle.quests[index]
@@ -429,7 +439,24 @@ extension GameSnapshot {
 
     /// Today's readings, or an empty day when nothing has come in yet.
     var screenTimeToday: ScreenTimeDay {
-        screenTime?.dayKey == bundle.dayKey ? screenTime ?? ScreenTimeDay(dayKey: bundle.dayKey) : ScreenTimeDay(dayKey: bundle.dayKey)
+        var day = screenTime?.dayKey == bundle.dayKey ? screenTime ?? ScreenTimeDay(dayKey: bundle.dayKey) : ScreenTimeDay(dayKey: bundle.dayKey)
+        if day.capMinutes == nil { day.capMinutes = habits.screenTimeCap(on: bundle.dayKey) }
+        return day
+    }
+
+    /// A new Screen Time limit from tomorrow. Returns why it was refused, or nil.
+    /// A pick equal to today's limit takes back a change that has not started.
+    mutating func setScreenTimeCap(_ minutes: Int) -> String? {
+        guard ScreenTime.capRange.contains(minutes), minutes % ScreenTime.capStep == 0 else {
+            return "Pick a limit from \(ScreenTime.clock(ScreenTime.capRange.lowerBound)) to \(ScreenTime.clock(ScreenTime.capRange.upperBound))."
+        }
+        let tomorrow = QuestDay.key(byAddingDays: 1, to: bundle.dayKey)
+        if minutes == habits.screenTimeCap(on: bundle.dayKey) {
+            habits.screenTimeCaps[tomorrow] = nil
+        } else {
+            habits.screenTimeCaps[tomorrow] = minutes
+        }
+        return nil
     }
 }
 

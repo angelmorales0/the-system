@@ -15,7 +15,7 @@ extension WidgetData {
             case .pending: .open
             }
         }
-        let quests = game.bundle.quests.filter { $0.kind != .penalty }.map { quest in
+        let quests = game.bundle.quests.filter { $0.kind != .penalty && !$0.isBackgroundRow }.map { quest in
             Row(title: quest.title, progress: quest.progress.bracketLabel, state: state(quest.status),
                 required: quest.kind != .optional && quest.id != ScreenTime.questId,
                 fraction: quest.progress.target > 0 ? min(quest.progress.current / quest.progress.target, 1) : 0)

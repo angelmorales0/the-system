@@ -358,8 +358,8 @@ enum NoGymDayRules {
             errors.append("no gym off should bring the lifts back after a plan written for the no-gym day, got \(written.bundle.quests.map(\.id))")
         }
 
-        // One real 10K and one hand check finish a no-gym day when the run comes before the setting too: the run
-        // goes to the added 10K, and the day's run is open with its hand check. The run cannot fill both rows.
+        // A real 10K that comes before the setting goes to the added 10K, and the day's run is open again.
+        // The run cannot fill both rows.
         // Off again gives the gym day back with its run done.
         var early = GameSnapshot.fresh(catalog: catalog, now: now)
         if let dayRun = early.bundle.quests.first(where: { NoGymDay.isTenK($0) }) {
@@ -371,7 +371,7 @@ enum NoGymDayRules {
             _ = early.setNoGym(true, catalog: catalog, now: now)
             let runs = early.bundle.quests.filter { TrainingDay.isRaceRun($0) }
             if runs.map(\.id) != [NoGymDay.addedId(early.bundle.dayKey), dayRun.id] || runs.first?.status != .completed
-                || runs.last?.status == .completed || runs.last?.allowsCheckOff != true {
+                || runs.last?.status == .completed {
                 errors.append("a real 10K before no gym should fill the added 10K and leave the day's run open, got \(runs.map { "\($0.id) \($0.status)" })")
             }
             var again = early
@@ -385,13 +385,6 @@ enum NoGymDayRules {
             if early.bundle.quests.map(\.id) != gymDay.quests.map(\.id) || early.bundle.quests.first(where: { $0.id == dayRun.id })?.status != .completed
                 || !early.evidenceLog.contains(where: { $0.questId == dayRun.id }) || early.evidenceLog.contains(where: { $0.questId == NoGymDay.addedId(gymDay.dayKey) }) {
                 errors.append("no gym off should give the gym day back with its real run done, got \(early.bundle.quests.map { "\($0.id) \($0.status)" })")
-            }
-            // A hand check is no real run: the added 10K stays open and the checked row stays.
-            var checked = GameSnapshot.fresh(catalog: catalog, now: now)
-            _ = checked.applyLocalOverride(questId: dayRun.id, now: now)
-            _ = checked.setNoGym(true, catalog: catalog, now: now)
-            if checked.bundle.quests.first(where: \.isNoGymRun)?.status == .completed || checked.bundle.quests.first(where: { $0.id == dayRun.id })?.status != .completed {
-                errors.append("a hand check before no gym should not fill the added 10K")
             }
         }
 

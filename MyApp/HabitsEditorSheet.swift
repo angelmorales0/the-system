@@ -15,6 +15,8 @@ struct HabitsEditorSheet: View {
     @FocusState private var typing: Bool
     /// The Home by time picked here, before it is saved. Nil shows tomorrow's time.
     @State private var homeByPick: Int?
+    /// The Screen Time limit picked here, before it is saved. Nil shows tomorrow's limit.
+    @State private var capPick: Int?
 
     private var today: String { store.snapshot.bundle.dayKey }
     private var tomorrow: String { QuestDay.key(byAddingDays: 1, to: today) }
@@ -34,6 +36,8 @@ struct HabitsEditorSheet: View {
                     .accessibilityIdentifier("habitProblem")
             }
             homeBySection
+            SystemDivider()
+            screenTimeSection
             SystemDivider()
             VStack(spacing: 0) {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { index, habit in
@@ -139,6 +143,45 @@ struct HabitsEditorSheet: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("saveHomeByButton")
+            }
+        }
+    }
+
+    /// Screen Time: the daily total limit. The app checks it; a new limit starts tomorrow.
+    private var screenTimeSection: some View {
+        let habits = store.snapshot.habits
+        let now = habits.screenTimeCap(on: today)
+        let next = habits.screenTimeCap(on: tomorrow)
+        let pick = capPick ?? next
+        return VStack(alignment: .leading, spacing: 10) {
+            QuestSectionTitle(text: "Screen Time limit")
+            Stepper(value: Binding(get: { pick }, set: { capPick = $0 }), in: ScreenTime.capRange, step: ScreenTime.capStep) {
+                Text(ScreenTime.clock(pick))
+                    .font(.title3.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(QuestLight.ink)
+            }
+            .accessibilityLabel("Screen Time limit")
+            .accessibilityValue(ScreenTime.clock(pick))
+            Text((now == next ? "Today: \(ScreenTime.clock(now))." : "Today: \(ScreenTime.clock(now)). From tomorrow: \(ScreenTime.clock(next)).")
+                 + " Phone and Mac minutes together. The row fails \(ScreenTime.graceMinutes) minutes past the limit."
+                 + " Notices come at 50, 75, 90, 95, and 100% of it.")
+                .font(.caption2)
+                .foregroundStyle(SystemTheme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            if pick != next {
+                Button {
+                    run { $0.setScreenTimeCap(pick) } done: { capPick = nil }
+                } label: {
+                    Text("SAVE \(ScreenTime.clock(pick).uppercased()) FROM TOMORROW")
+                        .font(.caption2.weight(.semibold))
+                        .tracking(0.8)
+                        .foregroundStyle(QuestLight.ink)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .overlay { Rectangle().stroke(QuestLight.ink.opacity(0.6), lineWidth: 0.8) }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("saveScreenTimeLimitButton")
             }
         }
     }

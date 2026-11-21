@@ -144,22 +144,21 @@ enum PlanAndLockRules {
         var noGym = GameSnapshot.fresh(catalog: catalog, now: morning)
         _ = noGym.setNoGym(true, catalog: catalog, now: morning)
         let runRows = noGym.bundle.quests.filter { TrainingDay.isRaceRun($0) }
-        if runRows.filter(\.allowsCheckOff).count != 1 || runRows.first(where: \.isNoGymRun)?.allowsCheckOff != false {
-            errors.append("the added 10K of a no-gym day should take no hand check")
+        if runRows.contains(where: \.allowsCheckOff) {
+            errors.append("no run of a no-gym day should take a hand check")
         }
 
-        // One real 10K and one hand check finish the two runs of a no-gym day in both orders: the real run fills the
-        // added 10K, which comes first, and the day's run keeps its hand check.
+        // Two real 10Ks finish the two runs of a no-gym day in both orders: the first fills the added 10K, which comes first.
         if runRows.first?.isNoGymRun != true { errors.append("the added 10K should come before the day's run") }
         func realRun(_ id: String) -> Evidence { Evidence.make(source: "strava", externalId: "workout:strava:\(id)", payload: id, timestamp: morning) }
         for handFirst in [true, false] {
             var day = noGym
             let dayRun = day.bundle.quests.first { TrainingDay.isRaceRun($0) && !$0.isNoGymRun }
             let firstOpen = { (snapshot: GameSnapshot) in snapshot.bundle.quests.first { TrainingDay.isRaceRun($0) && $0.status != .completed } }
-            if handFirst, let dayRun { _ = day.applyLocalOverride(questId: dayRun.id, now: morning) }
+            if handFirst, let dayRun { _ = day.apply(.completed(evidence: realRun("own")), questId: dayRun.id, now: morning) }
             if let row = firstOpen(day) { _ = day.apply(.completed(evidence: realRun("order")), questId: row.id, now: morning) }
-            if !handFirst, let dayRun { _ = day.applyLocalOverride(questId: dayRun.id, now: morning) }
-            if firstOpen(day) != nil { errors.append("one real 10K and one hand check should finish a no-gym day's runs, hand check first: \(handFirst)") }
+            if !handFirst, let row = firstOpen(day) { _ = day.apply(.completed(evidence: realRun("own")), questId: row.id, now: morning) }
+            if firstOpen(day) != nil { errors.append("two real 10Ks should finish a no-gym day's runs, day's run first: \(handFirst)") }
         }
         // A 7 km run on a no-gym day whose own run is a 5K: the 5K takes the run, and the added 10K, which is
         // checked first, shows none of it.
@@ -689,11 +688,11 @@ enum PlanAndLockRules {
                 errors.append("a run that only moves should not play the day cue a second time")
             }
             // A row that is finished now and completes the day plays the day cue, also a second time that day.
-            var byHand = beforeOff
-            if let dayRun = byHand.bundle.quests.first(where: { TrainingDay.isRaceRun($0) && $0.status != .completed }) {
-                _ = byHand.applyLocalOverride(questId: dayRun.id, now: morning)
-                if SoundCues.sounds(from: beforeOff, to: byHand, dayCuePlayed: true) != [.dayClear] {
-                    errors.append("a hand check that completes the day should play the day cue, got \(SoundCues.sounds(from: beforeOff, to: byHand, dayCuePlayed: true))")
+            var byRun = beforeOff
+            if let dayRun = byRun.bundle.quests.first(where: { TrainingDay.isRaceRun($0) && $0.status != .completed }) {
+                _ = byRun.apply(.completed(evidence: realRun("day-run")), questId: dayRun.id, now: morning)
+                if !SoundCues.sounds(from: beforeOff, to: byRun, dayCuePlayed: true).contains(.dayClear) {
+                    errors.append("a run that completes the day should play the day cue, got \(SoundCues.sounds(from: beforeOff, to: byRun, dayCuePlayed: true))")
                 }
             }
             if !beforeOff.missesRequiredSet || lastRow.missesRequiredSet || !cues.contains(.dayClear) || cues.contains(.questComplete) {

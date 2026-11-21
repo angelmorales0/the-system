@@ -206,8 +206,16 @@ enum ScreenAlertMonitor {
     static let percents = [50, 75, 90, 95, 100]
     static let sentKey = "screenTimeAlertsSent"
     static let baseKey = "screenTimeAlertBase"
-    static let capMinutes = 500
-    static let failAfterMinutes = 530
+    /// Mirrors `ScreenTimeAlerts.capsKey`: the player's limits by the quest day they start. Empty: 8 h 20 m.
+    static let capsKey = "screenTimeCaps"
+    static let defaultCapMinutes = 500
+    static let graceMinutes = 30
+
+    /// The same rule as `HabitState.screenTimeCap(on:)`: the newest limit that started on or before the day.
+    nonisolated static func capMinutes(on dayKey: String, defaults: UserDefaults) -> Int {
+        let caps = defaults.dictionary(forKey: capsKey) as? [String: Int] ?? [:]
+        return caps.filter { $0.key <= dayKey }.max { $0.key < $1.key }?.value ?? defaultCapMinutes
+    }
 
     nonisolated static func check(phoneMinutes: Int, dayKey: String, defaults: UserDefaults) {
         let base = (defaults.dictionary(forKey: baseKey) as? [String: [String: Int]])?[dayKey] ?? [:]
@@ -215,6 +223,7 @@ enum ScreenAlertMonitor {
         // Same rule as `ScreenTimeDay.sharedMinutes`: with no measured overlap, every phone minute may be a Mac minute.
         let shared = min(base["overlap"] ?? phoneMinutes, phoneMinutes, work)
         let total = phoneMinutes + work - shared
+        let capMinutes = capMinutes(on: dayKey, defaults: defaults)
         var sentDays = defaults.dictionary(forKey: sentKey) as? [String: [Int]] ?? [:]
         let sent = Set(sentDays[dayKey] ?? [])
         guard let percent = percents.filter({ total >= capMinutes * $0 / 100 }).max(), !sent.contains(percent) else { return }
@@ -224,7 +233,7 @@ enum ScreenAlertMonitor {
         let content = UNMutableNotificationContent()
         content.title = "Screen Time: \(percent)%"
         content.body = percent >= 100
-            ? "You reached \(clock(capMinutes)) today. The quest fails past \(clock(failAfterMinutes))."
+            ? "You reached \(clock(capMinutes)) today. Screen Time fails past \(clock(capMinutes + graceMinutes))."
             : "\(clock(total)) of \(clock(capMinutes)) used today. \(clock(max(capMinutes - total, 0))) left."
         content.sound = .default
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "screen-time-\(dayKey)-\(percent)", content: content, trigger: nil))

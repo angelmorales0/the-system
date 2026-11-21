@@ -635,7 +635,8 @@ final class GameStore: ObservableObject {
         persist()
     }
     var bundle: QuestBundle { snapshot.bundle }
-    var goalQuests: [Quest] { bundle.goalQuests }
+    /// The quest list: the day's rows without the background ones (Screen Time, Home by).
+    var goalQuests: [Quest] { bundle.goalQuests.filter { !$0.isBackgroundRow } }
 
     /// Sets of this stretch in today's Hevy workouts.
     func stretchSetsDone(_ stretch: StretchSplit.Stretch) -> Int {
@@ -653,11 +654,20 @@ final class GameStore: ObservableObject {
             || snapshot.stretchesChecked.contains(stretch.name) || stretchSetsDone(stretch) >= stretch.sets
     }
 
-    /// Checks or unchecks one stretch. A tap on the last open stretch completes the Stretching row.
-    /// A stretch that is full in Hevy stays checked, and a completed row has no undo.
+    /// True when the player may check a stretch by hand: Hevy's exercise list was read and holds no exercise of
+    /// that name. Every other stretch fills itself from the Hevy log.
+    func stretchCheckable(_ stretch: StretchSplit.Stretch) -> Bool {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: HevyRoutine.readKey),
+              let templates = defaults.dictionary(forKey: HevyRoutine.templatesKey) as? [String: String], !templates.isEmpty else { return false }
+        return templates[StrengthLevel.normalizedName(stretch.name)] == nil
+    }
+
+    /// Checks or unchecks one stretch that Hevy has no exercise for. A tap on the last open stretch completes the
+    /// Stretching row. A stretch that is full in Hevy stays checked, and a completed row has no undo.
     func toggleStretch(_ stretch: StretchSplit.Stretch, now: Date = .now) {
         guard !startedNewDay(now: now) else { return }
-        guard stretchSetsDone(stretch) < stretch.sets else { return }
+        guard stretchCheckable(stretch), stretchSetsDone(stretch) < stretch.sets else { return }
         var next = snapshot
         next.toggleStretch(stretch.name, doneInHevy: stretchesInHevy)
         guard next != snapshot else { return }
@@ -702,10 +712,9 @@ final class GameStore: ObservableObject {
     func checkOffByHand(id: String, now: Date = .now) {
         guard !startedNewDay(now: now) else { return }
         guard let quest = snapshot.bundle.quests.first(where: { $0.id == id }), quest.status == .pending else { return }
-        let hevyShows = hevyShowsDone(quest)
-        guard quest.allowsCheckOff || hevyShows else { return }
+        guard quest.allowsCheckOff else { return }
         var next = snapshot
-        let outcome = next.applyLocalOverride(questId: id, now: now, hevyShows: hevyShows)
+        let outcome = next.applyLocalOverride(questId: id, now: now)
         next.checkHiddenQuests(integrations: dayData, now: now)
         snapshot = next
         clock = now
@@ -1268,6 +1277,8 @@ final class GameStore: ObservableObject {
 
     private func persist() {
         guard persistence == .standard else { return }
+        // The phone monitor sends the Screen Time notices while the app is closed: it reads the limits from here.
+        PenaltyGroup.defaults.set(snapshot.habits.screenTimeCaps, forKey: ScreenTimeAlerts.capsKey)
         snapshot.saveToUserDefaults()
         dayClock.save()
         statHistory.save()

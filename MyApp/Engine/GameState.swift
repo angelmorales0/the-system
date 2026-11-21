@@ -209,8 +209,8 @@ struct GameSnapshot: Codable, Equatable {
     var missesRequiredSet: Bool {
         let missed = !bundle.openRequired.isEmpty
         let waived = bundle.mode == .fullRecovery || signals.spendingFullRecovery || fullRecoveryDayKey == bundle.dayKey
-        // Home by 9 pm is always on: a rest day does not waive it.
-        return missed && (!waived || homeByMissed)
+        // Home by is a Systems row, not a quest: it opens no penalty.
+        return missed && !waived
     }
 
     private mutating func assignQueuedRecovery(on key: String) {
@@ -656,9 +656,9 @@ struct GameSnapshot: Codable, Equatable {
 
     /// Hand check for the rows that allow one (see `Quest.allowsCheckOff`). Does not pretend to be Strava, WHOOP, or the other live sources.
     @discardableResult
-    mutating func applyLocalOverride(questId: String, now: Date, hevyShows: Bool = false) -> VerificationApply {
+    mutating func applyLocalOverride(questId: String, now: Date) -> VerificationApply {
         guard let quest = bundle.quests.first(where: { $0.id == questId }) else { return .ignored }
-        guard quest.allowsCheckOff || hevyShows else { return .ignored }
+        guard quest.allowsCheckOff else { return .ignored }
         let evidence = Evidence.make(
             source: "manual_override",
             externalId: "override:\(quest.id):\(bundle.dayKey)",

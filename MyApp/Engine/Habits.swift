@@ -48,13 +48,15 @@ struct HabitState: Codable, Equatable {
     var rowMarks: [String: [String: Bool]] = [:]
     /// Home by: the time (minutes after midnight) from each quest day the player changed it. Empty: 9:00 pm.
     var homeByTimes: [String: Int] = [:]
+    /// Screen Time: the total limit in minutes from each quest day the player changed it. Empty: 8 h 20 m.
+    var screenTimeCaps: [String: Int] = [:]
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case beliefs, morningUnlockedDayKey, wokeAt, contracts, weights, tokenDebt, restDaysForfeited, homeSet, homeEvents
         case morningDoneDays, log, eatOutMarks, caffeineMarks, wholeFoodsMarks, travelMarks, studyMarks, customHabits
-        case habitRows, rowMarks, homeByTimes
+        case habitRows, rowMarks, homeByTimes, screenTimeCaps
     }
 
     init(from decoder: Decoder) throws {
@@ -79,6 +81,7 @@ struct HabitState: Codable, Equatable {
         habitRows = try? container.decodeIfPresent([HandHabit].self, forKey: .habitRows)
         rowMarks = (try? container.decodeIfPresent([String: [String: Bool]].self, forKey: .rowMarks)) ?? [:]
         homeByTimes = (try? container.decodeIfPresent([String: Int].self, forKey: .homeByTimes)) ?? [:]
+        screenTimeCaps = (try? container.decodeIfPresent([String: Int].self, forKey: .screenTimeCaps)) ?? [:]
     }
 }
 
@@ -548,7 +551,8 @@ enum HomeEvents {
     }
 }
 
-/// Always on: the phone is at home at 9:00 pm, every day, a rest day too.
+/// A Systems row, not a quest: the phone is at home at the player's time (9:00 pm until changed), every day.
+/// Its row on the day is a background row: the quest list does not show it, and a miss opens no penalty.
 /// The row starts the day after the player sets a home. It is judged at 9:00 pm: home then completes it,
 /// anywhere else fails it, and a failed row opens a penalty at the day's end like any required quest.
 enum HomeBy {
@@ -662,6 +666,11 @@ extension HabitState {
         homeByTimes.filter { $0.key <= dayKey }.max { $0.key < $1.key }?.value ?? HomeBy.defaultMinutes
     }
 
+    /// The Screen Time limit on a quest day: the newest change on or before it.
+    func screenTimeCap(on dayKey: String) -> Int {
+        screenTimeCaps.filter { $0.key <= dayKey }.max { $0.key < $1.key }?.value ?? ScreenTime.totalCapMinutes
+    }
+
     /// The first day of the Home by streak: the newest change that has started. Nil: no change yet.
     func homeByStreakStart(on dayKey: String) -> String? {
         homeByTimes.keys.filter { $0 <= dayKey }.max()
@@ -769,7 +778,8 @@ enum SystemsView {
         let home = Track(name: HomeBy.title(game.habits.homeByMinutes(on: today)), marks: keys.map { key in
             homeStart.map { key < $0 } == true ? .none : mark(key) { $0.method == .homeBy }
         })
-        return [home] + game.habits.handHabits(on: today).map(hand)
+        let screen = Track(name: ScreenTime.title, marks: keys.map { mark($0) { $0.method == .screenTimeLimit } })
+        return [home, screen] + game.habits.handHabits(on: today).map(hand)
     }
 }
 
@@ -828,15 +838,15 @@ struct HandHabit: Codable, Hashable {
     static let builtIns = [noEatingOut, noCaffeine, wholeFoods, study]
     /// The day Screen Time and Stretching became hand-marked rows. Earlier days keep the app's mark.
     static let handMarkedFrom = "2026-11-21"
-    static let screenTime = HandHabit(id: rowPrefix + "screenTime", name: "Screen Time", firstDay: handMarkedFrom)
     static let stretching = HandHabit(id: rowPrefix + "stretching", name: DailyStretch.title, firstDay: handMarkedFrom)
     /// Rows every list holds first, until the player removes them.
-    static let systemRows = [screenTime, stretching]
+    static let systemRows = [stretching]
+    /// Screen Time was a hand-marked row for a few hours on 2026-11-21. It is checked by the app again.
+    static let retiredIds: Set<String> = [rowPrefix + "screenTime"]
 
     /// For the rows the app checked before they were marked by hand: the day's quest rows that held them.
     static func recordMatch(_ id: String) -> ((QuestRecord) -> Bool)? {
         switch id {
-        case screenTime.id: { $0.method == .screenTimeLimit }
         case stretching.id: { $0.params[DailyStretch.dayParam] != nil }
         default: nil
         }
@@ -865,7 +875,7 @@ extension HabitState {
     /// Every hand-marked row, removed ones too, in the player's order. Contract habits the list does not hold yet
     /// come last. Removed rows still count for the days before they went.
     var allHandHabits: [HandHabit] {
-        let saved = habitRows ?? HandHabit.builtIns
+        let saved = (habitRows ?? HandHabit.builtIns).filter { !HandHabit.retiredIds.contains($0.id) }
         let rows = HandHabit.systemRows.filter { row in !saved.contains { $0.id == row.id } } + saved
         return rows + customHabits.map(\.handHabit).filter { custom in !rows.contains { $0.id == custom.id } }
     }

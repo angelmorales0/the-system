@@ -180,20 +180,20 @@ enum TrainingDay {
             errors.append("two runs with no lifts should not change")
         }
 
-        // The run takes a hand check, for a bike day. A lift and a penalty run do not.
+        // Strava and Hevy fill runs and lifts: none takes a hand check.
         var penaltyRun = quest("penalty_run", "10K Run", .stravaActivity, tenK, kind: .penalty)
         penaltyRun.title = "Penalty 10K"
-        if bundle.quests.first(where: { $0.id == "run_10k" })?.allowsCheckOff != true
+        if bundle.quests.first(where: { $0.id == "run_10k" })?.allowsCheckOff != false
             || bundle.quests.first(where: { $0.id == "bench_press" })?.allowsCheckOff != false || penaltyRun.allowsCheckOff {
-            errors.append("only the day's run should take a hand check")
+            errors.append("runs and lifts should take no hand check")
         }
         var handChecked = GameSnapshot.fresh(catalog: FallbackCatalog.bundled(), now: now)
         handChecked.bundle = bundle
         _ = handChecked.applyLocalOverride(questId: "bench_press", now: now)
         _ = handChecked.applyLocalOverride(questId: "run_10k", now: now)
-        if handChecked.bundle.quests.first(where: { $0.id == "run_10k" })?.status != .completed
+        if handChecked.bundle.quests.first(where: { $0.id == "run_10k" })?.status != .pending
             || handChecked.bundle.quests.first(where: { $0.id == "bench_press" })?.status != .pending {
-            errors.append("the hand check should complete the run and nothing else, got \(handChecked.bundle.quests.map { "\($0.title) \($0.status)" })")
+            errors.append("a hand check should complete no run and no lift, got \(handChecked.bundle.quests.map { "\($0.title) \($0.status)" })")
         }
         return errors
     }

@@ -301,8 +301,10 @@ struct SystemView: View {
 
     /// One stretch with its sets and hold time. A tap checks it, and Hevy can fill it too.
     /// With every stretch done, the Stretching row above completes.
+    /// A stretch fills itself from the Hevy log. Only a stretch Hevy has no exercise for takes a tap.
     private func stretchRow(_ stretch: StretchSplit.Stretch) -> some View {
         let done = store.stretchDone(stretch)
+        let checkable = store.stretchCheckable(stretch)
         return Button {
             store.toggleStretch(stretch)
         } label: {
@@ -322,9 +324,10 @@ struct SystemView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!checkable || done)
         .padding(.leading, 16)
         .accessibilityValue(done ? "Done" : "Not done")
-        .accessibilityHint("Checks off this stretch")
+        .accessibilityHint(checkable ? "Checks off this stretch" : "Log it in Hevy. It checks itself.")
     }
 
     /// A row that folds its nested rows in and out: the day's lifts, or the day's stretches.
@@ -369,7 +372,7 @@ struct SystemView: View {
         let beyond = unlock?.questId == quest.id && quest.status == .completed && quest.progress.current + 0.05 >= (unlock?.achieved ?? 0)
         // The run's checkbox is its own button: a hand check for a bike day. The rest of the row still asks Strava.
         // A lift Hevy shows done that the app could not count takes a hand check too.
-        let handCheck = (quest.allowsCheckOff || store.hevyShowsDone(quest)) && quest.status == .pending
+        let handCheck = quest.allowsCheckOff && quest.status == .pending
         return HStack(spacing: 11) {
         Button {
             store.handleQuestTap(id: quest.id)

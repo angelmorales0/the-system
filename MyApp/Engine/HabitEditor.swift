@@ -24,7 +24,7 @@ enum HabitEditor {
         let today = game.bundle.dayKey
         let tomorrow = QuestDay.key(byAddingDays: 1, to: today)
         if game.habits.handHabits(on: today).map(\.id) != (HandHabit.systemRows + HandHabit.builtIns).map(\.id) {
-            errors.append("an unedited save should show Screen Time, Stretching, and the built-in rows")
+            errors.append("an unedited save should show Stretching and the built-in rows")
         }
 
         // Add: a Pass or Fail row with the penalty on. It starts tomorrow.
@@ -87,18 +87,38 @@ enum HabitEditor {
         if let refused = signed.signContract(contract, now: monday) { errors.append("the editor check's contract should sign: \(refused)") }
         if signed.removeHabit(id: HandHabit.study.id) == nil { errors.append("a row an active contract checks should not be removed") }
 
-        // Screen Time and Stretching are marked by hand. Days before the switch keep the app's mark.
+        // Stretching is marked by hand; Screen Time is checked by the app. A saved hand Screen Time row is dropped.
         var hand = GameSnapshot.fresh(catalog: catalog, now: monday)
-        hand.setHandMark(.screenTime, today, passed: true)
         hand.setHandMark(.stretching, today, passed: false)
+        hand.habits.habitRows = [HandHabit(id: HandHabit.rowPrefix + "screenTime", name: "Screen Time", firstDay: today)] + HandHabit.builtIns
         let handTracks = SystemsView.tracks(hand)
-        if handTracks.first(where: { $0.handHabit == .screenTime })?.marks.last != .done
-            || handTracks.first(where: { $0.handHabit == .stretching })?.marks.last != .missed
-            || handTracks.filter({ $0.name == "Screen Time" || $0.name == DailyStretch.title }).count != 2 {
-            errors.append("Screen Time and Stretching should be one hand-marked row each, got \(handTracks.map(\.name))")
+        if handTracks.first(where: { $0.handHabit == .stretching })?.marks.last != .missed
+            || handTracks.filter({ $0.name == ScreenTime.title }).count != 1 || handTracks.first(where: { $0.name == ScreenTime.title })?.handHabit != nil {
+            errors.append("Screen Time should be one row checked by the app, and Stretching a hand row, got \(handTracks.map(\.name))")
         }
-        if HandHabit.screenTime.opensPenalty(on: tomorrow) || HandHabit.stretching.opensPenalty(on: tomorrow) {
-            errors.append("Screen Time and Stretching rows should open no penalty")
+        if HandHabit.stretching.opensPenalty(on: tomorrow) { errors.append("the Stretching row should open no penalty") }
+
+        // Screen Time and Home by are not in the quest list and open no penalty.
+        var background = GameSnapshot.fresh(catalog: catalog, now: monday)
+        background.habits.homeSet = true
+        background.rebuildBundle(catalog: catalog, now: monday)
+        if background.bundle.openRequired.contains(where: \.isBackgroundRow) {
+            errors.append("Screen Time and Home by should not be required quests")
+        }
+
+        // The Screen Time limit: a new one starts tomorrow and moves the fail point and the notices.
+        var limit = GameSnapshot.fresh(catalog: catalog, now: monday)
+        if limit.setScreenTimeCap(6 * 60) != nil || limit.habits.screenTimeCap(on: today) != ScreenTime.totalCapMinutes
+            || limit.habits.screenTimeCap(on: tomorrow) != 360 {
+            errors.append("a new Screen Time limit should start tomorrow")
+        }
+        if limit.setScreenTimeCap(9 * 60) == nil || limit.setScreenTimeCap(6 * 60 + 5) == nil {
+            errors.append("a limit over 8 h 20 m or off the 15-minute steps should be refused")
+        }
+        var capped = ScreenTimeDay(dayKey: tomorrow, phoneMinutes: 395, workMinutes: 0, phoneMeasured: true)
+        capped.capMinutes = 360
+        if !capped.overTotal || ScreenTimeAlerts.due(totalMinutes: 180, sent: [], cap: 360) != 50 {
+            errors.append("a 6 h limit should fail past 6 h 30 m and send the 50% notice at 3 h")
         }
 
         // Home by: a new time starts tomorrow, renames the row, and starts a new streak. A pick of today's time takes it back.

@@ -173,9 +173,14 @@ extension Quest {
     /// Strava and Apple Health still complete it on their own. A penalty run never takes a hand check.
     /// The 10K that "No gym today" adds stands for the lifts, so it takes none either: with it, two hand checks
     /// would clear a whole training day with no workout done.
+    /// A row the player may check by hand: only rows no service checks. Runs (Strava, Apple Health) and lifts (Hevy)
+    /// fill themselves from the data.
     var allowsCheckOff: Bool {
-        (kind != .penalty && !isNoGymRun && TrainingDay.isRaceRun(self)) || verification.method.allowsLocalCheckbox
+        verification.method.allowsLocalCheckbox
     }
+
+    /// Rows the app judges in the background: they are not in the quest list. Their results fill the Systems page.
+    var isBackgroundRow: Bool { id == ScreenTime.questId || id == HomeBy.questId }
 
     /// A lift row that Hevy shows done today but the app could not count (for example, a measure Hevy logs another way).
     /// The player may check it off. `workouts` is today's Hevy log.
