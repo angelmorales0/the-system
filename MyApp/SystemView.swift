@@ -9,6 +9,8 @@ struct SystemView: View {
     @State private var stretchExpanded = false
     /// The gym split editor, opened from under the gym row.
     @State private var editingSplit = false
+    /// The levels window, opened from the LV and HP area. It grows out of the header and shrinks back into it.
+    @State private var showLevels = false
 
     var body: some View {
         ZStack {
@@ -30,12 +32,25 @@ struct SystemView: View {
                 }
                 .scrollBounceBehavior(.basedOnSize)
             }
+            if showLevels {
+                ZStack {
+                    QuestBackdrop()
+                    LevelsWindow { setLevels(false) }
+                }
+                .transition(.scale(scale: 0.4, anchor: .top).combined(with: .opacity))
+                .zIndex(1)
+            }
             if let reveal = store.pendingHiddenReveal {
                 HiddenQuestReveal(unlock: reveal) { store.acknowledgeHiddenReveal() }
                     .transition(.opacity)
             }
         }
         .animation(.easeOut(duration: 0.25), value: store.pendingHiddenReveal?.id)
+        // A penalty covers every page, and a new day replaces what the window was opened for.
+        .onChange(of: store.openPenaltyQuest?.id) { _, penalty in
+            if penalty != nil { showLevels = false }
+        }
+        .onChange(of: store.bundle.dayKey) { _, _ in showLevels = false }
 
         .sheet(isPresented: $editingSplit, onDismiss: { SystemSound.systemClose.play() }) {
             NavigationStack { SplitEditorSheet(dayId: GymSplit.day(named: store.bundle.headerLine)?.id) }
@@ -44,7 +59,7 @@ struct SystemView: View {
 
     private var questContent: some View {
         VStack(spacing: 0) {
-            TacticalHeader()
+            TacticalHeader { setLevels(true) }
             ConnectionBanner()
                 .padding(.top, 14)
             morningAndRestLines
@@ -80,6 +95,12 @@ struct SystemView: View {
                     .padding(.horizontal, 24)
                     .accessibilityIdentifier("restReason")
             }
+    }
+
+    /// Opens or closes the levels window with the System's open and close sounds.
+    private func setLevels(_ open: Bool) {
+        (open ? SystemSound.systemOpen : SystemSound.systemClose).play()
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) { showLevels = open }
     }
 
     /// Finished and total goal rows, for the tactical box header. The folded lifts count as one row.

@@ -61,9 +61,10 @@ struct TypewriterText: View {
     }
 }
 
-/// The top line: "SYSTEM // PLAYER", the level, and an HP bar, then the quest day.
+/// The top line: "SYSTEM // PLAYER", the level, and an HP bar, then the quest day. The level and HP open the levels.
 struct TacticalHeader: View {
     @EnvironmentObject private var store: GameStore
+    var onLevels: () -> Void = {}
 
     var body: some View {
         let hp = store.hitPoints
@@ -73,18 +74,29 @@ struct TacticalHeader: View {
                 TypewriterText("SYSTEM // PLAYER")
                     .foregroundStyle(SystemTheme.muted)
                 Spacer(minLength: 8)
-                TypewriterText("LV \(store.statLevels.overallLevel)", delay: 0.3)
-                    .foregroundStyle(QuestLight.ink)
-                ZStack(alignment: .leading) {
-                    Rectangle().stroke(QuestLight.cyan.opacity(0.5), lineWidth: 0.5)
-                    Rectangle().fill(fraction < 0.25 ? QuestLight.penalty : QuestLight.cyan)
-                        .frame(width: 54 * fraction)
-                        .shadow(color: QuestLight.cyan, radius: 3)
+                // The level and HP open the levels window.
+                Button(action: onLevels) {
+                    HStack(spacing: 8) {
+                        TypewriterText("LV \(store.statLevels.overallLevel)", delay: 0.3)
+                            .foregroundStyle(QuestLight.ink)
+                        ZStack(alignment: .leading) {
+                            Rectangle().stroke(QuestLight.cyan.opacity(0.5), lineWidth: 0.5)
+                            Rectangle().fill(fraction < 0.25 ? QuestLight.penalty : QuestLight.cyan)
+                                .frame(width: 54 * fraction)
+                                .shadow(color: QuestLight.cyan, radius: 3)
+                        }
+                        .frame(width: 54, height: 5)
+                    }
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                 }
-                .frame(width: 54, height: 5)
-                .accessibilityElement()
-                .accessibilityLabel("HP")
-                .accessibilityValue("\(hp.current) of \(hp.max)")
+                .buttonStyle(.plain)
+                .padding(.vertical, -14)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Level \(store.statLevels.overallLevel), HP \(hp.current) of \(hp.max)")
+                .accessibilityHint("Opens the levels")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("levelsButton")
             }
             Rectangle().fill(QuestLight.cyan.opacity(0.25)).frame(height: 0.5)
                 .padding(.top, 10)
