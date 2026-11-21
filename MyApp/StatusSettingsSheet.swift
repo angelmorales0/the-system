@@ -1,10 +1,9 @@
 import SwiftUI
 
-/// Opens from the gear on the STATUS window: rest days, Full Recovery, the No Gym and sound checkboxes, the other settings screens,
-/// and every connection with its checkbox. The shop opens from the STATUS window.
+/// Opens from the gear on the STATUS window: rest days, the No Gym and sound checkboxes, the other settings screens,
+/// and every connection with its checkbox.
 struct StatusSettingsSheet: View {
     @EnvironmentObject private var store: GameStore
-    @State private var confirmRecovery = false
     @State private var confirmRest = false
     @State private var showShields = false
     @State private var showScreenTime = false
@@ -16,27 +15,6 @@ struct StatusSettingsSheet: View {
         QuestSheet(title: "Settings") {
             VStack(spacing: 20) {
                 restDayButton
-                Button {
-                    confirmRecovery = true
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("FULL RECOVERY")
-                                .font(.caption.weight(.semibold))
-                                .tracking(1.1)
-                                .foregroundStyle(SystemTheme.muted)
-                            Text("x\(store.player.fullRecoveryBank)")
-                                .font(.title2.weight(.bold))
-                                .foregroundStyle(.white)
-                        }
-                        Spacer()
-                        Image(systemName: "bolt.fill")
-                            .font(.title2)
-                            .foregroundStyle(SystemTheme.cyan)
-                            .shadow(color: SystemTheme.cyan.opacity(0.35), radius: 4)
-                    }
-                }
-                .buttonStyle(.plain)
                 Toggle(isOn: Binding(
                     get: { store.snapshot.noGymToday },
                     set: { store.setNoGym($0) }
@@ -67,12 +45,6 @@ struct StatusSettingsSheet: View {
                 SystemDivider()
                 ConnectionRows()
             }
-        }
-        .confirmationDialog("Spend one Full Recovery token?", isPresented: $confirmRecovery, titleVisibility: .visible) {
-            Button("Spend token") { store.spendFullRecovery() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Today becomes a rest day. Finished quests stay done. Missed training does not open a penalty today.")
         }
         .confirmationDialog("Set this place as home?", isPresented: $confirmHome, titleVisibility: .visible) {
             Button("Set home here") { store.setHomeHere() }
