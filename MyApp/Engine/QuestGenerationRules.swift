@@ -137,7 +137,7 @@ enum QuestGenerationRules {
         }
 
         if !(QuestGenerateClient.make(catalog: catalog) is OnDeviceQuestGenerateClient) {
-            errors.append("quest planning should run on the phone with no base URL")
+            errors.append("quest planning should run on the phone with the app's own rules")
         }
 
         var remembered = GameSnapshot.fresh(catalog: catalog, now: now)

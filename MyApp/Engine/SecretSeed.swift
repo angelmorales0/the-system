@@ -8,7 +8,6 @@ import Foundation
 nonisolated enum SecretSeed {
     /// Info.plist key → Keychain item.
     static let items: [(infoKey: String, item: SecretStore.Item)] = [
-        ("SeedAnthropicApiKey", .anthropicApiKey),
         ("SeedHevyApiKey", .hevyApiKey),
         ("SeedWhoopClientId", .whoopClientId),
         ("SeedWhoopClientSecret", .whoopClientSecret),
@@ -44,9 +43,9 @@ nonisolated enum SecretSeed {
     static func check() -> [String] {
         var errors: [String] = []
         if value(from: nil) != nil || value(from: "") != nil || value(from: "  \n") != nil { errors.append("an empty seed is no value") }
-        if value(from: "$(ANTHROPIC_API_KEY)") != nil { errors.append("an unexpanded placeholder is no value") }
-        if value(from: "sk-ant-your-key-here") != nil { errors.append("the example value is no value") }
-        if value(from: " sk-ant-abc123 ") != "sk-ant-abc123" { errors.append("a real value should come through trimmed") }
+        if value(from: "$(HEVY_API_KEY)") != nil { errors.append("an unexpanded placeholder is no value") }
+        if value(from: "your-key-here") != nil { errors.append("the example value is no value") }
+        if value(from: " abc123 ") != "abc123" { errors.append("a real value should come through trimmed") }
         if Set(items.map(\.item)).count != items.count || Set(infoKeys).count != infoKeys.count { errors.append("each seed names one item once") }
         let typed = Set(Connection.allCases.flatMap { $0.typedSecrets.map(\.item) })
         if typed != Set(items.map(\.item)) { errors.append("the seed should cover exactly the typed secrets, got \(items.map(\.item)) for \(typed)") }
