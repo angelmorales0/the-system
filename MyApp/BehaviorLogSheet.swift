@@ -74,7 +74,7 @@ struct BehaviorLogSheet: View {
 }
 
 /// The habits as streaks: one row a habit, one dot a day for the last 28 days (today last), and the current streak.
-/// Hand-marked rows (No eating out, No caffeine, Only whole foods): tap today, then Pass (glowing white) or Fail (red)
+/// Hand-marked rows (No eating out, No caffeine, Only whole foods): tap today, then Pass (cyan) or Fail (red)
 /// in the bar that opens under the row. The day changes color at once.
 struct SystemsPanel: View {
     let tracks: [SystemsView.Track]
@@ -90,12 +90,12 @@ struct SystemsPanel: View {
                         Text(track.name)
                             .font(.footnote)
                         Spacer()
-                        // The streak as "7D", or the row's own summary: "0/2 TRAVEL DAYS".
-                        Text(track.summary?.uppercased() ?? "\(track.streak)D")
+                        // The pass rate and the streak: "92%  7D". Cyan while the habit is active (90% or more).
+                        Text(track.summary?.uppercased() ?? "\(track.passRate.map { "\(Int(($0 * 100).rounded(.down)))%" } ?? "--")  \(track.streak)D")
                             .font(TacticalIntro.mono)
                             .tracking(1.5)
-                            .foregroundStyle(track.summary == nil && track.streak > 0 ? QuestLight.cyan : SystemTheme.muted)
-                            .shadow(color: track.summary == nil && track.streak > 0 ? QuestLight.cyan.opacity(0.7) : .clear, radius: 3)
+                            .foregroundStyle(track.isActive ? QuestLight.cyan : SystemTheme.muted)
+                            .shadow(color: track.isActive ? QuestLight.cyan.opacity(0.7) : .clear, radius: 3)
                     }
                     HStack(spacing: 3) {
                         ForEach(Array(track.marks.enumerated()), id: \.offset) { index, mark in
@@ -103,7 +103,7 @@ struct SystemsPanel: View {
                                 let day = track.dayKeys[index]
                                 let selected = picking?.habit == habit && picking?.day == day
                                 Button { picking = selected ? nil : (habit, day) } label: {
-                                    dot(mark, white: true)
+                                    dot(mark)
                                         .overlay { if selected { RoundedRectangle(cornerRadius: 2).stroke(QuestLight.cyan, lineWidth: 1.5).padding(-2) } }
                                         .frame(maxWidth: .infinity, minHeight: 28)
                                         .contentShape(Rectangle())
@@ -111,7 +111,7 @@ struct SystemsPanel: View {
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("\(Contract.dateText(track.dayKeys[index])): \(label(mark))")
                             } else {
-                                dot(mark, white: track.handHabit != nil)
+                                dot(mark)
                             }
                         }
                     }
@@ -166,9 +166,9 @@ struct SystemsPanel: View {
     }
 
     /// One day, a square cell like the dashes of the day ring: an empty day is only an outline.
-    /// A hand-marked row shows a pass in glowing white.
-    private func dot(_ mark: SystemsView.Mark, white: Bool) -> some View {
-        let fill = white && mark == .done ? QuestLight.ink : color(mark)
+    /// Every pass is the same cyan, hand-marked or checked by the app.
+    private func dot(_ mark: SystemsView.Mark) -> some View {
+        let fill = color(mark)
         let glow = mark == .none ? Color.clear : fill.opacity(0.8)
         return Rectangle()
             .fill(fill)

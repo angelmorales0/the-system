@@ -6,14 +6,14 @@ struct StatusSheetView: View {
     @EnvironmentObject private var store: GameStore
 
     private var tracks: [SystemsView.Track] { store.systemsTracks }
-    /// Rows with a streak that is still going.
-    private var active: Int { tracks.filter { $0.summary == nil && $0.streak > 0 }.count }
+    /// Rows that pass 90% or more of their judged days in view.
+    private var active: Int { tracks.filter(\.isActive).count }
     /// Rows whose last day is a pass.
     private var passedToday: Int { tracks.filter { $0.marks.last == .done }.count }
 
     /// The log under the box: active streaks, the longest one, and the hand rows still open today.
     private var logLines: [String] {
-        var lines = ["> \(active) \(active == 1 ? "STREAK" : "STREAKS") ACTIVE"]
+        var lines = ["> \(active) ACTIVE · 90%+ PASS RATE"]
         if let best = tracks.filter({ $0.summary == nil }).max(by: { $0.streak < $1.streak }), best.streak > 0 {
             lines.append("> LONGEST: \(best.name.uppercased()) \(best.streak)D")
         }
