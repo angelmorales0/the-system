@@ -299,9 +299,8 @@ final class GameStore: ObservableObject {
             return
         }
         snapshot = next
-        verificationNote = burpees
-            ? "The 10K Run is now \(RunBurpees.reps) burpees. They are in today's Hevy routine as \"\(PenaltyQuests.burpeeExercise)\", 10 sets of 30."
-            : "The 10K Run is back."
+        // The row itself shows the swap. A refusal above still explains itself.
+        verificationNote = nil
         clock = now
         persist()
         enforcePenalty()

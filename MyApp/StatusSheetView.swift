@@ -11,15 +11,18 @@ struct StatusSheetView: View {
     /// Rows whose last day is a pass.
     private var passedToday: Int { tracks.filter { $0.marks.last == .done }.count }
 
-    /// The log under the box: active streaks, the longest one, and the hand rows still open today.
-    private var logLines: [String] {
-        var lines = ["> \(active) ACTIVE · 90%+ PASS RATE"]
-        if let best = tracks.filter({ $0.summary == nil }).max(by: { $0.streak < $1.streak }), best.streak > 0 {
-            lines.append("> LONGEST: \(best.name.uppercased()) \(best.streak)D")
-        }
-        let open = tracks.filter { $0.handHabit != nil && $0.handHabit?.weeklyLimit == nil && $0.marks.last == SystemsView.Mark.none }.count
-        if open > 0 { lines.append("> \(open) TO MARK TODAY") }
-        return lines
+    /// The log under the box: the habits at a 90% or higher pass rate.
+    private var logLines: [String] { ["> \(active) ACTIVE"] }
+
+    /// The quest day the box counts passes for: "NOV 21".
+    private var dayNote: String {
+        guard let date = QuestDay.date(from: store.bundle.dayKey) else { return store.bundle.dayKey }
+        let formatter = DateFormatter()
+        formatter.calendar = QuestDay.calendar
+        formatter.timeZone = QuestDay.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MMM d"
+        return formatter.string(from: date).uppercased()
     }
 
     var body: some View {
@@ -45,7 +48,7 @@ struct StatusSheetView: View {
                                 .foregroundStyle(SystemTheme.muted)
                                 .font(TacticalIntro.mono)
                                 .tracking(2)
-                            TacticalQuestBox(title: "[ SYSTEMS ]", done: passedToday, total: tracks.count) {
+                            TacticalQuestBox(title: "[ SYSTEMS ]", done: passedToday, total: tracks.count, note: dayNote) {
                                 SystemsPanel(tracks: tracks) { store.setHandMark($0, $1, passed: $2) }
                             }
                             .padding(.top, 14)

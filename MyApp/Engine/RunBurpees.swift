@@ -4,7 +4,7 @@ import Foundation
 ///
 /// The row keeps its id, so rebuilds, the day's record, and the no-gym rules still see one workout row. While it is
 /// burpees it is a Hevy rep row ("Burpee", 300 reps in any number of sets), and the day's Hevy routine holds it as
-/// 10 sets of 30. The run comes back with "Back to the 10K run" while no burpee is logged.
+/// 10 sets of 30. The swap icon on the row brings the run back while no burpee is logged.
 /// Burpees count for one row only: a day whose penalty is burpees keeps its run, and the other way round.
 struct BurpeeSwap: Codable, Equatable {
     var dayKey: String
@@ -14,8 +14,11 @@ struct BurpeeSwap: Codable, Equatable {
 
 enum RunBurpees {
     static let reps = 300
-    static let title = "300 Burpees (10×30)"
-    /// The param that marks a burpee row made from a run. The routine reads the sets and reps from the title.
+    static let title = "300 Burpees"
+    /// The day's Hevy routine holds the burpees as 10 sets of 30, from the row's `sets` and `reps` params.
+    static let routineSets = 10
+    static let routineReps = 30
+    /// The param that marks a burpee row made from a run.
     static let markKey = "replacesRun"
 
     static func isBurpeeRow(_ quest: Quest) -> Bool {
@@ -38,6 +41,8 @@ enum RunBurpees {
         row.verification = VerificationSpec(method: .hevySets, params: [
             "exercise": .string(PenaltyQuests.burpeeExercise),
             "totalReps": .number(Double(reps)),
+            "sets": .number(Double(routineSets)),
+            "reps": .number(Double(routineReps)),
             markKey: .bool(true),
         ])
         row.progress = QuestProgress(current: 0, target: Double(reps), unit: "reps")

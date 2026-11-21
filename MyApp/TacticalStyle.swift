@@ -115,6 +115,8 @@ struct TacticalQuestBox<Content: View>: View {
     var title = "[ DAILY QUEST ]"
     let done: Int
     let total: Int
+    /// Shown after the count, like the day the count is for: "1 / 7 · NOV 21".
+    var note: String? = nil
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -122,7 +124,7 @@ struct TacticalQuestBox<Content: View>: View {
             HStack {
                 TypewriterText(title, delay: 0.8)
                 Spacer()
-                Text("\(done) / \(total)")
+                Text("\(done) / \(total)" + (note.map { " · \($0)" } ?? ""))
                     .monospacedDigit()
             }
             .font(TacticalIntro.mono)
