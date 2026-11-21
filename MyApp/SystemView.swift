@@ -9,7 +9,8 @@ struct SystemView: View {
     @State private var stretchExpanded = false
     /// The gym split editor, opened from under the gym row.
     @State private var editingSplit = false
-    @State private var showLog = false
+    /// The levels window, opened from the LV and HP area. It grows out of the header and shrinks back into it.
+    @State private var showLevels = false
 
     var body: some View {
         ZStack {
@@ -31,15 +32,25 @@ struct SystemView: View {
                 }
                 .scrollBounceBehavior(.basedOnSize)
             }
+            if showLevels {
+                ZStack {
+                    QuestBackdrop()
+                    LevelsWindow { setLevels(false) }
+                }
+                .transition(.scale(scale: 0.4, anchor: .top).combined(with: .opacity))
+                .zIndex(1)
+            }
             if let reveal = store.pendingHiddenReveal {
                 HiddenQuestReveal(unlock: reveal) { store.acknowledgeHiddenReveal() }
                     .transition(.opacity)
             }
         }
         .animation(.easeOut(duration: 0.25), value: store.pendingHiddenReveal?.id)
-        .sheet(isPresented: $showLog, onDismiss: { SystemSound.systemClose.play() }) {
-            BehaviorLogSheet()
+        // A penalty covers every page, and a new day replaces what the window was opened for.
+        .onChange(of: store.openPenaltyQuest?.id) { _, penalty in
+            if penalty != nil { showLevels = false }
         }
+        .onChange(of: store.bundle.dayKey) { _, _ in showLevels = false }
 
         .sheet(isPresented: $editingSplit, onDismiss: { SystemSound.systemClose.play() }) {
             NavigationStack { SplitEditorSheet(dayId: GymSplit.day(named: store.bundle.headerLine)?.id) }
@@ -48,29 +59,19 @@ struct SystemView: View {
 
     private var questContent: some View {
         VStack(spacing: 0) {
-            QuestInfoHeader()
+            TacticalHeader { setLevels(true) }
             ConnectionBanner()
                 .padding(.top, 14)
-            Spacer(minLength: 28)
-            Text("[Daily Quest: \(store.bundle.headerLine)\nhas arrived.]")
-                .font(.system(.subheadline, design: .default).weight(.regular))
-                .lineSpacing(5)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(QuestLight.ink)
-                .shadow(color: QuestLight.blue.opacity(0.7), radius: 5)
-                .fixedSize(horizontal: false, vertical: true)
-            // Today's belief: who the player decided to be.
-            if let belief = store.beliefToday {
-                Text("“\(belief)”")
-                    .font(.system(.footnote, design: .serif).italic())
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(QuestLight.ink.opacity(0.8))
-                    .shadow(color: QuestLight.cyan.opacity(0.5), radius: 4)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 10)
-                    .padding(.horizontal, 12)
-                    .accessibilityLabel("Today's belief: \(belief)")
-            }
+            morningAndRestLines
+
+            Spacer(minLength: 16)
+            TacticalQuestBox(done: goalsDone.done, total: goalsDone.total) { goalList }
+            questFooter
+        }
+    }
+
+    /// The morning lock line and the Rest Day reason.
+    @ViewBuilder private var morningAndRestLines: some View {
             // The morning lock holds until the first workout of the day.
             if store.snapshot.morningLockOn(now: store.clock) {
                 Text("MORNING LOCK · apps open after your first workout")
@@ -94,22 +95,31 @@ struct SystemView: View {
                     .padding(.horizontal, 24)
                     .accessibilityIdentifier("restReason")
             }
+    }
 
-            Spacer(minLength: 35)
-            VStack(spacing: 3) {
-                Text("GOAL")
-                    .font(.system(.title2, design: .default).weight(.medium))
-                    .tracking(1.3)
-                    .foregroundStyle(QuestLight.ink)
-                    .shadow(color: QuestLight.cyan, radius: 7)
-                Rectangle().fill(QuestLight.ink.opacity(0.85)).frame(width: 59, height: 1)
-                Rectangle().fill(QuestLight.ink.opacity(0.48)).frame(width: 59, height: 0.5)
+    /// Opens or closes the levels window with the System's open and close sounds.
+    private func setLevels(_ open: Bool) {
+        (open ? SystemSound.systemOpen : SystemSound.systemClose).play()
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) { showLevels = open }
+    }
+
+    /// Finished and total goal rows, for the tactical box header. The folded lifts count as one row.
+    private var goalsDone: (done: Int, total: Int) {
+        let rows = goalRows
+        let done = rows.filter { row in
+            switch row {
+            case .quest(let quest): quest.status == .completed
+            case .lifts(let lifts): lifts.filter { $0.kind != .optional }.allSatisfy { $0.status == .completed }
             }
-            .accessibilityAddTraits(.isHeader)
+        }.count
+        return (done, rows.count)
+    }
 
-            Spacer(minLength: 23)
+    /// The goal rows, with the lifts and the stretches folded.
+    private var goalList: some View {
             VStack(spacing: 1) {
-                ForEach(goalRows) { row in
+                ForEach(Array(goalRows.enumerated()), id: \.element.id) { index, row in
+                    VStack(spacing: 1) {
                     switch row {
                     case .quest(let quest):
                         if quest.id == DailyStretch.questId, let day = StretchSplit.day(of: quest) {
@@ -124,9 +134,6 @@ struct SystemView: View {
                             }
                         } else {
                             questRow(quest)
-                        }
-                        if RunBurpees.canSwap(quest) || RunBurpees.canSwapBack(quest) {
-                            RunBurpeesChoice(quest: quest)
                         }
                         if quest.id == ScreenTime.questId {
                             ScreenTimeSplit(day: store.snapshot.screenTimeToday)
@@ -169,9 +176,14 @@ struct SystemView: View {
                             }
                         }
                     }
+                    }
+                    .modifier(TacticalRowReveal(index: index))
                 }
             }
+    }
 
+    /// The optional quests, the check note, the log button, the warning, the ring, and the timer.
+    @ViewBuilder private var questFooter: some View {
             if !otherOptionalQuests.isEmpty {
                 VStack(spacing: 1) {
                     ForEach(otherOptionalQuests) { questRow($0) }
@@ -187,27 +199,9 @@ struct SystemView: View {
                     .padding(.top, 14)
             }
 
-            // The behavior log: one short note a day.
-            Button {
-                SystemSound.systemOpen.play()
-                showLog = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: store.snapshot.habits.log[store.bundle.dayKey] == nil ? "square.and.pencil" : "checkmark")
-                    Text(store.snapshot.habits.log[store.bundle.dayKey] == nil ? "WRITE TODAY'S LOG" : "TODAY'S LOG WRITTEN")
-                        .tracking(1)
-                }
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(QuestLight.ink.opacity(0.75))
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 10)
-            .accessibilityIdentifier("behaviorLogButton")
 
             Spacer(minLength: 38)
-            Text(warning)
+            TypewriterText(warning, delay: 1.8, speed: 0.03)
                 .font(.system(.footnote, design: .default))
                 .lineSpacing(9)
                 .multilineTextAlignment(.center)
@@ -216,10 +210,27 @@ struct SystemView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 22)
             QuestSignalRing(dayClock: store.dayClock, missesRequiredSet: store.snapshot.missesRequiredSet)
-                .frame(width: 43, height: 43)
+                .frame(width: 64, height: 64)
             QuestDayTimer(dayClock: store.dayClock)
                 .padding(.top, 6)
+            TacticalLog(lines: logLines)
+                .padding(.top, 14)
+    }
+
+    /// The status log: the last finished quest, the open count, and the day penalties start while the hold lasts.
+    private var logLines: [String] {
+        var lines: [String] = []
+        let goals = store.goalQuests
+        if let last = goals.last(where: { $0.status == .completed }) {
+            lines.append("> \(last.title.uppercased()) CLEAR")
         }
+        let open = goalsDone.total - goalsDone.done
+        lines.append(open == 0 ? "> ALL QUESTS CLEAR" : "> \(open) \(open == 1 ? "QUEST" : "QUESTS") REMAIN")
+        if !PenaltyHold.active(on: store.bundle.dayKey) {
+            // A fail on the hold's first day brings the first penalty quest the day after.
+            lines.append("> PENALTIES START \(QuestDay.key(byAddingDays: 1, to: PenaltyHold.firstDay).dropFirst(5))")
+        }
+        return lines
     }
 
     /// The goal list with the day's lifts folded into one row at the place of the first lift.
@@ -371,6 +382,11 @@ struct SystemView: View {
                             .tracking(1)
                     }
                     Text(quest.title)
+                    // The day's 10K Run and its 300 burpees swap with one icon, while nothing is logged on the row.
+                    // It is its own button: a tap on it swaps and does not open the row.
+                    if RunBurpees.canSwap(quest) || RunBurpees.canSwapBack(quest) {
+                        RunSwapButton(quest: quest)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Text(isOptionalLift(quest) ? "[\(quest.liftSets.done)/0]" : store.rowLabel(for: quest))
@@ -424,37 +440,6 @@ struct SystemView: View {
             text[range].foregroundColor = QuestLight.penalty
         }
         return text
-    }
-}
-
-/// Under an open 10K Run: "Or 300 burpees". Under the burpees, while none is logged: "Back to the 10K run".
-private struct RunBurpeesChoice: View {
-    @EnvironmentObject private var store: GameStore
-    let quest: Quest
-    @State private var asking = false
-
-    private var toBurpees: Bool { RunBurpees.canSwap(quest) }
-
-    var body: some View {
-        Button {
-            if toBurpees { asking = true } else { store.setRunAsBurpees(id: quest.id, false) }
-        } label: {
-            Text(toBurpees ? "Or \(RunBurpees.reps) burpees in Hevy ›" : "Back to the 10K run ›")
-                .font(.caption)
-                .foregroundStyle(QuestLight.ink.opacity(0.75))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 16)
-                .frame(minHeight: 30)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityHint(toBurpees ? "Asks to do the 10K Run as 300 burpees" : "Changes the burpees back to the 10K Run")
-        .confirmationDialog("Do 300 burpees instead of the 10K?", isPresented: $asking, titleVisibility: .visible) {
-            Button("Switch to 300 burpees") { store.setRunAsBurpees(id: quest.id, true) }
-            Button("Keep the run", role: .cancel) {}
-        } message: {
-            Text("Today's Hevy routine gets 10 sets of 30 \"\(PenaltyQuests.burpeeExercise)\". Every set you log counts toward 300. You can switch back until you log a burpee.")
-        }
     }
 }
 
@@ -685,8 +670,10 @@ private struct QuestSignalRing: View {
                     var segment = context
                     segment.translateBy(x: size.width / 2, y: size.height / 2)
                     segment.rotate(by: .degrees(Double(index) * 360 / Double(DayClock.segments)))
-                    let rect = CGRect(x: -1.15, y: -size.height / 2 + 1, width: 2.3, height: 5.3)
-                    let path = Path(roundedRect: rect, cornerRadius: 0.8)
+                    // The dashes were drawn for a 43-point ring. They grow with the ring.
+                    let scale = size.width / 43
+                    let rect = CGRect(x: -1.15 * scale, y: -size.height / 2 + scale, width: 2.3 * scale, height: 5.3 * scale)
+                    let path = Path(roundedRect: rect, cornerRadius: 0.8 * scale)
                     // Dash 0 is at 12 o'clock and the index runs clockwise. The dark part grows clockwise
                     // from 12 o'clock, so the last lit dashes sit just left of the top.
                     let isLit = failed || index >= DayClock.segments - lit

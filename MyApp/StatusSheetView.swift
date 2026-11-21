@@ -1,17 +1,29 @@
 import SwiftUI
 
-/// The System's STATUS window: the overall level and XP, HP and fatigue, the seven stats, and Full Recoveries.
-/// Overall XP is the seven stat levels added up (0...2450); the level is that share of 146.
-/// HP turns red when critical; the fatigue meter turns red at 80 or more.
-/// Tapping a stat opens its targets, and the gear opens the settings.
+/// The second page: the SYSTEMS window, the habit rows of the last 28 days in the tactical style.
+/// The levels open from the LV and HP area on the quest window, in `LevelsWindow`.
 struct StatusSheetView: View {
     @EnvironmentObject private var store: GameStore
-    @State private var selectedStat: Stat?
-    @State private var showSettings = false
-    @State private var showBeliefs = false
-    @State private var showContracts = false
-    /// The systems view comes first; the levels are one tap away.
-    @State private var showLevels = false
+
+    private var tracks: [SystemsView.Track] { store.systemsTracks }
+    /// Rows that pass 90% or more of their judged days in view.
+    private var active: Int { tracks.filter(\.isActive).count }
+    /// Rows whose last day is a pass.
+    private var passedToday: Int { tracks.filter { $0.marks.last == .done }.count }
+
+    /// The log under the box: the habits at a 90% or higher pass rate.
+    private var logLines: [String] { ["> \(active) ACTIVE"] }
+
+    /// The quest day the box counts passes for: "NOV 21".
+    private var dayNote: String {
+        guard let date = QuestDay.date(from: store.bundle.dayKey) else { return store.bundle.dayKey }
+        let formatter = DateFormatter()
+        formatter.calendar = QuestDay.calendar
+        formatter.timeZone = QuestDay.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MMM d"
+        return formatter.string(from: date).uppercased()
+    }
 
     var body: some View {
         ZStack {
@@ -19,19 +31,83 @@ struct StatusSheetView: View {
             GeometryReader { proxy in
                 ScrollView(showsIndicators: false) {
                     SystemPanel(padding: 14) {
-                        VStack(spacing: 18) {
-                        Picker("Page", selection: $showLevels) {
-                            Text("SYSTEMS").tag(false)
-                            Text("LEVELS").tag(true)
-                        }
-                        .pickerStyle(.segmented)
-                        .accessibilityIdentifier("statusPagePicker")
-                        if !showLevels {
-                            VStack(spacing: 18) {
-                                StatusTitleBox()
-                                SystemsPanel(tracks: store.systemsTracks) { store.setHandMark($0, $1, passed: $2) }
+                        VStack(alignment: .leading, spacing: 0) {
+                            HStack(spacing: 8) {
+                                TypewriterText("SYSTEM // HABITS")
+                                Spacer(minLength: 8)
+                                TypewriterText("\(active) ACTIVE", delay: 0.3)
+                                    .foregroundStyle(QuestLight.ink)
                             }
-                        } else {
+                            .foregroundStyle(SystemTheme.muted)
+                            .font(TacticalIntro.mono)
+                            .tracking(2)
+                            Rectangle().fill(QuestLight.cyan.opacity(0.25)).frame(height: 0.5)
+                                .padding(.top, 10)
+                                .padding(.bottom, 14)
+                            TypewriterText("LAST 28 DAYS", delay: 0.5)
+                                .foregroundStyle(SystemTheme.muted)
+                                .font(TacticalIntro.mono)
+                                .tracking(2)
+                            TacticalQuestBox(title: "[ SYSTEMS ]", done: passedToday, total: tracks.count, note: dayNote) {
+                                SystemsPanel(tracks: tracks) { store.setHandMark($0, $1, passed: $2) }
+                            }
+                            .padding(.top, 14)
+                            TacticalLog(lines: logLines, delay: 2.0)
+                                .padding(.top, 14)
+                        }
+                    }
+                    .frame(maxWidth: 460)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 28)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: proxy.size.height)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+            }
+        }
+    }
+}
+
+/// The System's STATUS levels: the overall level and XP, HP and fatigue, the seven stats, and Full Recoveries.
+/// Overall XP is the seven stat levels added up (0...2450); the level is that share of 146.
+/// HP turns red when critical; the fatigue meter turns red at 80 or more.
+/// Tapping a stat opens its targets, and the gear opens the settings. The close button calls `onClose`.
+struct LevelsWindow: View {
+    @EnvironmentObject private var store: GameStore
+    let onClose: () -> Void
+    @State private var selectedStat: Stat?
+    @State private var showSettings = false
+    @State private var showBeliefs = false
+    @State private var showContracts = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            ScrollView(showsIndicators: false) {
+                SystemPanel(padding: 14) {
+                    VStack(spacing: 14) {
+                        HStack {
+                            Text("[ LEVELS ]")
+                                .font(TacticalIntro.mono)
+                                .tracking(2)
+                                .foregroundStyle(SystemTheme.muted)
+                                .accessibilityAddTraits(.isHeader)
+                            Spacer()
+                            Button(action: onClose) {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(QuestLight.cyan)
+                                    .shadow(color: QuestLight.cyan.opacity(0.8), radius: 3)
+                                    .frame(width: 26, height: 26)
+                                    .overlay { Rectangle().stroke(QuestLight.cyan.opacity(0.5), lineWidth: 0.5) }
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.vertical, -9)
+                            .padding(.trailing, -9)
+                            .accessibilityLabel("Close levels")
+                            .accessibilityIdentifier("closeLevelsButton")
+                        }
                         StatusSheetContent(
                             level: store.statLevels.overallLevel,
                             xp: (store.statLevels.overallXP, StatLevelSet.overallMaxXP),
@@ -44,17 +120,15 @@ struct StatusSheetView: View {
                             onBeliefs: { showBeliefs = true; SystemSound.systemOpen.play() },
                             onContracts: { showContracts = true; SystemSound.systemOpen.play() }
                         )
-                        }
-                        }
                     }
-                    .frame(maxWidth: 460)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 28)
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: proxy.size.height)
                 }
-                .scrollBounceBehavior(.basedOnSize)
+                .frame(maxWidth: 460)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 28)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: proxy.size.height)
             }
+            .scrollBounceBehavior(.basedOnSize)
         }
         .sheet(item: $selectedStat, onDismiss: { SystemSound.systemClose.play() }) { stat in
             StatTargetsSheet(stat: stat)
@@ -68,19 +142,6 @@ struct StatusSheetView: View {
         .sheet(isPresented: $showContracts, onDismiss: { SystemSound.systemClose.play() }) {
             ContractsSheet()
         }
-        // A penalty covers every page, and a new day replaces the quests a sheet was opened for. Close the sheets,
-        // so no setting or token is used above the penalty screen or on a day the player did not choose it for.
-        .onChange(of: store.openPenaltyQuest?.id) { _, penalty in
-            if penalty != nil { closeSheets() }
-        }
-        .onChange(of: store.bundle.dayKey) { _, _ in closeSheets() }
-    }
-
-    private func closeSheets() {
-        selectedStat = nil
-        showSettings = false
-        showBeliefs = false
-        showContracts = false
     }
 }
 
