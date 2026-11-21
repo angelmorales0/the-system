@@ -9,8 +9,6 @@ struct SystemView: View {
     @State private var stretchExpanded = false
     /// The gym split editor, opened from under the gym row.
     @State private var editingSplit = false
-    /// The tactical layout: typed labels, a boxed quest list, and a status log. Set in Settings.
-    @AppStorage(UIStyle.tacticalKey) private var tactical = true
 
     var body: some View {
         ZStack {
@@ -46,53 +44,18 @@ struct SystemView: View {
 
     private var questContent: some View {
         VStack(spacing: 0) {
-            if tactical {
-                TacticalHeader()
-            } else {
-                QuestInfoHeader()
-            }
+            TacticalHeader()
             ConnectionBanner()
                 .padding(.top, 14)
-            if !tactical {
-                arrivalLines
-            }
             morningAndRestLines
 
-            Spacer(minLength: tactical ? 16 : 35)
-            if tactical {
-                TacticalQuestBox(done: goalsDone.done, total: goalsDone.total) { goalList }
-            } else {
-                classicGoalList
-            }
+            Spacer(minLength: 16)
+            TacticalQuestBox(done: goalsDone.done, total: goalsDone.total) { goalList }
             questFooter
         }
     }
 
-    /// "[Daily Quest: … has arrived.]" and today's belief. The classic layout only.
-    @ViewBuilder private var arrivalLines: some View {
-            Spacer(minLength: 28)
-            Text("[Daily Quest: \(store.bundle.headerLine)\nhas arrived.]")
-                .font(.system(.subheadline, design: .default).weight(.regular))
-                .lineSpacing(5)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(QuestLight.ink)
-                .shadow(color: QuestLight.blue.opacity(0.7), radius: 5)
-                .fixedSize(horizontal: false, vertical: true)
-            // Today's belief: who the player decided to be.
-            if let belief = store.beliefToday {
-                Text("“\(belief)”")
-                    .font(.system(.footnote, design: .serif).italic())
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(QuestLight.ink.opacity(0.8))
-                    .shadow(color: QuestLight.cyan.opacity(0.5), radius: 4)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 10)
-                    .padding(.horizontal, 12)
-                    .accessibilityLabel("Today's belief: \(belief)")
-            }
-    }
-
-    /// The morning lock line and the Rest Day reason. Both layouts show them.
+    /// The morning lock line and the Rest Day reason.
     @ViewBuilder private var morningAndRestLines: some View {
             // The morning lock holds until the first workout of the day.
             if store.snapshot.morningLockOn(now: store.clock) {
@@ -129,23 +92,6 @@ struct SystemView: View {
             }
         }.count
         return (done, rows.count)
-    }
-
-    /// "GOAL" with its double line, then the list. The classic layout only.
-    @ViewBuilder private var classicGoalList: some View {
-            VStack(spacing: 3) {
-                Text("GOAL")
-                    .font(.system(.title2, design: .default).weight(.medium))
-                    .tracking(1.3)
-                    .foregroundStyle(QuestLight.ink)
-                    .shadow(color: QuestLight.cyan, radius: 7)
-                Rectangle().fill(QuestLight.ink.opacity(0.85)).frame(width: 59, height: 1)
-                Rectangle().fill(QuestLight.ink.opacity(0.48)).frame(width: 59, height: 0.5)
-            }
-            .accessibilityAddTraits(.isHeader)
-
-            Spacer(minLength: 23)
-            goalList
     }
 
     /// The goal rows, with the lifts and the stretches folded.
@@ -210,7 +156,7 @@ struct SystemView: View {
                         }
                     }
                     }
-                    .modifier(TacticalRowReveal(index: index, on: tactical))
+                    .modifier(TacticalRowReveal(index: index))
                 }
             }
     }
@@ -234,13 +180,7 @@ struct SystemView: View {
 
 
             Spacer(minLength: 38)
-            Group {
-                if tactical {
-                    TypewriterText(warning, delay: 1.8, speed: 0.03)
-                } else {
-                    Text(warning)
-                }
-            }
+            TypewriterText(warning, delay: 1.8, speed: 0.03)
                 .font(.system(.footnote, design: .default))
                 .lineSpacing(9)
                 .multilineTextAlignment(.center)
@@ -252,13 +192,11 @@ struct SystemView: View {
                 .frame(width: 64, height: 64)
             QuestDayTimer(dayClock: store.dayClock)
                 .padding(.top, 6)
-            if tactical {
-                TacticalLog(lines: logLines)
-                    .padding(.top, 14)
-            }
+            TacticalLog(lines: logLines)
+                .padding(.top, 14)
     }
 
-    /// The status log: the last finished quest, the open count, and the penalty hold while it lasts.
+    /// The status log: the last finished quest, the open count, and the day penalties start while the hold lasts.
     private var logLines: [String] {
         var lines: [String] = []
         let goals = store.goalQuests
@@ -268,7 +206,8 @@ struct SystemView: View {
         let open = goalsDone.total - goalsDone.done
         lines.append(open == 0 ? "> ALL QUESTS CLEAR" : "> \(open) \(open == 1 ? "QUEST" : "QUESTS") REMAIN")
         if !PenaltyHold.active(on: store.bundle.dayKey) {
-            lines.append("> PENALTY HOLD UNTIL \(PenaltyHold.firstDay.dropFirst(5))")
+            // A fail on the hold's first day brings the first penalty quest the day after.
+            lines.append("> PENALTIES START \(QuestDay.key(byAddingDays: 1, to: PenaltyHold.firstDay).dropFirst(5))")
         }
         return lines
     }

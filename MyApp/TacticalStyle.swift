@@ -1,10 +1,6 @@
 import SwiftUI
 
-/// The tactical layout of the quest window: typed labels, a boxed quest list, and a status log.
-/// It is the default. The classic style stays as a switch in Settings, or launch with `-uiStyleTactical NO`.
-enum UIStyle {
-    static let tacticalKey = "uiStyleTactical"
-}
+// The tactical layout of the quest window: typed labels, a boxed quest list, and a status log.
 
 /// Each text types one time per launch. A redraw, a new row, or a second visit to the screen shows it at once.
 enum TacticalIntro {
@@ -133,12 +129,10 @@ struct TacticalQuestBox<Content: View>: View {
 /// A quest row in the tactical box: a hairline on top, and a fade-in one row after another at launch.
 struct TacticalRowReveal: ViewModifier {
     let index: Int
-    let on: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var visible = TacticalIntro.rowsShown
 
     func body(content: Content) -> some View {
-        if on {
             content
                 .overlay(alignment: .top) {
                     Rectangle().fill(QuestLight.cyan.opacity(0.18)).frame(height: 0.5)
@@ -154,9 +148,6 @@ struct TacticalRowReveal: ViewModifier {
                     withAnimation(.easeOut(duration: 0.3)) { visible = true }
                     TacticalIntro.rowsShown = true
                 }
-        } else {
-            content
-        }
     }
 }
 
