@@ -46,6 +46,8 @@ struct GameSnapshot: Codable, Equatable {
     var hiddenUnlocks: [HiddenQuestUnlock] = []
     /// Quest day the player marked "No gym today". Lifts become one added 10K on that day only.
     var noGymDayKey: String?
+    /// Today's 10K runs done as 300 burpees instead (`RunBurpees`), with the runs as they were.
+    var burpeeSwap: BurpeeSwap?
     /// Quest day whose plan the planner wrote for "No gym today". That plan has no lifts, so "No gym" off drops it.
     var noGymPlanDayKey: String?
     /// Quest day the planner made the week's rest day. `restDue` then locks it to Full Recovery.
@@ -879,7 +881,7 @@ struct GameSnapshot: Codable, Equatable {
     /// Adds the fixed rows: Screen Time, Stretching unless it is a spent rest day, then any open penalty.
     /// On a "No gym today" day, the lifts first give way to a second 10K. A day holds at most two workouts.
     func finished(_ bundle: QuestBundle, catalog: FallbackCatalog, now: Date) -> QuestBundle {
-        let base = TrainingDay.cappingWorkouts(noGymDayKey == bundle.dayKey ? NoGymDay.cardioOnly(bundle, now: now) : bundle)
+        let base = keepingBurpeeSwaps(TrainingDay.cappingWorkouts(noGymDayKey == bundle.dayKey ? NoGymDay.cardioOnly(bundle, now: now) : bundle))
         var day = GymSplit.cappingSets(base, day: GymSplit.plannedDay(of: base, goals: catalog.strengthGoals, edits: catalog.splitEdits))
         let restDay = day.mode == .fullRecovery && !signals.spendingFullRecovery && fullRecoveryDayKey != day.dayKey && restDue(on: day.dayKey)
         if restDay {
@@ -955,7 +957,7 @@ extension GameSnapshot {
         case finance
         case fullRecoveryDayKey, queuedFullRecoveryDayKey
         case hiddenUnlocks
-        case noGymDayKey, noGymPlanDayKey, plannerRestDayKey, plannerRestReason, restDayKeys
+        case noGymDayKey, burpeeSwap, noGymPlanDayKey, plannerRestDayKey, plannerRestReason, restDayKeys
         case questHistory, screenTime, stretchChecks
         case gold, potionLog, lastGoldReward, inventory
         case hitPoints, fatigue, endedDay
@@ -979,6 +981,7 @@ extension GameSnapshot {
         queuedFullRecoveryDayKey = try container.decodeIfPresent(String.self, forKey: .queuedFullRecoveryDayKey)
         hiddenUnlocks = try container.decodeIfPresent(LossyArray<HiddenQuestUnlock>.self, forKey: .hiddenUnlocks)?.elements ?? []
         noGymDayKey = try container.decodeIfPresent(String.self, forKey: .noGymDayKey)
+        burpeeSwap = try container.decodeIfPresent(BurpeeSwap.self, forKey: .burpeeSwap)
         noGymPlanDayKey = try container.decodeIfPresent(String.self, forKey: .noGymPlanDayKey)
         plannerRestDayKey = try container.decodeIfPresent(String.self, forKey: .plannerRestDayKey)
         plannerRestReason = try container.decodeIfPresent(String.self, forKey: .plannerRestReason)
@@ -1015,6 +1018,7 @@ extension GameSnapshot {
         try container.encodeIfPresent(queuedFullRecoveryDayKey, forKey: .queuedFullRecoveryDayKey)
         try container.encode(hiddenUnlocks, forKey: .hiddenUnlocks)
         try container.encodeIfPresent(noGymDayKey, forKey: .noGymDayKey)
+        try container.encodeIfPresent(burpeeSwap, forKey: .burpeeSwap)
         try container.encodeIfPresent(noGymPlanDayKey, forKey: .noGymPlanDayKey)
         try container.encodeIfPresent(plannerRestDayKey, forKey: .plannerRestDayKey)
         try container.encodeIfPresent(plannerRestReason, forKey: .plannerRestReason)

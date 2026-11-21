@@ -33,7 +33,7 @@ enum TrainingDay {
         // One general Stretching row replaces specific stretches.
         let exercise = quest.verification.params["exercise"]?.stringValue ?? quest.title
         guard !StretchTime.isStretchExercise(exercise), !StretchTime.isStretchExercise(quest.title) else { return false }
-        return isRaceRun(quest) || isStrength(quest)
+        return isRaceRun(quest) || isStrength(quest) || RunBurpees.isBurpeeRow(quest)
     }
 
     /// "10K Run" or "5K Run", whatever the generator wrote. Penalty rows keep their own titles.
@@ -63,7 +63,8 @@ enum TrainingDay {
     static func isStrength(_ quest: Quest) -> Bool {
         switch quest.verification.method {
         case .hevySets:
-            return true
+            // Burpees done for the day's run are cardio, not a lift.
+            return !RunBurpees.isBurpeeRow(quest)
         case .healthkitWorkout:
             return quest.verification.params["activityType"]?.stringValue?.lowercased().contains("strength") == true
         default:

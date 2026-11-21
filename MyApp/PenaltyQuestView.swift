@@ -157,6 +157,7 @@ struct PenaltyQuestView: View {
     /// The run can still become burpees: it is open and no kilometer is logged yet.
     private var canGoIndoors: Bool {
         !burpees && quest.status != .completed && quest.progress.current == 0
+            && !store.bundle.quests.contains { RunBurpees.isBurpeeRow($0) }
     }
 
     /// Swaps the open run for 300 burpees. Asks first; it cannot be undone.

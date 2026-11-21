@@ -45,8 +45,9 @@ enum PenaltyQuests {
     }
 
     /// "Unable to go outside": the open run row becomes the burpee row. A finished or started run stays a run.
+    /// Burpees count for one row: a day whose run is done as burpees keeps the run penalty.
     static func swapToBurpees(in bundle: QuestBundle, now: Date) -> QuestBundle {
-        guard let index = bundle.quests.firstIndex(where: { $0.kind == .penalty && !isBurpees($0) && $0.status != .completed && $0.progress.current == 0 })
+        guard !bundle.quests.contains(where: { RunBurpees.isBurpeeRow($0) }), let index = bundle.quests.firstIndex(where: { $0.kind == .penalty && !isBurpees($0) && $0.status != .completed && $0.progress.current == 0 })
         else { return bundle }
         var copy = bundle
         var row = quest(from: burpeeTemplate(), bundle: bundle, now: now)

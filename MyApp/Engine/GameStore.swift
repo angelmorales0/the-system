@@ -108,7 +108,7 @@ final class GameStore: ObservableObject {
             + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check()
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
             + EndedDayRules.check() + WorkoutClaimRules.check() + RebuiltRowRules.check() + PlanAndLockRules.check()
-            + HevyRoutine.check() + HabitRules.check()
+            + HevyRoutine.check() + HabitRules.check() + RunBurpees.check()
         PenaltyHold.firstDay = hold
         PenaltyQuests.choiceOverride = nil
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
@@ -291,8 +291,29 @@ final class GameStore: ObservableObject {
     /// "Unable to go outside": the open Penalty 10K becomes 300 burpees, checked in Hevy. Then it checks Hevy at once.
     func swapPenaltyToBurpees(now: Date = .now) {
         guard !startedNewDay(now: now) else { return }
-        snapshot.bundle = PenaltyQuests.swapToBurpees(in: snapshot.bundle, now: now)
-        verificationNote = "The penalty is now \(PenaltyQuests.burpeeReps) burpees. Log them in Hevy as \"\(PenaltyQuests.burpeeExercise)\"."
+        let swapped = PenaltyQuests.swapToBurpees(in: snapshot.bundle, now: now)
+        verificationNote = swapped == snapshot.bundle
+            ? "Today's run is already burpees. Burpees count for one quest only, so the penalty stays a run."
+            : "The penalty is now \(PenaltyQuests.burpeeReps) burpees. Log them in Hevy as \"\(PenaltyQuests.burpeeExercise)\"."
+        snapshot.bundle = swapped
+        clock = now
+        persist()
+        enforcePenalty()
+        refreshForToday(now: now)
+    }
+
+    /// The day's 10K Run becomes 300 burpees, or the burpees become the run again. The routine in Hevy follows.
+    func setRunAsBurpees(id: String, _ burpees: Bool, now: Date = .now) {
+        guard !startedNewDay(now: now) else { return }
+        var next = snapshot
+        if let refused = burpees ? next.swapRunToBurpees(id: id) : next.swapBurpeesToRun(id: id) {
+            verificationNote = refused
+            return
+        }
+        snapshot = next
+        verificationNote = burpees
+            ? "The 10K Run is now \(RunBurpees.reps) burpees. They are in today's Hevy routine as \"\(PenaltyQuests.burpeeExercise)\", 10 sets of 30."
+            : "The 10K Run is back."
         clock = now
         persist()
         enforcePenalty()
