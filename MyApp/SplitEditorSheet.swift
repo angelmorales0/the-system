@@ -25,12 +25,8 @@ struct SplitEditorSheet: View {
                 Rectangle().fill(QuestLight.cyan.opacity(0.25)).frame(height: 0.5)
                     .padding(.top, 10)
                     .padding(.bottom, 12)
-                Text("Pick a day. Change the sets, or mark an exercise optional. Optional exercises never miss the day.")
-                    .font(.footnote)
-                    .foregroundStyle(SystemTheme.muted)
-                    .fixedSize(horizontal: false, vertical: true)
                 dayPicker
-                    .padding(.vertical, 14)
+                    .padding(.bottom, 14)
                 if let day {
                     TacticalBox(title: "[ \(day.name.uppercased()) ]") {
                         VStack(alignment: .leading, spacing: 0) {
