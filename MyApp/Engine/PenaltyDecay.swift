@@ -21,27 +21,13 @@ enum PenaltyDecay {
     static let slowBeat = 2.6
     static let fastBeat = 1.2
 
-    /// Faults the screen names when the generator wrote no line. The quest day picks one, so a day reads the same all day.
-    static let threats = ["Laziness", "Bad habits", "Neglect", "Weakness", "Complacency"]
     static let threatEnding = "Run 10 km and ensure your safety."
     static let burpeeEnding = "Do 300 burpees and ensure your safety."
     static let threatMaxCharacters = 160
 
-    /// The screen's two sentences: the generator's line when it kept the System's voice, else the app's own.
-    /// `burpees` swaps the run sentence for the burpee one, in the generator's line and in the app's own.
-    static func threatLine(generated: String?, dayKey: String, burpees: Bool = false) -> String {
-        let line = baseThreatLine(generated: generated, dayKey: dayKey)
-        guard burpees, line.hasSuffix(threatEnding) else { return line }
-        return String(line.dropLast(threatEnding.count)) + burpeeEnding
-    }
-
-    private static func baseThreatLine(generated: String?, dayKey: String) -> String {
-        if let text = generated?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty,
-           text.count <= threatMaxCharacters, text.hasSuffix(threatEnding), text.count > threatEnding.count,
-           !text.lowercased().contains("penalty"), text.lowercased().contains("player"), !text.contains("!") {
-            return text
-        }
-        return "\(threat(dayKey: dayKey)) is present and is damaging the Player. \(threatEnding)"
+    /// The screen's two sentences: the day's fault from `DailyLines.threats`, then the run, or the burpees.
+    static func threatLine(dayKey: String, burpees: Bool = false) -> String {
+        "\(DailyLines.threat(dayKey: dayKey)) \(burpees ? burpeeEnding : threatEnding)"
     }
 
     static func hours(since startedAt: Date, now: Date) -> Double {
@@ -74,11 +60,6 @@ enum PenaltyDecay {
         slowBeat - (slowBeat - fastBeat) * blood(hours: hours)
     }
 
-    static func threat(dayKey: String) -> String {
-        let sum = dayKey.unicodeScalars.reduce(0) { $0 + Int($1.value) }
-        return threats[sum % threats.count]
-    }
-
     // MARK: - Self-check (runs in DEBUG at launch)
 
     static func check() -> [String] {
@@ -102,23 +83,13 @@ enum PenaltyDecay {
         if !near(beat(hours: 4), fastBeat) || beat(hours: 2) >= slowBeat || beat(hours: 2) <= fastBeat {
             errors.append("the pulse should quicken with the blood")
         }
-        let own = threatLine(generated: nil, dayKey: "2026-10-28")
-        let good = "Neglect has taken hold and is wearing the Player down. \(threatEnding)"
-        if threatLine(generated: good, dayKey: "2026-10-28") != good || !own.hasSuffix(threatEnding) || !own.contains("damaging the Player") {
-            errors.append("the generator's line should show when it keeps the voice, else the app's own")
-        }
-        for bad in ["", "  ", threatEnding, "The penalty grows. \(threatEnding)", "You are lazy! \(threatEnding)",
-                    "Laziness is damaging the Player. Run 10 km now.", String(repeating: "x", count: 150) + " " + threatEnding] {
-            if threatLine(generated: bad, dayKey: "2026-10-28") != own {
-                errors.append("a line off the System's voice should fall back: \(bad)")
-            }
+        let own = threatLine(dayKey: "2026-10-28")
+        if !own.hasSuffix(threatEnding) || !own.hasPrefix(DailyLines.threat(dayKey: "2026-10-28")) || own.count > threatMaxCharacters {
+            errors.append("the screen should show the day's own threat, then the run")
         }
         let start = Date(timeIntervalSince1970: 1_000_000)
         if !near(hours(since: start, now: start.addingTimeInterval(5400)), 1.5) || !near(hours(since: start, now: start.addingTimeInterval(-60)), 0) {
             errors.append("hours should count from the start and never go negative")
-        }
-        if threat(dayKey: "2026-10-28") != threat(dayKey: "2026-10-28") || !threats.contains(threat(dayKey: "2026-10-29")) {
-            errors.append("a day should always name the same threat from the list")
         }
         return errors
     }

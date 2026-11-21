@@ -2,7 +2,7 @@ import Foundation
 
 /// One service the phone reads directly, with no server between.
 nonisolated enum Connection: String, CaseIterable, Identifiable {
-    case hevy, strava, whoop, codeforces, monkeytype, mercury, claude
+    case hevy, strava, whoop, codeforces, monkeytype, mercury
 
     var id: String { rawValue }
 
@@ -14,7 +14,6 @@ nonisolated enum Connection: String, CaseIterable, Identifiable {
         case .codeforces: "Codeforces"
         case .monkeytype: "Monkeytype"
         case .mercury: "Mercury"
-        case .claude: "Claude"
         }
     }
 
@@ -26,7 +25,6 @@ nonisolated enum Connection: String, CaseIterable, Identifiable {
         case .whoop: [SecretField(item: .whoopClientId, label: "Client ID"), SecretField(item: .whoopClientSecret, label: "Client secret")]
         case .codeforces, .monkeytype: []
         case .mercury: [SecretField(item: .mercuryToken, label: "Read Only API token")]
-        case .claude: [SecretField(item: .anthropicApiKey, label: "Anthropic API key")]
         }
     }
 

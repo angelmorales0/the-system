@@ -196,7 +196,7 @@ extension PenaltyQuests {
         if case .completed = verifier.evaluate(quest: row, context: context(hevy([[60, 60], [100, 80]]))) {} else {
             errors.append("300 burpees across two workouts should clear the penalty")
         }
-        let threat = PenaltyDecay.threatLine(generated: nil, dayKey: "2026-10-28", burpees: true)
+        let threat = PenaltyDecay.threatLine(dayKey: "2026-10-28", burpees: true)
         if !threat.hasSuffix(PenaltyDecay.burpeeEnding) || threat.contains("10 km") {
             errors.append("the burpee threat should ask for burpees, got \(threat)")
         }

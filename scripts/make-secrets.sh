@@ -18,7 +18,7 @@ value() {
 
 {
   echo "// Written by scripts/make-secrets.sh from $ENV_FILE. Gitignored. Run the script again after the env changes."
-  for name in ANTHROPIC_API_KEY HEVY_API_KEY WHOOP_CLIENT_ID WHOOP_CLIENT_SECRET STRAVA_CLIENT_ID STRAVA_CLIENT_SECRET MERCURY_API_TOKEN CODEFORCES_HANDLE; do
+  for name in HEVY_API_KEY WHOOP_CLIENT_ID WHOOP_CLIENT_SECRET STRAVA_CLIENT_ID STRAVA_CLIENT_SECRET MERCURY_API_TOKEN CODEFORCES_HANDLE; do
     v=$(value "$name")
     echo "$name = $v"
     [ -n "$v" ] && echo "  $name: set" >&2 || echo "  $name: empty" >&2

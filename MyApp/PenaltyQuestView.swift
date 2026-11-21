@@ -212,7 +212,7 @@ struct PenaltyQuestView: View {
     /// The generator's two sentences for today, or the app's own: `Laziness is present and is damaging the Player.
     /// Run 10 km and ensure your safety.`
     private var threat: String {
-        PenaltyDecay.threatLine(generated: store.snapshot.bundle.threat, dayKey: store.snapshot.bundle.dayKey, burpees: burpees)
+        PenaltyDecay.threatLine(dayKey: store.snapshot.bundle.dayKey, burpees: burpees)
     }
 
     private var progress: String {

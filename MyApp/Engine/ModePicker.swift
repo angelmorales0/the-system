@@ -268,8 +268,7 @@ enum RestRules {
 }
 
 /// Today's rest signals from the data the phone already holds, weighed into one rest-or-train answer.
-/// Online, the signals go to the planner in `rest.signals` and the planner decides. Offline, `saysRest`
-/// decides in its place, so a bad run of days rests with or without a Claude key. One bad night never
+/// `saysRest` decides, so a bad run of days rests. One bad night never
 /// rests on its own; two red mornings, critical HP, or a full fatigue meter do.
 enum RestScore {
     struct Input: Equatable {

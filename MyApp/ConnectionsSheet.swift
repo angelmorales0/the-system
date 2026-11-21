@@ -200,7 +200,7 @@ struct ConnectionDetailView: View {
     }
 }
 
-/// Settings that only one service has: OAuth sign-in, Mercury settings, Claude model.
+/// Settings that only one service has: OAuth sign-in and Mercury settings.
 struct ConnectionExtras: View {
     let connection: Connection
     let refresh: Int
@@ -214,8 +214,6 @@ struct ConnectionExtras: View {
             OAuthSignIn(provider: .whoop, onMessage: onMessage)
         case .mercury:
             MercurySettingsView()
-        case .claude:
-            ClaudeSettingsView()
         default:
             EmptyView()
         }
@@ -313,25 +311,4 @@ struct MercurySettingsView: View {
         next.save()
     }
 
-}
-
-/// The model that plans the quests. Empty uses the default.
-struct ClaudeSettingsView: View {
-    @State private var model = UserDefaults.standard.string(forKey: QuestPlanner.modelKey) ?? ""
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TextField("Model (empty = \(QuestPlanner.defaultModel))", text: $model)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .onChange(of: model) { _, value in
-                    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if trimmed.isEmpty {
-                        UserDefaults.standard.removeObject(forKey: QuestPlanner.modelKey)
-                    } else {
-                        UserDefaults.standard.set(trimmed, forKey: QuestPlanner.modelKey)
-                    }
-                }
-        }
-    }
 }

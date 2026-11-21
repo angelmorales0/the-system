@@ -7,7 +7,7 @@ Open **Status → Connections**. Each service has a row with its state (**Connec
 ## Where the keys go
 
 - Each key, token, and client secret goes into this iPhone's Keychain. The Keychain items are available after the first unlock, stay on this device, and are not synced.
-- Keys never go into UserDefaults, the App Group, logs, or the quest context that goes to Claude.
+- Keys never go into UserDefaults, the App Group, or logs.
 - After you save a value, the app does not show it again. To change it, type the new value and tap **Save and test**. **Remove** deletes every saved value for that service.
 - Do not put a real key in this repository. The repository is public.
 
@@ -20,7 +20,6 @@ Open **Status → Connections**. Each service has a row with its state (**Connec
 | WHOOP | Client ID, Client Secret, then sign in | developer-dashboard.whoop.com | Redirect URL: `thesystem://localhost/whoop`, and the scopes below |
 | Codeforces | Your handle | Your Codeforces profile | None (public API) |
 | Mercury | Read Only API token | Mercury → Settings → Tokens | None (Read Only needs no IP allowlist) |
-| Claude | Anthropic API key | console.anthropic.com → API Keys | None |
 
 ## Hevy
 
@@ -104,21 +103,15 @@ The handle is public, so it is kept in UserDefaults, not the Keychain. INT reads
 
 There are no webhooks. While the app is open, it polls Mercury at most every 15 minutes. It lists transactions from January 1 (or from the first day of last month in January) and keeps a slim summary of each one (id, amount, category, kind, status, dates, counterparty name, account id) in the app's Application Support folder. Account and routing numbers are not kept. The token is not in that file. Unused Mercury tokens expire after 45 days without a call.
 
-## Claude
+## The daily plan
 
-1. Open https://console.anthropic.com, go to **API Keys**, and create a key.
-2. In the app, open **Status → Connections → Claude**. Paste the key. Tap **Save and test**. The test reads the model's entry from the Models API; it uses no tokens.
-3. **Model** is `claude-opus-5-5` when the field is empty. Type another model id to change it.
+The app plans each day itself. It calls no AI model and needs no key.
 
-How the morning plan runs:
-
-- When the app opens on a new quest day, it reads today's data, then 30 days of Hevy, Strava, and WHOOP, and sends the morning context to the Messages API. The request uses adaptive thinking at `high` effort, a cached prefix (system prompt plus context), and server-side refusal fallbacks (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`).
-- A plan that breaks a rule goes back to Claude with the reason, up to 3 calls in 100 seconds. If every plan is rejected, the app uses the template plan.
-- The catalog quests stay on screen until a valid plan arrives. Nothing you finished is replaced.
-- Planning can take up to about 2 minutes. If the app leaves the screen, iOS gives it about 30 seconds more. If no reply comes back, the app tries again on the next open, up to 3 times a day.
-- Without a Claude key, the app uses its offline plan.
-- If you save a Claude key after this morning's offline plan, and nothing is done yet, the app plans today again.
+- The day follows the gym split: each lift's sets and reps, with no weight. You pick the weight in the gym.
+- Each training day has one 10K Run, unless the last 6 days already hold 50 km. Then the day has no run.
+- Readiness (WHOOP, sleep) does not cut sets. A rest day comes only from the app's rest signals or a day you spend.
+- The day's narrative and the penalty screen's threat line come from fixed lists in the app (`DailyLines`). Each day takes the next line.
 
 ## What was not tested with real accounts
 
-The self-checks run on fixture data at each Debug launch. Real calls to Hevy, Strava, WHOOP, Codeforces, Mercury, and the Anthropic API were not made while this was built, because no keys were used. Test each service with its **Test** button after you set it up.
+The self-checks run on fixture data at each Debug launch. Real calls to Hevy, Strava, WHOOP, Codeforces, and Mercury were not made while this was built, because no keys were used. Test each service with its **Test** button after you set it up.

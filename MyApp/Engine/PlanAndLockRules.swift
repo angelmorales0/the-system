@@ -140,30 +140,6 @@ enum PlanAndLockRules {
             errors.append("a run checked by hand should count toward the run window")
         }
 
-        // The template: a blocked leg day with a full run window keeps the day with a light squat, and Lower Day keeps every lift.
-        var body = QuestPlanner.setting(QuestPlanner.sampleRequest(), ["player", "localDate"], to: .string("2026-10-22"))
-        body = QuestPlanner.setting(body, ["constraints", "maxRequiredQuests"], to: .number(Double(MorningConstraints.standard.maxRequiredQuests)))
-        func split(_ day: GymSplit.Day) -> JSONValue {
-            JSONValue.from(MorningSplit(name: GymSplit.name, rotation: GymSplit.rotation.map(\.name), today: day, lastDone: [:])) ?? .null
-        }
-        let fullWindow = TrainingHistory.runWindow((2...6).map { .object(["km": .number(10), "daysAgo": .number(Double($0)), "counts": .string("10K")]) }, goalKm: 50, legDay: true)
-        var blocked = QuestPlanner.setting(body, ["split"], to: split(GymSplit.squat))
-        blocked = QuestPlanner.setting(blocked, ["trainingHistory"], to: .object(["lifts": .object([:]), "runWindow": fullWindow, "strengthSessions": .array([
-            .object(["daysAgo": .number(4), "heavyLower": .bool(true)]), .object(["daysAgo": .number(6), "heavyLower": .bool(true)]),
-        ])]))
-        blocked = QuestPlanner.setting(blocked, ["splitAdvice"], to: .string(QuestPlanner.splitAdvice(blocked)))
-        let light = QuestPlanner.sanitize(QuestPlanner.templateBundle(blocked), blocked)
-        if !QuestPlanner.titles(light).contains("Squat 3x8") || light["headerLine"]?.stringValue != "Squat Day" || !QuestPlanner.validateBundle(light, blocked).isEmpty {
-            errors.append("a blocked leg day with a full run window should keep the day with a light squat, got \(QuestPlanner.titles(light)) \(QuestPlanner.validateBundle(light, blocked))")
-        }
-        var dead = QuestPlanner.setting(body, ["split"], to: split(GymSplit.deadlift))
-        let oneRun = TrainingHistory.runWindow((1...4).map { .object(["km": .number(10), "daysAgo": .number(Double($0)), "counts": .string("10K")]) }, goalKm: 50, legDay: true)
-        dead = QuestPlanner.setting(dead, ["trainingHistory"], to: .object(["lifts": .object([:]), "strengthSessions": .array([]), "runWindow": oneRun]))
-        let deadPlan = QuestPlanner.titles(QuestPlanner.sanitize(QuestPlanner.templateBundle(dead), dead))
-        if deadPlan.count != 8 || !deadPlan.contains(where: { $0.hasPrefix("Dead Hang") }) || deadPlan.contains(where: { $0.hasPrefix("Deadlift") }) {
-            errors.append("the template should keep every Lower Day lift next to its 10K, got \(deadPlan)")
-        }
-
         // "No gym today": the added 10K stands for the lifts, so it takes no hand check.
         var noGym = GameSnapshot.fresh(catalog: catalog, now: morning)
         _ = noGym.setNoGym(true, catalog: catalog, now: morning)

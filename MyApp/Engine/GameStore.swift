@@ -105,10 +105,10 @@ final class GameStore: ObservableObject {
             + DailyStretch.check() + StretchSplit.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
             + NoGymDayRules.check() + PenaltyDecay.check() + RestRules.check() + RestScore.check() + SecretStore.check() + SecretSeed.check() + ConnectionStatusStore.check() + ConnectionAlerts.check() + LevelAlerts.check()
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MonkeytypeClient.check() + MercuryClient.check()
-            + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check()
+            + TrainingHistory.check() + HitPoints.check() + Fatigue.check()
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
             + EndedDayRules.check() + WorkoutClaimRules.check() + RebuiltRowRules.check() + PlanAndLockRules.check()
-            + HevyRoutine.check() + HabitRules.check() + HabitEditor.check() + RunBurpees.check()
+            + HevyRoutine.check() + HabitRules.check() + HabitEditor.check() + RunBurpees.check() + DailyLines.check()
         PenaltyHold.firstDay = hold
         PenaltyQuests.choiceOverride = nil
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
@@ -123,8 +123,14 @@ final class GameStore: ObservableObject {
         precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
         #endif
 
-        // The build's API key goes into the Keychain before anything plans, so an Xcode install needs no typing.
-        if persistence == .standard { SecretSeed.apply() }
+        // The build's keys go into the Keychain before anything reads, so an Xcode install needs no typing.
+        if persistence == .standard {
+            SecretSeed.apply()
+            // The app no longer plans with Claude: erase a key an older build saved, with its status and model.
+            SecretStore.delete(.anthropicApiKey)
+            UserDefaults.standard.removeObject(forKey: "com.angelmorales.thesystem.connection.claude.status")
+            UserDefaults.standard.removeObject(forKey: "com.angelmorales.thesystem.claude.model")
+        }
 
         // The targets load first: today's split day needs the player's own goals.
         let targets = persistence == .standard ? StatTargets.load() : StatTargets()
@@ -334,7 +340,6 @@ final class GameStore: ObservableObject {
     /// After the owner saves or removes a key in Status → Connections: read the services again.
     func connectionsChanged() {
         checkConnections()
-        allowGenerationAfterNewKey(now: .now)
         refreshIntegrations(now: .now)
     }
 
@@ -360,21 +365,6 @@ final class GameStore: ObservableObject {
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "connection-\(problem.id)", content: content, trigger: nil))
         }
         #endif
-    }
-
-    /// A Claude key saved after this morning's offline plan: plan today again, if nothing is done yet.
-    private func allowGenerationAfterNewKey(now: Date) {
-        let dayKey = QuestDay.key(for: now)
-        guard OnDeviceQuestGenerateClient.hasKey, snapshot.bundle.dayKey == dayKey,
-              snapshot.generationAttemptDayKey == dayKey,
-              ["mock", "fallback"].contains(snapshot.bundle.generatedBy),
-              !snapshot.bundle.quests.contains(where: { $0.status == .completed }),
-              snapshot.runningTimers.isEmpty else { return }
-        var next = snapshot
-        next.generationAttemptDayKey = nil
-        next.generatedBundle = nil
-        snapshot = next
-        persist()
     }
 
     /// The Penalty Zone lists changed: reapply an open penalty so it takes effect at once.
@@ -534,8 +524,8 @@ final class GameStore: ObservableObject {
         guard !startedNewDay(now: now),
               let day = GymSplit.plannedDay(of: snapshot.bundle, goals: next.custom, edits: next.split), day.id == id else { return }
         var updated = snapshot
-        updated.bundle = GymSplit.applyingEdit(updated.bundle, day: day, exercise: exercise, band: updated.trainingBand)
-        updated.generatedBundle = updated.generatedBundle.map { GymSplit.applyingEdit($0, day: day, exercise: exercise, band: updated.trainingBand) }
+        updated.bundle = GymSplit.applyingEdit(updated.bundle, day: day, exercise: exercise)
+        updated.generatedBundle = updated.generatedBundle.map { GymSplit.applyingEdit($0, day: day, exercise: exercise) }
         guard updated != snapshot else { return }
         snapshot = updated
         persist()
@@ -1064,9 +1054,7 @@ final class GameStore: ObservableObject {
         next.generationAttemptDayKey = dayKey
         snapshot = next
         let finished = snapshot.bundle.quests.contains { $0.status == .completed } || !snapshot.runningTimers.isEmpty
-        // An offline mock plan does not count once a Claude key is saved.
-        let author = snapshot.bundle.generatedBy
-        let alreadyGenerated = ["llm", "template"].contains(author) || (author == "mock" && !OnDeviceQuestGenerateClient.hasKey)
+        let alreadyGenerated = ["llm", "template", "mock"].contains(snapshot.bundle.generatedBy)
         if finished || alreadyGenerated {
             if alreadyGenerated, snapshot.generatedBundle == nil {
                 snapshot.generatedBundle = snapshot.bundle.strippingModelCompletion(assignedAt: now)

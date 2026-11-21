@@ -18,6 +18,7 @@ nonisolated enum SecretStore {
         /// JSON `{"access_token", "refresh_token", "expires_at"}`. WHOOP rotates the refresh token on each use.
         case whoopTokens
         case mercuryToken
+        /// No longer used: the app plans with no Claude key. Kept only so launch can erase a key an older build saved.
         case anthropicApiKey
     }
 

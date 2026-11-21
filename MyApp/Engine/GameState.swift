@@ -847,24 +847,23 @@ struct GameSnapshot: Codable, Equatable {
            cached.dayKey == dayKey,
            cached.mode == decision.selectedMode,
            let allowed = TrainingDay.exerciseOnly(cached) {
-            bundle = finished(allowed.strippingModelCompletion(assignedAt: now), catalog: catalog, now: now)
+            bundle = finished(withoutRunWhenWindowFull(allowed.strippingModelCompletion(assignedAt: now)), catalog: catalog, now: now)
             return
         }
-        let catalogDay = catalog.makeBundle(
-            mode: decision.selectedMode,
-            band: decision.trainingBand,
-            dayKey: dayKey,
-            now: now
-        )
-        // Offline, the day still follows the split: its exercises without loads.
+        var catalogDay = catalog.makeBundle(mode: decision.selectedMode, band: .green, dayKey: dayKey, now: now)
+        if catalogDay.mode == .performanceTraining { catalogDay.narrative = DailyLines.narrative(dayKey: dayKey) }
+        // The day follows the split: its sets and reps, with no weights.
         let today = GymSplit.today(history: questHistory, dayKey: dayKey, goals: catalog.strengthGoals, edits: catalog.splitEdits)
-        var split = GymSplit.apply(today, to: catalogDay, band: decision.trainingBand, now: now)
-        // The 50 km window is already full: a rest day from running. The lifts stay.
-        // On a "No gym today" day `finished` then adds the one 10K that never counts.
-        if decision.selectedMode == .performanceTraining, loggedRunKm(before: dayKey) >= Double(TrainingDay.runKmPer7Days) {
-            split.quests.removeAll { $0.kind != .penalty && TrainingDay.isRaceRun($0) }
-        }
-        bundle = finished(split, catalog: catalog, now: now)
+        bundle = finished(withoutRunWhenWindowFull(GymSplit.apply(today, to: catalogDay, now: now)), catalog: catalog, now: now)
+    }
+
+    /// The 50 km window is already full: a rest day from running, and the open 10K goes. The lifts stay.
+    /// On a "No gym today" day `finished` then adds the one 10K that never counts.
+    func withoutRunWhenWindowFull(_ day: QuestBundle) -> QuestBundle {
+        guard day.mode == .performanceTraining, loggedRunKm(before: day.dayKey) >= Double(TrainingDay.runKmPer7Days) else { return day }
+        var copy = day
+        copy.quests.removeAll { $0.kind == .daily && TrainingDay.isRaceRun($0) && $0.status != .completed && $0.progress.current == 0 }
+        return copy
     }
 
     /// Adds the fixed rows: Screen Time, Stretching unless it is a spent rest day, then any open penalty.
