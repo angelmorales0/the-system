@@ -24,7 +24,7 @@ enum RunBurpees {
 
     /// An open 10K Run with no km logged yet.
     static func canSwap(_ quest: Quest) -> Bool {
-        quest.kind == .daily && NoGymDay.isTenK(quest) && quest.status == .pending && quest.progress.current == 0 && !quest.skippedWithPotion
+        quest.kind == .daily && NoGymDay.isTenK(quest) && quest.status == .pending && quest.progress.current == 0
     }
 
     /// A burpee row with no burpee logged yet.
