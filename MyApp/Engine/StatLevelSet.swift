@@ -52,15 +52,12 @@ struct StatLevelSet: Equatable {
         focusDays: [FocusDay] = [],
         inputs: StatInputs = StatInputs(),
         targets: StatTargets = StatTargets(),
-        excuses: PotionExcuses = .none,
         now: Date
     ) -> StatLevelSet {
-        // Potion days do not count against FOC or REC.
-        let focusDays = focusDays.filter { !excuses.focusDayKeys.contains($0.dayKey) }
         // Today's food log is not finished: a breakfast alone would fail the protein and carb rules until dinner.
         // The day's food counts from tomorrow. Its sleep is complete, so that stays.
         let todayKey = OnDeviceTime.dayKey(now, zone: QuestDay.timeZone)
-        let recoveryDays = inputs.recoveryDays.filter { !excuses.recoveryDayKeys.contains($0.dayKey) }.map { day -> RecoveryDay in
+        let recoveryDays = inputs.recoveryDays.map { day -> RecoveryDay in
             guard day.dayKey == todayKey else { return day }
             var open = day
             (open.caffeineMg, open.proteinG, open.fatG, open.carbsG, open.caloriesKcal, open.maintenanceKcal) = (nil, nil, nil, nil, nil, nil)
@@ -121,12 +118,6 @@ struct StatLevelSet: Equatable {
         let fed = compute(codeforces: rated, financeMonths: [month], inputs: inputs, now: now)
         if fed[.STR] != StatLevel.maxLevel || fed[.AGI] != StatLevel.maxLevel || fed[.REC] != StatLevel.maxLevel || fed[.END] <= 0 {
             errors.append("the histories should score STR, AGI, REC, and END, got STR \(fed[.STR]) AGI \(fed[.AGI]) REC \(fed[.REC]) END \(fed[.END])")
-        }
-        // A potion day is left out of REC.
-        var excuses = PotionExcuses.none
-        excuses.recoveryDayKeys = Set(inputs.recoveryDays.map(\.dayKey))
-        if compute(codeforces: rated, financeMonths: [month], inputs: inputs, excuses: excuses, now: now)[.REC] != 0 {
-            errors.append("excused recovery days should not score REC")
         }
 
         // A month still in progress does not count, so FIN stays 0.

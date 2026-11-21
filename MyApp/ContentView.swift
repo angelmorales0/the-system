@@ -41,14 +41,7 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
-        #if DEBUG
-        // Launch with OPEN_INVENTORY=1 in the environment to open the inventory at once (screenshots).
-        .sheet(isPresented: .constant(ProcessInfo.processInfo.environment["OPEN_INVENTORY"] == "1")) { InventorySheet() }
-        #endif
-        // A dropped item shows its card at once, over every page.
-        .overlay { DropCardOverlay() }
-        .animation(.easeInOut(duration: 0.25), value: store.pendingDrop?.id)
-        // A new overall level shows its card at once, over every page and the item card.
+        // A new overall level shows its card at once, over every page.
         .overlay { LevelChangeOverlay() }
         .animation(.easeInOut(duration: 0.3), value: store.pendingLevelChange?.id)
         // A broken Strava or Hevy cannot check the penalty: the warning stays on top of the penalty screen.

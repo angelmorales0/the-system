@@ -114,6 +114,9 @@ struct SystemView: View {
                         } else {
                             questRow(quest)
                         }
+                        if RunBurpees.canSwap(quest) || RunBurpees.canSwapBack(quest) {
+                            RunBurpeesChoice(quest: quest)
+                        }
                         if quest.id == ScreenTime.questId {
                             ScreenTimeSplit(day: store.snapshot.screenTimeToday)
                         }
@@ -417,6 +420,37 @@ struct SystemView: View {
     }
 }
 
+/// Under an open 10K Run: "Or 300 burpees". Under the burpees, while none is logged: "Back to the 10K run".
+private struct RunBurpeesChoice: View {
+    @EnvironmentObject private var store: GameStore
+    let quest: Quest
+    @State private var asking = false
+
+    private var toBurpees: Bool { RunBurpees.canSwap(quest) }
+
+    var body: some View {
+        Button {
+            if toBurpees { asking = true } else { store.setRunAsBurpees(id: quest.id, false) }
+        } label: {
+            Text(toBurpees ? "Or \(RunBurpees.reps) burpees in Hevy ›" : "Back to the 10K run ›")
+                .font(.caption)
+                .foregroundStyle(QuestLight.ink.opacity(0.75))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 16)
+                .frame(minHeight: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(toBurpees ? "Asks to do the 10K Run as 300 burpees" : "Changes the burpees back to the 10K Run")
+        .confirmationDialog("Do 300 burpees instead of the 10K?", isPresented: $asking, titleVisibility: .visible) {
+            Button("Switch to 300 burpees") { store.setRunAsBurpees(id: quest.id, true) }
+            Button("Keep the run", role: .cancel) {}
+        } message: {
+            Text("Today's Hevy routine gets 10 sets of 30 \"\(PenaltyQuests.burpeeExercise)\". Every set you log counts toward 300. You can switch back until you log a burpee.")
+        }
+    }
+}
+
 /// One line of the goal list: a quest, or the day's lifts as one row.
 private enum GoalRow: Identifiable {
     case quest(Quest)
@@ -566,10 +600,6 @@ private struct HiddenQuestReveal: View {
                         .foregroundStyle(QuestLight.ink.opacity(0.75))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 2)
-                    sectionTitle("REWARD").padding(.top, 22)
-                    Text(unlock.gold.map { "+\($0.formatted()) gold" } ?? "None")
-                        .font(.subheadline)
-                        .padding(.top, 10)
                     Button(action: onClose) {
                         Text("OK")
                             .font(.subheadline)

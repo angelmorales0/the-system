@@ -145,7 +145,7 @@ enum RestRules {
         }
         if week.restAvailable(on: week.bundle.dayKey) { errors.append("the planner should not make a day rest") }
 
-        // A spent rest day: Full Recovery, "Rest Day", no token spent, no run, no lifts, no penalty, no gold.
+        // A spent rest day: Full Recovery, "Rest Day", no token spent, no run, no lifts, no penalty.
         var spent = GameSnapshot.fresh(catalog: catalog, now: dayOne)
         let today = spent.bundle.dayKey
         let allowance = RestDays.allowance(on: today)
@@ -169,9 +169,8 @@ enum RestRules {
         if spent.spendFullRecovery(catalog: catalog, now: dayOne).contains("tomorrow") || spent.player.fullRecoveryBank != bank {
             errors.append("a token on a Rest Day should stay in the bank")
         }
-        let gold = spent.gold
         spent.refreshIfNeeded(catalog: catalog, now: day(1))
-        if spent.player.penaltyOpen || spent.gold != gold || spent.bundle.mode != .performanceTraining {
+        if spent.player.penaltyOpen || spent.bundle.mode != .performanceTraining {
             errors.append("the day after a Rest Day should train again with no penalty, got penalty \(spent.player.penaltyOpen) mode \(spent.bundle.mode)")
         }
 

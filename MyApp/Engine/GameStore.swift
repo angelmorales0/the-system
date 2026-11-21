@@ -101,14 +101,14 @@ final class GameStore: ObservableObject {
         let problems = PenaltyQuests.check() + VerificationFixtures.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check() + RecoveryLevel.check()
             + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check() + MacScreenClient.check()
-            + HiddenQuestRules.check() + RecoveryHolidayRules.check() + ShopRules.check()
+            + HiddenQuestRules.check() + RecoveryHolidayRules.check()
             + DailyStretch.check() + StretchSplit.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
-            + NoGymDayRules.check() + PenaltyDecay.check() + RestRules.check() + RestScore.check() + SecretStore.check() + SecretSeed.check() + ConnectionStatusStore.check() + ConnectionAlerts.check() + LootRules.check() + LevelAlerts.check()
+            + NoGymDayRules.check() + PenaltyDecay.check() + RestRules.check() + RestScore.check() + SecretStore.check() + SecretSeed.check() + ConnectionStatusStore.check() + ConnectionAlerts.check() + LevelAlerts.check()
             + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MonkeytypeClient.check() + MercuryClient.check()
             + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check()
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
             + EndedDayRules.check() + WorkoutClaimRules.check() + RebuiltRowRules.check() + PlanAndLockRules.check()
-            + HevyRoutine.check() + HabitRules.check()
+            + HevyRoutine.check() + HabitRules.check() + RunBurpees.check()
         PenaltyHold.firstDay = hold
         PenaltyQuests.choiceOverride = nil
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
@@ -146,18 +146,6 @@ final class GameStore: ObservableObject {
         case .standard:
             snapshot = GameSnapshot.loadFromUserDefaults() ?? GameSnapshot.fresh(catalog: catalog)
             snapshot.habits.homeEvents = HomeEvents.load()
-            #if DEBUG
-            // Launch with `-lootPreview YES` to fill the inventory with sample items and one drop card.
-            if UserDefaults.standard.bool(forKey: "lootPreview") || ProcessInfo.processInfo.environment["LOOT_PREVIEW"] == "1" {
-                for (index, item) in LootCatalog.items.enumerated() {
-                    snapshot.inventory.counts[item.id] = index % 3 + 1
-                }
-                snapshot.inventory.counts[LootCatalog.chest.id] = 2
-                if ProcessInfo.processInfo.environment["OPEN_INVENTORY"] != "1" {
-                    snapshot.grantDrop(LootCatalog.items[0], key: "preview", source: "Bench Day")
-                }
-            }
-            #endif
             snapshot.refreshIfNeeded(catalog: catalog)
             snapshot.claimQueuedRecoveryForToday(catalog: catalog, now: .now)
             snapshot.bundle = GymSplit.withoutOldRows(snapshot.bundle)
@@ -249,7 +237,7 @@ final class GameStore: ObservableObject {
         refreshIntegrations(now: .now)
     }
 
-    /// A new quest day started while the app stayed open. The old day ends first, with its penalty, gold, and record.
+    /// A new quest day started while the app stayed open. The old day ends first, with its penalty and record.
     /// The caller then drops its action: the player chose it for the day that ended, so it must not change that day
     /// after its end or land on the new day by surprise.
     private func startedNewDay(now: Date) -> Bool {
@@ -291,8 +279,29 @@ final class GameStore: ObservableObject {
     /// "Unable to go outside": the open Penalty 10K becomes 300 burpees, checked in Hevy. Then it checks Hevy at once.
     func swapPenaltyToBurpees(now: Date = .now) {
         guard !startedNewDay(now: now) else { return }
-        snapshot.bundle = PenaltyQuests.swapToBurpees(in: snapshot.bundle, now: now)
-        verificationNote = "The penalty is now \(PenaltyQuests.burpeeReps) burpees. Log them in Hevy as \"\(PenaltyQuests.burpeeExercise)\"."
+        let swapped = PenaltyQuests.swapToBurpees(in: snapshot.bundle, now: now)
+        verificationNote = swapped == snapshot.bundle
+            ? "Today's run is already burpees. Burpees count for one quest only, so the penalty stays a run."
+            : "The penalty is now \(PenaltyQuests.burpeeReps) burpees. Log them in Hevy as \"\(PenaltyQuests.burpeeExercise)\"."
+        snapshot.bundle = swapped
+        clock = now
+        persist()
+        enforcePenalty()
+        refreshForToday(now: now)
+    }
+
+    /// The day's 10K Run becomes 300 burpees, or the burpees become the run again. The routine in Hevy follows.
+    func setRunAsBurpees(id: String, _ burpees: Bool, now: Date = .now) {
+        guard !startedNewDay(now: now) else { return }
+        var next = snapshot
+        if let refused = burpees ? next.swapRunToBurpees(id: id) : next.swapBurpeesToRun(id: id) {
+            verificationNote = refused
+            return
+        }
+        snapshot = next
+        verificationNote = burpees
+            ? "The 10K Run is now \(RunBurpees.reps) burpees. They are in today's Hevy routine as \"\(PenaltyQuests.burpeeExercise)\", 10 sets of 30."
+            : "The 10K Run is back."
         clock = now
         persist()
         enforcePenalty()
@@ -308,32 +317,6 @@ final class GameStore: ObservableObject {
         verificationNote = message
         clock = now
         if !spent { cue(.questFail) }
-        persist()
-        enforcePenalty()
-    }
-
-    func buyFullRecovery(now: Date = .now) {
-        guard !startedNewDay(now: now) else { return }
-        var next = snapshot
-        let message = next.buyFullRecovery()
-        let bought = next.gold < snapshot.gold
-        snapshot = next
-        verificationNote = message
-        clock = now
-        cue(bought ? .purchase : .questFail)
-        persist()
-    }
-
-    func usePotion(_ potion: Potion, now: Date = .now) {
-        guard !startedNewDay(now: now) else { return }
-        var next = snapshot
-        let message = next.usePotion(potion, now: now)
-        let drunk = next.potionLog.count > snapshot.potionLog.count
-        snapshot = next
-        verificationNote = message
-        clock = now
-        cue(drunk ? .potion : .questFail)
-        recomputeStatLevels(now: now)
         persist()
         enforcePenalty()
     }
@@ -430,37 +413,6 @@ final class GameStore: ObservableObject {
         var next = snapshot
         next.setLogNote(text)
         guard next != snapshot else { return }
-        snapshot = next
-        persist()
-    }
-
-    /// Sells an item: one, or all of it. Returns the gold earned.
-    @discardableResult
-    func sellItem(_ id: String, all: Bool) -> Int {
-        var next = snapshot
-        let earned = next.sellItem(id, count: all ? nil : 1)
-        guard earned > 0 else { return 0 }
-        snapshot = next
-        cue(.purchase)
-        persist()
-        return earned
-    }
-
-    /// Opens one Sealed Chest. Its item shows on its card.
-    func openChest() {
-        var next = snapshot
-        guard !next.openChest().isEmpty else { return }
-        snapshot = next
-        cue(.reward)
-        persist()
-    }
-
-    /// The drop card the player has not seen yet.
-    var pendingDrop: LootDrop? { snapshot.inventory.pending.first }
-
-    func acknowledgeDrop() {
-        var next = snapshot
-        next.acknowledgeDrop()
         snapshot = next
         persist()
     }
@@ -608,7 +560,6 @@ final class GameStore: ObservableObject {
             focusDays: statInputs.focusDays,
             inputs: statInputs.inputs,
             targets: statTargets,
-            excuses: snapshot.potionExcuses,
             now: now
         )
         statHistory.record(statLevels, on: QuestDay.key(for: now))
@@ -731,7 +682,6 @@ final class GameStore: ObservableObject {
     }
 
     func accessibilityValue(for quest: Quest) -> String {
-        if quest.skippedWithPotion { return "Skipped with a potion" }
         if quest.status == .completed { return "Completed" }
         if snapshot.runningTimers.contains(where: { $0.questId == quest.id }) { return "Timer running" }
         switch quest.verification.method {
@@ -816,15 +766,13 @@ final class GameStore: ObservableObject {
 
     func refreshForToday(now: Date = .now) {
         let previousDay = snapshot.bundle.dayKey
-        let previousItems = snapshot.inventory.pending.count
         var next = snapshot
         if persistence == .standard { next.habits.homeEvents = HomeEvents.load() }
         next.refreshIfNeeded(catalog: catalog, now: now)
         snapshot = next
         if snapshot.bundle.dayKey != previousDay {
             verificationNote = nil
-            // Yesterday's perfect-day item is given at rollover; that cue outranks the plain arrival.
-            cue(snapshot.inventory.pending.count > previousItems ? .reward : .newDay)
+            cue(.newDay)
         }
         dayClock = DayClock.resolve(current: dayClock, now: now)
         advanceTimers(now: now)
@@ -1320,12 +1268,6 @@ final class GameStore: ObservableObject {
     }
 
     private func persist() {
-        // Every change passes here: a quest finished or a Pass marked since the last save drops its item now.
-        var next = snapshot
-        if next.collectDrops() > 0 {
-            snapshot = next
-            cue(.reward)
-        }
         guard persistence == .standard else { return }
         snapshot.saveToUserDefaults()
         dayClock.save()
