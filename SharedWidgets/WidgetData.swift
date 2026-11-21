@@ -127,7 +127,11 @@ enum WidgetPalette {
     static let blue = Color(red: 0.08, green: 0.42, blue: 1)
     static let red = Color(red: 1, green: 0.12, blue: 0.32)
     static let dim = Color(red: 0.87, green: 0.97, blue: 1).opacity(0.45)
-    static let background = LinearGradient(colors: [Color(red: 0.02, green: 0.05, blue: 0.12), Color(red: 0.03, green: 0.10, blue: 0.22)],
+    /// The app's muted blue for the tactical labels.
+    static let muted = Color(red: 0.49, green: 0.72, blue: 0.98)
+    /// The quest window's dark backdrop.
+    static let background = LinearGradient(colors: [Color(red: 0.01, green: 0.02, blue: 0.07), Color(red: 0.008, green: 0.014, blue: 0.038),
+                                                    Color(red: 0.015, green: 0.04, blue: 0.10)],
                                            startPoint: .top, endPoint: .bottom)
 
     static func color(_ state: WidgetData.State) -> Color {

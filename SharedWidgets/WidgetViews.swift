@@ -48,70 +48,103 @@ enum WidgetDesign: String, CaseIterable, Identifiable {
 
 // MARK: - Parts
 
-private struct Caption: View {
+/// The tactical label of the app: small monospaced capitals with wide spacing, in the muted blue.
+private struct Mono: View {
     let text: String
-    var color: Color = WidgetPalette.cyan
+    var color: Color = WidgetPalette.muted
+    var size: CGFloat = 9
     var body: some View {
         Text(text.uppercased())
-            .font(.system(size: 10, weight: .bold))
+            .font(.system(size: size, weight: .medium, design: .monospaced))
             .tracking(1.6)
             .foregroundStyle(color)
             .lineLimit(1)
+            .minimumScaleFactor(0.7)
     }
 }
 
+/// A box with a "[ TITLE ]" label and thin cyan lines, like the app's quest list and SYSTEMS box.
+private struct TacBox<Content: View>: View {
+    let title: String
+    var trailing: String? = nil
+    var trailingColor: Color = WidgetPalette.muted
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 4) {
+                Mono(text: "[ \(title) ]")
+                Spacer(minLength: 4)
+                if let trailing { Mono(text: trailing, color: trailingColor).monospacedDigit() }
+            }
+            .padding(.bottom, 4)
+            content
+        }
+        .padding(.horizontal, 7)
+        .padding(.top, 6)
+        .padding(.bottom, 3)
+        .overlay { Rectangle().stroke(WidgetPalette.cyan.opacity(0.25), lineWidth: 0.5) }
+    }
+}
+
+/// A row in a box: a hairline on top, as in the app.
+private struct Hairline: ViewModifier {
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .top) { Rectangle().fill(WidgetPalette.cyan.opacity(0.18)).frame(height: 0.5) }
+    }
+}
+
+/// A thin outlined bar with a glowing fill, like the HP bar in the app's header.
 private struct Bar: View {
     let fraction: Double
     var color: Color = WidgetPalette.cyan
-    var height: CGFloat = 4
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
-                Rectangle().fill(WidgetPalette.ink.opacity(0.12))
+                Rectangle().stroke(color.opacity(0.4), lineWidth: 0.5)
                 Rectangle().fill(color)
                     .frame(width: proxy.size.width * min(max(fraction, 0), 1))
-                    .shadow(color: color.opacity(0.8), radius: 3)
+                    .shadow(color: color, radius: 3)
             }
         }
-        .frame(height: height)
+        .frame(height: 4)
     }
 }
 
-/// One Systems day: blue done, red failed, dim no mark. Today has an outline: red while it is not done yet.
+/// One Systems day, a square cell like the app's: cyan done, red failed, an outline only when there is no mark.
+/// Today has a second outline: red while it is not done yet.
 private struct Day: View {
     let state: WidgetData.State?
-    var side: CGFloat = 10
+    var width: CGFloat? = nil
+    var height: CGFloat = 7
     var today = false
     var body: some View {
-        RoundedRectangle(cornerRadius: 1.5)
-            .fill(state.map { $0 == .open ? WidgetPalette.ink.opacity(0.12) : WidgetPalette.color($0) } ?? WidgetPalette.ink.opacity(0.12))
-            .frame(width: side, height: side)
-            .shadow(color: state == .done ? WidgetPalette.cyan.opacity(0.7) : .clear, radius: 2)
+        let filled = state == .done || state == .failed
+        let fill = state == .failed ? WidgetPalette.red : WidgetPalette.cyan
+        Rectangle()
+            .fill(filled ? fill : WidgetPalette.ink.opacity(0.04))
+            .overlay { Rectangle().stroke(filled ? fill : WidgetPalette.ink.opacity(0.22), lineWidth: 0.5) }
+            .frame(maxWidth: width ?? .infinity)
+            .frame(width: width, height: height)
+            .shadow(color: filled ? fill.opacity(0.8) : .clear, radius: 2)
             .overlay {
                 if today {
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .stroke(state == .open ? WidgetPalette.red : WidgetPalette.ink.opacity(0.8), lineWidth: state == .open ? 1.2 : 0.8)
-                        .padding(-1.5)
+                    Rectangle()
+                        .stroke(state == .open ? WidgetPalette.red : WidgetPalette.ink.opacity(0.7), lineWidth: 0.8)
+                        .padding(-2)
                 }
             }
     }
 }
 
-private struct ClearMark: View {
-    let title: String
+/// "> ALL SYSTEMS BLUE", in the app's log style, for a list with nothing left.
+private struct ClearLine: View {
+    let lines: [String]
     var body: some View {
-        VStack(spacing: 6) {
-            Image(systemName: "checkmark.seal")
-                .font(.system(size: 28, weight: .light))
-                .foregroundStyle(WidgetPalette.cyan)
-                .shadow(color: WidgetPalette.cyan.opacity(0.8), radius: 6)
-            Text(title)
-                .font(.system(size: 11, weight: .bold))
-                .tracking(1.2)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(WidgetPalette.ink)
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(lines, id: \.self) { Mono(text: "> \($0)", color: WidgetPalette.cyan, size: 10) }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .shadow(color: WidgetPalette.cyan.opacity(0.7), radius: 3)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 }
 
@@ -126,44 +159,28 @@ struct SystemsGridView: View {
 
     var body: some View {
         let source = onlyRed ? data.redSystems : data.systems
-        let rows = Array(source.prefix(size == .large ? 10 : size == .medium ? 5 : 3))
+        let rows = Array(source.prefix(size == .large ? 10 : size == .medium ? 4 : 3))
         let red = data.redSystems.count
-        VStack(alignment: .leading, spacing: size == .large ? 11 : size == .medium ? 5 : 6) {
+        let blue = data.systems.count - red
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Caption(text: onlyRed ? (size == .small ? "Red systems" : "Red systems · 7 days") : "Systems · 7 days",
-                        color: onlyRed && red > 0 ? WidgetPalette.red : WidgetPalette.cyan)
+                Mono(text: size == .small ? "SYS // HABITS" : "SYSTEM // HABITS")
                 Spacer(minLength: 4)
-                Text(onlyRed ? "\(red) RED" : "\(data.systems.count - red)/\(data.systems.count) BLUE")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(onlyRed ? (red > 0 ? WidgetPalette.red : WidgetPalette.cyan)
-                                     : (red == 0 ? WidgetPalette.cyan : WidgetPalette.ink.opacity(0.7)))
-                    .lineLimit(1)
+                Mono(text: onlyRed ? "\(red) RED" : "\(blue) / \(data.systems.count)",
+                     color: red > 0 && onlyRed ? WidgetPalette.red : WidgetPalette.cyan)
             }
             if onlyRed && rows.isEmpty {
-                ClearMark(title: "ALL SYSTEMS\nBLUE")
+                ClearLine(lines: ["ALL SYSTEMS BLUE", "0 RED TODAY"])
             } else {
-                ForEach(rows, id: \.self) { system in
-                    if size == .small {
-                        VStack(alignment: .leading, spacing: 3) {
-                            name(system)
-                            HStack(spacing: 3) { days(system, side: 12) }
-                        }
-                    } else {
-                        HStack(spacing: 8) {
-                            name(system)
-                            Spacer(minLength: 4)
-                            HStack(spacing: 3) { days(system, side: size == .large ? 13 : 10) }
-                            Text("\(system.streak)")
-                                .font(.system(size: 10, weight: .bold).monospacedDigit())
-                                .foregroundStyle(system.streak > 0 ? WidgetPalette.cyan : WidgetPalette.dim)
-                                .frame(width: 16, alignment: .trailing)
-                        }
+                TacBox(title: onlyRed ? "RED" : "SYSTEMS", trailing: size == .small ? nil : "7 DAYS") {
+                    ForEach(Array(rows.enumerated()), id: \.element) { _, system in
+                        row(system).modifier(Hairline())
                     }
-                }
-                if source.count > rows.count {
-                    Text("+\(source.count - rows.count) more")
-                        .font(.system(size: 10))
-                        .foregroundStyle(WidgetPalette.dim)
+                    if source.count > rows.count {
+                        Mono(text: "+\(source.count - rows.count) more", color: WidgetPalette.dim)
+                            .padding(.vertical, 3)
+                            .modifier(Hairline())
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -171,18 +188,40 @@ struct SystemsGridView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
+    @ViewBuilder
+    private func row(_ system: WidgetData.System) -> some View {
+        if size == .small {
+            VStack(alignment: .leading, spacing: 4) {
+                name(system)
+                HStack(spacing: 3) { days(system, width: nil, height: 7) }
+            }
+            .padding(.vertical, 4)
+        } else {
+            HStack(spacing: 8) {
+                name(system)
+                Spacer(minLength: 4)
+                HStack(spacing: 3) { days(system, width: size == .large ? 14 : 11, height: size == .large ? 8 : 7) }
+                Text("\(system.streak)D")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(system.streak > 0 ? WidgetPalette.cyan : WidgetPalette.dim)
+                    .frame(width: 24, alignment: .trailing)
+            }
+            .padding(.vertical, size == .large ? 7 : 4)
+        }
+    }
+
     private func name(_ system: WidgetData.System) -> some View {
         Text(system.name)
-            .font(.system(size: size == .large ? 13 : 11, weight: .medium))
+            .font(.system(size: size == .large ? 13 : 11))
             .foregroundStyle(system.today == .failed ? WidgetPalette.red : WidgetPalette.ink)
             .lineLimit(1)
     }
 
     @ViewBuilder
-    private func days(_ system: WidgetData.System, side: CGFloat) -> some View {
+    private func days(_ system: WidgetData.System, width: CGFloat?, height: CGFloat) -> some View {
         ForEach(Array(system.week.enumerated()), id: \.offset) { index, state in
             let isToday = index == system.week.count - 1
-            Day(state: isToday ? system.today : state, side: side, today: isToday)
+            Day(state: isToday ? system.today : state, width: width, height: height, today: isToday)
         }
     }
 }
@@ -215,28 +254,8 @@ struct DayRing: View {
     }
 }
 
-/// The quest screen's warning, with "penalty" in red.
-private struct WarningLine: View {
-    let text: String
-    var fontSize: CGFloat = 9
-
-    var body: some View {
-        let parts = text.components(separatedBy: "penalty")
-        var line = Text("WARNING: ").foregroundColor(WidgetPalette.ink.opacity(0.8))
-        for (index, part) in parts.enumerated() {
-            line = line + Text(part).foregroundColor(WidgetPalette.ink.opacity(0.8))
-            if index < parts.count - 1 { line = line + Text("penalty").foregroundColor(WidgetPalette.red) }
-        }
-        return line
-            .font(.system(size: fontSize))
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-/// The first open quest, the day's timer ring, and the warning.
-/// Small: the ring beside the label. Medium: a large ring with the time left inside it.
+/// The first open quest, the day's timer ring, and the penalty line, in the app's tactical layout:
+/// a "SYSTEM // QUEST" label, the quest in a "[ DAILY QUEST ]" box, and "> " status lines under it.
 struct NextQuestView: View {
     let data: WidgetData
     var size: WidgetSize = .small
@@ -244,34 +263,33 @@ struct NextQuestView: View {
 
     var body: some View {
         let remaining = data.ringRemaining(at: now)
-        let warning = data.warning ?? WidgetData.defaultWarning
         if size == .medium {
-            VStack(spacing: 8) {
-                HStack(alignment: .center, spacing: 14) {
-                    quest(titleSize: 22)
-                    VStack(spacing: 4) {
-                        DayRing(remaining: remaining)
-                            .frame(width: 64, height: 64)
-                        countdown(size: 12, remaining: remaining)
-                            .multilineTextAlignment(.center)
-                            .frame(width: 80)
-                    }
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Mono(text: "SYSTEM // QUEST DAY")
+                    questBox(titleSize: 18, boxTitle: "DAILY QUEST")
+                    log(lines: 2)
                 }
-                WarningLine(text: warning, fontSize: 10)
+                VStack(spacing: 6) {
+                    DayRing(remaining: remaining).frame(width: 66, height: 66)
+                    countdown(size: 13, remaining: remaining)
+                }
+                .frame(width: 82)
+                .frame(maxHeight: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Caption(text: "Next quest")
-                        countdown(size: 15, remaining: remaining)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Mono(text: "SYS // QUEST")
+                        countdown(size: 14, remaining: remaining)
                     }
                     Spacer(minLength: 2)
-                    DayRing(remaining: remaining).frame(width: 34, height: 34)
+                    DayRing(remaining: remaining).frame(width: 30, height: 30)
                 }
-                quest(titleSize: 18, showsCaption: false)
-                WarningLine(text: warning, fontSize: 8.5)
+                questBox(titleSize: 15, boxTitle: "QUEST")
+                log(lines: 1)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -282,39 +300,54 @@ struct NextQuestView: View {
     private func countdown(size: CGFloat, remaining: Double) -> some View {
         if let end = data.ringEnd {
             Text(timerInterval: min(now, end)...end, countsDown: true)
-                .font(.system(size: size, weight: .bold).monospacedDigit())
+                .font(.system(size: size, weight: .semibold, design: .monospaced).monospacedDigit())
                 .foregroundStyle(remaining < WidgetData.urgentFraction ? WidgetPalette.red : WidgetPalette.ink)
                 .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
     }
 
     @ViewBuilder
-    private func quest(titleSize: CGFloat, showsCaption: Bool = true) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            if showsCaption { Caption(text: "Next quest") }
-            if let row = data.questsLeft.first {
-                Text(row.title)
-                    .font(.system(size: titleSize, weight: .bold))
-                    .foregroundStyle(WidgetPalette.ink)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.7)
-                Spacer(minLength: 0)
-                HStack(alignment: .firstTextBaseline) {
-                    Text(row.progress)
-                        .font(.system(size: 14, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(WidgetPalette.cyan)
-                    Spacer(minLength: 2)
-                    if data.questsLeft.count > 1 {
-                        Text("+\(data.questsLeft.count - 1) more")
-                            .font(.system(size: 9))
-                            .foregroundStyle(WidgetPalette.dim)
+    private func questBox(titleSize: CGFloat, boxTitle: String) -> some View {
+        if let row = data.questsLeft.first {
+            TacBox(title: boxTitle, trailing: "\(data.requiredDone) / \(data.requiredCount)") {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(row.title)
+                            .font(.system(size: titleSize, weight: .medium))
+                            .foregroundStyle(WidgetPalette.ink)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        Spacer(minLength: 2)
                     }
+                    Text(row.progress)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced).monospacedDigit())
+                        .foregroundStyle(WidgetPalette.cyan)
+                        .lineLimit(1)
+                    Bar(fraction: row.fraction)
+                        .padding(.bottom, 3)
                 }
-                Bar(fraction: row.fraction, height: 4)
-            } else {
-                ClearMark(title: "DAILY QUEST\nCLEAR")
+                .padding(.top, 4)
+                .modifier(Hairline())
+            }
+        } else {
+            ClearLine(lines: ["DAILY QUEST CLEAR", "\(data.requiredDone) / \(data.requiredCount) DONE"])
+        }
+    }
+
+    /// The app's status log: the quests that remain, then the penalty line with "PENALTY" in red.
+    private func log(lines: Int) -> some View {
+        let left = data.questsLeft.count
+        return VStack(alignment: .leading, spacing: 3) {
+            if lines > 1, left > 0 {
+                Mono(text: "> \(left) quest\(left == 1 ? "" : "s") remain")
+            }
+            if left > 0 {
+                (Text("> FAIL = ").foregroundColor(WidgetPalette.muted) + Text("PENALTY").foregroundColor(WidgetPalette.red))
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .tracking(1.6)
+                    .lineLimit(1)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
