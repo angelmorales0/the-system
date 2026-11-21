@@ -348,7 +348,7 @@ enum ContractHabits {
 
     /// Key and name of each habit the player can pick, in Systems order, then "New habit".
     static func options(_ habits: HabitState) -> [(key: String, name: String)] {
-        [(homeBy, HomeBy.title), (screenTime, "Screen Time"), (stretching, DailyStretch.title)] + habits.handHabits.map { ($0.id, $0.name) } + [(log, "Log written"), (new, "New habit…")]
+        [(homeBy, HomeBy.title), (screenTime, "Screen Time"), (stretching, DailyStretch.title)] + habits.handHabits.map { ($0.id, $0.name) } + [(new, "New habit…")]
     }
 
     /// Where the day's pass comes from, in words.
@@ -688,14 +688,11 @@ enum SystemsView {
             }
             return Track(name: habit.name, marks: marks, dayKeys: days, handHabit: habit, summary: summary, today: today)
         }
-        let logged = keys.map { key -> Mark in game.habits.log[key] != nil ? .done : .none }
         return [
             Track(name: "Home by 9 pm", marks: keys.map { mark($0) { $0.method == .homeBy } }),
             Track(name: "Screen Time", marks: keys.map { mark($0) { $0.method == .screenTimeLimit } }),
             Track(name: DailyStretch.title, marks: keys.map { mark($0) { $0.params[DailyStretch.dayParam] != nil } }),
-        ] + game.habits.handHabits.map(hand) + [
-            Track(name: "Log written", marks: logged),
-        ]
+        ] + game.habits.handHabits.map(hand)
     }
 }
 
@@ -1046,15 +1043,13 @@ enum HabitRules {
         if afterNote != "Ate out alone." || noted.habits.log[noted.bundle.dayKey] != nil {
             errors.append("the log should keep a trimmed note and remove an empty one")
         }
-        // Systems view: 28 days a habit, and a streak that ends today or yesterday.
-        var tracked = GameSnapshot.fresh(catalog: catalog, now: monday)
-        tracked.habits.log = [QuestDay.key(byAddingDays: -2, to: tracked.bundle.dayKey): "a", QuestDay.key(byAddingDays: -1, to: tracked.bundle.dayKey): "b"]
+        // Systems view: 28 days a habit (7 for a weekly limit). The log has no row: it is not written from the app.
+        let tracked = GameSnapshot.fresh(catalog: catalog, now: monday)
         let tracks = SystemsView.tracks(tracked)
         if tracks.map(\.name) != ["Home by 9 pm", "Screen Time", "Stretching", "No eating out", "No caffeine", "Only whole foods",
-                                    "Study (2× 1 h blocks)", "Traveling (max 2 days a week)", "Log written"]
-            || tracks.contains(where: { $0.marks.count != ($0.handHabit?.weeklyLimit == nil ? SystemsView.days : 7) })
-            || tracks.first(where: { $0.name == "Log written" })?.streak != 2 {
-            errors.append("the systems view should show 9 habits of 28 days with a 2-day log streak, got \(tracks.map { "\($0.name) \($0.streak)" })")
+                                    "Study (2× 1 h blocks)", "Traveling (max 2 days a week)"]
+            || tracks.contains(where: { $0.marks.count != ($0.handHabit?.weeklyLimit == nil ? SystemsView.days : 7) }) {
+            errors.append("the systems view should show 8 habits of 28 days, got \(tracks.map(\.name))")
         }
 
         // Hand habits: dim before the first day, red for an unmarked past day, open today until marked, and each mark shows.
