@@ -221,3 +221,45 @@ struct RunSwapButton: View {
         .accessibilityIdentifier("runSwapButton")
     }
 }
+
+/// A box with a "[ TITLE ]" label and thin cyan lines, like the quest list, for any group of rows.
+struct TacticalBox<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            TypewriterText(title, delay: 0.6)
+                .font(TacticalIntro.mono)
+                .tracking(2)
+                .foregroundStyle(SystemTheme.muted)
+                .padding(.bottom, 6)
+                .accessibilityAddTraits(.isHeader)
+            content
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 12)
+        .padding(.bottom, 2)
+        .overlay { Rectangle().stroke(QuestLight.cyan.opacity(0.25), lineWidth: 0.5) }
+    }
+}
+
+/// A thin outlined bar with a glowing fill, like the HP bar in the quest header. Red for a value in danger.
+struct TacticalBar: View {
+    let fraction: Double
+    var red = false
+
+    var body: some View {
+        let color = red ? QuestLight.penalty : QuestLight.cyan
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Rectangle().stroke(color.opacity(0.4), lineWidth: 0.5)
+                Rectangle().fill(color)
+                    .frame(width: proxy.size.width * min(max(fraction, 0), 1))
+                    .shadow(color: color, radius: 3)
+            }
+        }
+        .frame(height: 4)
+        .accessibilityHidden(true)
+    }
+}
