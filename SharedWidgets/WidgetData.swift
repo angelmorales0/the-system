@@ -41,7 +41,6 @@ struct WidgetData: Codable, Equatable {
     var levelProgress: Double
     var hp: Int
     var maxHP: Int
-    var gold: Int
     var updatedAt: Date
     /// The quest screen's timer ring: the day's start and its deadline (the next midnight).
     var ringStart: Date?
@@ -114,7 +113,6 @@ struct WidgetData: Codable, Equatable {
         levelProgress: 0.63,
         hp: 812,
         maxHP: 1040,
-        gold: 3_480,
         updatedAt: Date(),
         ringStart: Date().addingTimeInterval(-10 * 3600),
         ringEnd: Date().addingTimeInterval(14 * 3600),
@@ -128,7 +126,6 @@ enum WidgetPalette {
     static let cyan = Color(red: 0.20, green: 0.80, blue: 1)
     static let blue = Color(red: 0.08, green: 0.42, blue: 1)
     static let red = Color(red: 1, green: 0.12, blue: 0.32)
-    static let gold = Color(red: 1, green: 0.84, blue: 0.2)
     static let dim = Color(red: 0.87, green: 0.97, blue: 1).opacity(0.45)
     static let background = LinearGradient(colors: [Color(red: 0.02, green: 0.05, blue: 0.12), Color(red: 0.03, green: 0.10, blue: 0.22)],
                                            startPoint: .top, endPoint: .bottom)

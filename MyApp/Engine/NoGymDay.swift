@@ -31,7 +31,7 @@ enum NoGymDay {
     }
 
     /// Puts the added 10K before the day's own runs. Runs are checked in row order, so a real run then fills the
-    /// added 10K first, and the day's run keeps its hand check and its potion. In the other order, a real run took
+    /// added 10K first, and the day's run keeps its hand check. In the other order, a real run took
     /// the day's row and left the added one, which takes neither: the same work finished the day or not by its order.
     /// A plan the planner wrote for the no-gym day has the added 10K last, so this runs for that plan too.
     static func addedRunFirst(_ bundle: QuestBundle) -> QuestBundle {
@@ -143,7 +143,7 @@ extension GameSnapshot {
     /// A real run of 10 km that the day's run took before the setting went on fills the added 10K, and the day's
     /// run is open again with its hand check. That is the day the same work gives when the setting goes on first:
     /// there the run fills the added 10K, which is checked first. Without this, the day asked for a second real 10K.
-    /// A hand check or a potion is no real run, so such a row stays as it is. A 10K row was finished by 10 km.
+    /// A hand check is no real run, so such a row stays as it is. A 10K row was finished by 10 km.
     /// A 5K row can hold a shorter run, so the row or the notes of its own runs must show 10 km.
     /// The switch can come before the day's data, so each pass that has the data does this too (`checkOpenRows`).
     @discardableResult
@@ -152,7 +152,7 @@ extension GameSnapshot {
         guard let added = bundle.quests.firstIndex(where: { $0.id == addedId && $0.status != .completed }),
               let ran = bundle.quests.firstIndex(where: { quest in
                   guard quest.kind == .daily, quest.id != addedId, TrainingDay.isRaceRun(quest), quest.status == .completed,
-                        !quest.skippedWithPotion, !quest.evidence.isEmpty, quest.evidence.allSatisfy({ !$0.workoutIds.isEmpty }) else { return false }
+                        !quest.evidence.isEmpty, quest.evidence.allSatisfy({ !$0.workoutIds.isEmpty }) else { return false }
                   return NoGymDay.isTenK(quest) || quest.progress.current >= 10 || ownRunsReachTenK(quest)
               }) else { return false }
         moveFinish(from: ran, to: added, integrations: integrations)
@@ -212,7 +212,6 @@ extension GameSnapshot {
         // holds the run as it is counted: a second source can have joined a run since the row was finished.
         let held = known ? carried.map(\.evidence) : moved
         bundle.quests[to].evidence = held
-        bundle.quests[to].skippedWithPotion = false
         if let meters = HiddenQuests.completingWorkout(for: bundle.quests[to], in: integrations?.workouts ?? [])?.distanceMeters {
             bundle.quests[to].progress.current = max(target, DistanceRule.kilometers(meters))
         }

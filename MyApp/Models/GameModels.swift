@@ -172,15 +172,13 @@ struct Quest: Identifiable, Codable, Equatable {
     var evidence: [Evidence] = []
     /// Manual confirm waits 30 seconds after this. Model output cannot choose it.
     var assignedAt: Date = .distantPast
-    /// True when a potion cleared this quest. It is `.completed` with no XP, and the day earns no gold.
-    var skippedWithPotion: Bool = false
 }
 
 extension Quest {
     private enum CodingKeys: String, CodingKey {
         case id, title, kind, stat, verification, deadline, difficulty, mode
         case progress, status
-        case evidence, assignedAt, skippedWithPotion
+        case evidence, assignedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -198,7 +196,6 @@ extension Quest {
         status = try container.decodeIfPresent(QuestStatus.self, forKey: .status) ?? .pending
         evidence = try container.decodeIfPresent([Evidence].self, forKey: .evidence) ?? []
         assignedAt = try container.decodeIfPresent(Date.self, forKey: .assignedAt) ?? .distantPast
-        skippedWithPotion = try container.decodeIfPresent(Bool.self, forKey: .skippedWithPotion) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -215,7 +212,6 @@ extension Quest {
         try container.encode(status, forKey: .status)
         try container.encode(evidence, forKey: .evidence)
         try container.encode(assignedAt, forKey: .assignedAt)
-        try container.encode(skippedWithPotion, forKey: .skippedWithPotion)
     }
 }
 
@@ -267,7 +263,6 @@ struct QuestBundle: Codable, Equatable {
             var quest = quest
             quest.status = .pending
             quest.evidence = []
-            quest.skippedWithPotion = false
             quest.progress.current = 0
             quest.assignedAt = assignedAt
             return quest

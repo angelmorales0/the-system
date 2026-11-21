@@ -333,8 +333,6 @@ struct CreateContractView: View {
     private var punishmentSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             QuestSectionTitle(text: "Punishment for each broken week")
-            Stepper("Gold: \(punishment.gold == 0 ? "none" : String(FinanceLevel.usd(Double(punishment.gold)).dropFirst()))",
-                    value: $punishment.gold, in: 0...Punishment.maxGold, step: Punishment.goldStep)
             Stepper("Full Recovery tokens: \(punishment.tokens)", value: $punishment.tokens, in: 0...3)
             Stepper("Rest days: \(punishment.restDays)", value: $punishment.restDays, in: 0...2)
             Toggle("Penalty 10K run", isOn: $punishment.penaltyRun)

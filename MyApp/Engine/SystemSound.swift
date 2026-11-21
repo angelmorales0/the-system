@@ -23,12 +23,6 @@ enum SystemSound: String, CaseIterable {
     case dayClear = "day-clear"
     /// The STATUS level went up.
     case levelUp = "level-up"
-    /// Gold or a token arrives.
-    case reward
-    /// The shop sold something.
-    case purchase
-    /// A potion is drunk.
-    case potion
     /// A Full Recovery token is spent.
     case fullRecovery = "full-recovery"
     /// A hidden quest's reveal window appears.
@@ -43,7 +37,7 @@ enum SystemSound: String, CaseIterable {
     /// A major cue silences whatever else is playing. A minor cue layers on top.
     var isMajor: Bool {
         switch self {
-        case .dayClear, .levelUp, .fullRecovery, .hiddenQuest, .penaltyOpen, .penaltyCleared, .newDay, .reward:
+        case .dayClear, .levelUp, .fullRecovery, .hiddenQuest, .penaltyOpen, .penaltyCleared, .newDay:
             return true
         default:
             return false
@@ -128,7 +122,7 @@ enum SoundCues {
             for quest in new.bundle.quests {
                 let was = before[quest.id]
                 let moved = !quest.evidence.isEmpty && quest.evidence.allSatisfy { finishedBefore.contains($0.payloadHash) }
-                if quest.status == .completed, was != .completed, !quest.skippedWithPotion {
+                if quest.status == .completed, was != .completed {
                     finished = true
                     if !moved { completed = true }
                 }

@@ -164,13 +164,12 @@ enum PlanAndLockRules {
             errors.append("the template should keep every Lower Day lift next to its 10K, got \(deadPlan)")
         }
 
-        // "No gym today": the added 10K stands for the lifts, so it takes no hand check and the run potion leaves it.
+        // "No gym today": the added 10K stands for the lifts, so it takes no hand check.
         var noGym = GameSnapshot.fresh(catalog: catalog, now: morning)
         _ = noGym.setNoGym(true, catalog: catalog, now: morning)
         let runRows = noGym.bundle.quests.filter { TrainingDay.isRaceRun($0) }
-        if runRows.filter(\.allowsCheckOff).count != 1 || runRows.first(where: \.isNoGymRun)?.allowsCheckOff != false
-            || noGym.potionTargets(.secondWind).contains(where: \.isNoGymRun) || noGym.potionTargets(.secondWind).count != 1 {
-            errors.append("the added 10K of a no-gym day should take no hand check and no run potion")
+        if runRows.filter(\.allowsCheckOff).count != 1 || runRows.first(where: \.isNoGymRun)?.allowsCheckOff != false {
+            errors.append("the added 10K of a no-gym day should take no hand check")
         }
 
         // One real 10K and one hand check finish the two runs of a no-gym day in both orders: the real run fills the
@@ -390,13 +389,12 @@ enum PlanAndLockRules {
             let both15 = WorkoutEvent(source: "healthkit", externalId: "whole-h", sport: "running", start: morning.addingTimeInterval(3_600),
                                       end: morning.addingTimeInterval(8_700), movingTimeSec: 4_800, distanceMeters: 15_000)
             passes(&twoRows, "parts on two rows", [dayData(strava: [partA, partB])])
-            let goldBefore = twoRows.gold
             passes(&twoRows, "parts on two rows", [dayData(strava: [partA, partB], health: [both15])])
             _ = twoRows.checkHiddenQuests(integrations: dayData(strava: [partA, partB], health: [both15]), now: passNow)
             let wholeUses = twoRows.evidenceLog.filter { $0.dayKey == twoRows.bundle.dayKey }
-            if shows(twoRows) != 10 || twoRows.bundle.quests[index].progress.current != 5 || twoRows.gold != goldBefore || twoRows.beyondTheLimitToday != nil
+            if shows(twoRows) != 10 || twoRows.bundle.quests[index].progress.current != 5 || twoRows.beyondTheLimitToday != nil
                 || wholeUses.count != 2 || GameSnapshot.sameWorkout(wholeUses[0].evidence, wholeUses[1].evidence) {
-                errors.append("parts of one run on two rows should stay as they are when another source holds the run whole, got \(rowsText(twoRows)) gold \(twoRows.gold - goldBefore)")
+                errors.append("parts of one run on two rows should stay as they are when another source holds the run whole, got \(rowsText(twoRows))")
             }
             // A long gym recording in Apple Health contains the run. They are two workouts: the time rule is for one sport.
             let gymTime = Evidence.make(source: "healthkit", externalId: "workout:healthkit:gym", payload: "gym", timestamp: morning.addingTimeInterval(9_000),
@@ -572,21 +570,20 @@ enum PlanAndLockRules {
                 errors.append("no gym off should give the 5K its own distance back, got \(rowsText(late)) expected \(rowsText(nearDay))")
             }
             // A 12 km run on the added 10K is under that row's 15 km. Off moves it to the 5K: it is still measured
-            // against 10 km, so the switch pays no Beyond the Limit gold. On a gym day the same run on the 5K earns it.
+            // against 10 km, so the switch unlocks no Beyond the Limit. On a gym day the same run on the 5K unlocks it.
             let twelve = dayData(strava: [recorded("strava", "five-12", meters: 12_000, after: 3_600)])
             var paid = fiveK
             _ = paid.setNoGym(true, catalog: catalog, now: passNow, integrations: twelve)
             paid.checkOpenRows(integrations: twelve, now: passNow, skipping: passSkips)
             _ = paid.checkHiddenQuests(integrations: twelve, now: passNow)
-            let goldOn = paid.gold
             _ = paid.setNoGym(false, catalog: catalog, now: passNow, integrations: twelve)
             paid.checkOpenRows(integrations: twelve, now: passNow, skipping: passSkips)
             _ = paid.checkHiddenQuests(integrations: twelve, now: passNow)
             var direct = fiveK
             direct.checkOpenRows(integrations: twelve, now: passNow, skipping: passSkips)
             _ = direct.checkHiddenQuests(integrations: twelve, now: passNow)
-            if status(paid, dayId) != .completed || paid.beyondTheLimitToday != nil || paid.gold != goldOn || direct.beyondTheLimitToday == nil {
-                errors.append("no gym off should pay no Beyond the Limit gold for a 12 km run done on the added 10K, got \(rowsText(paid)) gold \(goldOn) -> \(paid.gold)")
+            if status(paid, dayId) != .completed || paid.beyondTheLimitToday != nil || direct.beyondTheLimitToday == nil {
+                errors.append("no gym off should unlock no Beyond the Limit for a 12 km run done on the added 10K, got \(rowsText(paid))")
             }
             // The 5K takes a 6 km run on the gym day. "No gym today" goes on, and a 5 km run follows: the added 10K
             // is done by the two runs and the 5K is open, as when the setting goes on first. Off gives the runs to
@@ -781,18 +778,9 @@ enum PlanAndLockRules {
             errors.append("a stand-in should count for the lift, but not when it has its own row today")
         }
 
-        // The repeat price holds 30 days later, when the 36-hour cooldown is long over.
-        var shop = GameSnapshot.fresh(catalog: catalog, now: morning)
-        shop.gold = 1_000_000
-        _ = shop.usePotion(.nightfall, now: morning)
-        shop.bundle.dayKey = QuestDay.key(byAddingDays: Potion.repeatWindowDays, to: shop.bundle.dayKey)
-        if shop.potionBlocker(.nightfall, now: morning.addingTimeInterval(Double(Potion.repeatWindowDays) * 86_400)) != nil || shop.potionPrice(.nightfall) != Potion.nightfall.basePrice * 3 / 2 {
-            errors.append("a second Insomniac's Elixir on the first free day should cost 150%, got \(shop.potionPrice(.nightfall))")
-        }
-
         // One history row that cannot be read costs that row, not the save.
-        let savedUses = Data(#"[{"dayKey":"2026-10-01","potion":"ironblood"},{"dayKey":"2026-10-02","potion":"a potion that was removed"},{"dayKey":"2026-10-03","potion":"nightfall"}]"#.utf8)
-        if (try? JSONDecoder().decode(LossyArray<PotionUse>.self, from: savedUses))?.elements.map(\.dayKey) != ["2026-10-01", "2026-10-03"] {
+        let savedRows = Data(#"[1, "a row that was removed", 3]"#.utf8)
+        if (try? JSONDecoder().decode(LossyArray<Int>.self, from: savedRows))?.elements != [1, 3] {
             errors.append("a list should drop only the elements it cannot read")
         }
 
