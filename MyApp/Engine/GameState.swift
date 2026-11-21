@@ -1104,7 +1104,7 @@ struct LossyArray<Element: Decodable>: Decodable {
 /// (missed required set, failed habit, or broken contract) and the monitor does not lock the phone for it.
 enum PenaltyHold {
     /// The first ending quest day that can open a penalty.
-    static var firstDay = "2027-01-05"
+    static var firstDay = "2027-01-04"
 
     static func active(on dayKey: String) -> Bool { dayKey >= firstDay }
 
