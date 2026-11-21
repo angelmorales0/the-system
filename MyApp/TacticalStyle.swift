@@ -168,3 +168,32 @@ struct TacticalLog: View {
         .accessibilityElement(children: .combine)
     }
 }
+
+/// A small square with a swap arrow, before the run row: the 10K Run becomes 300 burpees, or the burpees the run.
+/// It shows only while nothing is logged on the row, so a tap can always be undone with a second tap.
+struct RunSwapButton: View {
+    @EnvironmentObject private var store: GameStore
+    let quest: Quest
+
+    private var toBurpees: Bool { RunBurpees.canSwap(quest) }
+
+    var body: some View {
+        Button {
+            SystemSound.systemOpen.play()
+            store.setRunAsBurpees(id: quest.id, toBurpees)
+        } label: {
+            Image(systemName: "arrow.left.arrow.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(QuestLight.cyan)
+                .shadow(color: QuestLight.cyan.opacity(0.8), radius: 3)
+                .frame(width: 22, height: 22)
+                .overlay { Rectangle().stroke(QuestLight.cyan.opacity(0.5), lineWidth: 0.5) }
+                .frame(width: 30, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, -4)
+        .accessibilityLabel(toBurpees ? "Swap to \(RunBurpees.reps) burpees" : "Swap back to the 10K run")
+        .accessibilityIdentifier("runSwapButton")
+    }
+}
