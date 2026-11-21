@@ -170,14 +170,13 @@ private struct StatusSheetContent: View {
         VStack(alignment: .leading, spacing: 14) {
             levelBlock
             TacticalBox(title: "[ VITALS ]") {
-                VStack(spacing: 0) {
-                    vitalRow("HP", value: "\(hp.current) / \(hp.max)", fraction: Double(hp.current) / Double(max(hp.max, 1)),
-                             red: HitPoints.isCritical(current: hp.current, max: hp.max), index: 0)
-                        .accessibilityValue(HitPoints.isCritical(current: hp.current, max: hp.max) ? "\(hp.current) of \(hp.max), critical" : "\(hp.current) of \(hp.max)")
-                    vitalRow("FATIGUE", value: "\(fatigue) / \(Int(Fatigue.maxValue))", fraction: Double(fatigue) / Fatigue.maxValue,
-                             red: Fatigue.isRed(fatigue), index: 1)
-                        .accessibilityValue(Fatigue.isRed(fatigue) ? "\(fatigue) of 100, high" : "\(fatigue) of 100")
+                // HP on the left with its bar, fatigue on the right with its shutter ring.
+                HStack(alignment: .center, spacing: 16) {
+                    hpMeter
+                    fatigueMeter
                 }
+                .padding(.vertical, 12)
+                .modifier(TacticalRowReveal(index: 0, group: "levels"))
             }
             TacticalBox(title: "[ STATS ]") {
                 VStack(spacing: 0) {
@@ -232,25 +231,52 @@ private struct StatusSheetContent: View {
         .accessibilityValue("XP \(xp.current) of \(step)")
     }
 
-    /// "HP   1000 / 1000" with a thin bar under it. Red when the value is in danger.
-    private func vitalRow(_ name: String, value: String, fraction: Double, red: Bool, index: Int) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack {
-                Text(name)
+    /// "HP  1000/1000" with a thin bar under it. Red when HP is critical.
+    private var hpMeter: some View {
+        let red = HitPoints.isCritical(current: hp.current, max: hp.max)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 4) {
+                Text("HP")
                     .foregroundStyle(SystemTheme.muted)
-                Spacer()
-                Text(value)
+                Spacer(minLength: 4)
+                Text(verbatim: "\(hp.current)/\(hp.max)")
                     .monospacedDigit()
                     .foregroundStyle(red ? QuestLight.penalty : QuestLight.ink)
             }
             .font(TacticalIntro.mono)
-            .tracking(1.5)
-            TacticalBar(fraction: fraction, red: red)
+            .tracking(1)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            TacticalBar(fraction: Double(hp.current) / Double(max(hp.max, 1)), red: red)
         }
-        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(name == "HP" ? "HP" : "Fatigue")
-        .modifier(TacticalRowReveal(index: index, group: "levels"))
+        .accessibilityLabel("HP")
+        .accessibilityValue(red ? "\(hp.current) of \(hp.max), critical" : "\(hp.current) of \(hp.max)")
+    }
+
+    /// The fatigue shutter ring, then "FATIGUE" and its value. Red at 80 or more.
+    private var fatigueMeter: some View {
+        let red = Fatigue.isRed(fatigue)
+        return HStack(spacing: 10) {
+            FatigueRing(fraction: Double(fatigue) / Fatigue.maxValue, light: red ? .critical : .normal)
+                .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("FATIGUE")
+                    .foregroundStyle(SystemTheme.muted)
+                Text(verbatim: "\(fatigue)/\(Int(Fatigue.maxValue))")
+                    .monospacedDigit()
+                    .foregroundStyle(red ? QuestLight.penalty : QuestLight.ink)
+            }
+            .font(TacticalIntro.mono)
+            .tracking(1)
+            .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.easeInOut(duration: 0.4), value: red)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Fatigue")
+        .accessibilityValue(red ? "\(fatigue) of 100, high" : "\(fatigue) of 100")
     }
 
     /// A link row in the access box: contracts or beliefs.
@@ -271,6 +297,39 @@ private struct StatusSheetContent: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title.capitalized)
+    }
+}
+
+/// A ring of slanted slots, like a shutter, that lights up clockwise with the fatigue share.
+/// Drawn like the quest page's day timer, with fewer, longer, tilted dashes.
+private struct FatigueRing: View {
+    let fraction: Double
+    let light: HPLight
+
+    private static let slots = 12
+    /// Each slot leans this much off the radius, so the ring reads as a shutter.
+    private static let slant = Angle.degrees(32)
+
+    var body: some View {
+        let lit = Int((min(max(fraction, 0), 1) * Double(Self.slots)).rounded())
+        Canvas { context, size in
+            let radius = min(size.width, size.height) / 2
+            let length = radius * 0.46
+            for index in 0..<Self.slots {
+                var slot = context
+                slot.translateBy(x: size.width / 2, y: size.height / 2)
+                slot.rotate(by: .degrees(Double(index) * 360 / Double(Self.slots)))
+                // Move out to the middle of the ring's band, then tilt the dash around its own center.
+                slot.translateBy(x: 0, y: -radius + length / 2 + 0.5)
+                slot.rotate(by: Self.slant)
+                let rect = CGRect(x: -1.3, y: -length / 2, width: 2.6, height: length)
+                let path = Path(roundedRect: rect, cornerRadius: 0.7)
+                // Slot 0 is at 12 o'clock and the index runs clockwise.
+                let isLit = index < lit
+                slot.fill(path, with: .color(light.glow.opacity(isLit ? light.fill + 0.1 : 0.16)))
+                slot.stroke(path, with: .color(light.ink.opacity(isLit ? 0.5 : 0.25)), lineWidth: 0.4)
+            }
+        }
     }
 }
 
