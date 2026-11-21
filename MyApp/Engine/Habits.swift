@@ -312,8 +312,6 @@ enum WeightGoal {
 
 /// What a broken contract week costs. The player picks it at signing; the app takes it.
 struct Punishment: Codable, Equatable {
-    /// Gold taken. Gold does not go under 0.
-    var gold = 0
     /// Full Recovery tokens taken. With none in the bank, the next ones earned are taken.
     var tokens = 0
     /// Rest days taken: this week's, else next week's.
@@ -323,15 +321,12 @@ struct Punishment: Codable, Equatable {
 
     /// The stake contracts had before punishments could be picked.
     static let classic = Punishment(tokens: 1, restDays: 1)
-    static let goldStep = 500
-    static let maxGold = 20_000
 
-    var isEmpty: Bool { gold <= 0 && tokens <= 0 && restDays <= 0 && !penaltyRun }
+    var isEmpty: Bool { tokens <= 0 && restDays <= 0 && !penaltyRun }
 
-    /// "1,000 gold, 1 Full Recovery token, 1 rest day, and the penalty 10K run".
+    /// "1 Full Recovery token, 1 rest day and the penalty 10K run".
     var text: String {
         var parts: [String] = []
-        if gold > 0 { parts.append("\(FinanceLevel.usd(Double(gold)).dropFirst()) gold") }
         if tokens > 0 { parts.append("\(tokens) Full Recovery token\(tokens == 1 ? "" : "s")") }
         if restDays > 0 { parts.append("\(restDays) rest day\(restDays == 1 ? "" : "s")") }
         if penaltyRun { parts.append("the penalty 10K run") }
@@ -491,10 +486,9 @@ extension GameSnapshot {
         return broken
     }
 
-    /// Takes a broken week's punishment: gold (not under 0), tokens (or a debt on the next ones), rest days (this week's,
+    /// Takes a broken week's punishment: tokens (or a debt on the next ones), rest days (this week's,
     /// else next week's), and the penalty run.
     private mutating func takePunishment(_ punishment: Punishment, today: String, catalog: FallbackCatalog?, now: Date) {
-        gold = max(gold - max(punishment.gold, 0), 0)
         habits.tokenDebt += max(punishment.tokens, 0)
         let week = RestDays.weekKey(of: today)
         for _ in 0..<max(punishment.restDays, 0) {
@@ -544,7 +538,7 @@ enum HomeEvents {
     }
 }
 
-/// Always on: the phone is at home at 9:00 pm, every day, a rest day too. Only the Moonlit Pass skips a night.
+/// Always on: the phone is at home at 9:00 pm, every day, a rest day too.
 /// The row starts the day after the player sets a home. It is judged at 9:00 pm: home then completes it,
 /// anywhere else fails it, and a failed row opens a penalty at the day's end like any required quest.
 enum HomeBy {
@@ -961,13 +955,12 @@ enum HabitRules {
         }
 
         // A habit contract: a new typed habit becomes a Systems row; a week passes with enough marked days; the picked
-        // punishment is taken: gold not under 0, 2 tokens owed, and the penalty run opened.
+        // punishment is taken: 2 tokens owed and the penalty run opened.
         var habitSigner = GameSnapshot.fresh(catalog: catalog, now: monday)
-        habitSigner.gold = 700
         habitSigner.player.fullRecoveryBank = 0
         let habitDraft = Contract(id: "h1", kind: .habit, startDayKey: "", endDayKey: QuestDay.key(byAddingDays: 20, to: today), signedAt: monday,
                                   habitKey: ContractHabits.new, habitName: "  Read 20 pages ", daysPerWeek: 5,
-                                  punishment: Punishment(gold: 1_000, tokens: 2, penaltyRun: true))
+                                  punishment: Punishment(tokens: 2, penaltyRun: true))
         var noPunishment = habitDraft
         noPunishment.punishment = Punishment()
         var duplicate = habitDraft
@@ -992,12 +985,12 @@ enum HabitRules {
             let brokenWeek = habitSigner.judgeContracts(now: weekThree, catalog: catalog)
             let checks = habitSigner.habits.contracts.last?.checks ?? []
             if !keptWeek.isEmpty || brokenWeek.count != 1 || checks.map(\.kept) != [true, false] || checks.first?.passedDays != 5
-                || habitSigner.gold != 0 || habitSigner.habits.tokenDebt != 2 || !habitSigner.player.penaltyOpen {
+                || habitSigner.habits.tokenDebt != 2 || !habitSigner.player.penaltyOpen {
                 errors.append("a 5-of-7 habit week should pass with 5 marks, and a week with none should take the picked punishment, got \(checks)")
             }
         }
-        if Punishment(gold: 1_000, tokens: 1, restDays: 2, penaltyRun: true).text != "1,000 gold, 1 Full Recovery token, 2 rest days and the penalty 10K run" {
-            errors.append("the punishment text is wrong: \(Punishment(gold: 1_000, tokens: 1, restDays: 2, penaltyRun: true).text)")
+        if Punishment(tokens: 1, restDays: 2, penaltyRun: true).text != "1 Full Recovery token, 2 rest days and the penalty 10K run" {
+            errors.append("the punishment text is wrong: \(Punishment(tokens: 1, restDays: 2, penaltyRun: true).text)")
         }
         // An old saved contract loads as body weight with the old stake.
         let oldJSON = #"{"id":"o","kind":"bodyWeight","startDayKey":"2026-11-16","endDayKey":"2026-12-16","startLb":150,"targetLb":145,"signedAt":0,"checks":[]}"#
@@ -1043,15 +1036,6 @@ enum HabitRules {
         out.settleHomeBy()
         if out.bundle.quests.first(where: { $0.id == HomeBy.questId })?.status != .failed || !out.homeByMissed {
             errors.append("away at 9:00 pm should fail the row, also on a rest day")
-        }
-        // The Moonlit Pass skips one night.
-        var pass = GameSnapshot.fresh(catalog: catalog, now: monday)
-        pass.habits.homeSet = true
-        pass.rebuildBundle(catalog: catalog, now: monday)
-        pass.gold = 10_000
-        _ = pass.usePotion(.moonlitPass, now: monday)
-        if pass.bundle.quests.first(where: { $0.id == HomeBy.questId })?.status != .completed || pass.homeByMissed || pass.gold != 5_800 {
-            errors.append("a Moonlit Pass should skip tonight's Home by 9 pm for 4,200 gold")
         }
 
         // The log keeps one trimmed note a day; an empty note removes it.

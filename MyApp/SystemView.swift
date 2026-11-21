@@ -607,10 +607,6 @@ private struct HiddenQuestReveal: View {
                         .foregroundStyle(QuestLight.ink.opacity(0.75))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 2)
-                    sectionTitle("REWARD").padding(.top, 22)
-                    Text(unlock.gold.map { "+\($0.formatted()) gold" } ?? "None")
-                        .font(.subheadline)
-                        .padding(.top, 10)
                     Button(action: onClose) {
                         Text("OK")
                             .font(.subheadline)

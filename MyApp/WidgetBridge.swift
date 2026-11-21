@@ -53,7 +53,6 @@ extension WidgetData {
             levelProgress: levels.isAllMax ? 1 : max(0, min(scaled - Double(levels.overallLevel), 1)),
             hp: hp.current,
             maxHP: hp.max,
-            gold: game.gold,
             updatedAt: now,
             ringStart: store.dayClock.startedAt,
             ringEnd: store.dayClock.deadline,

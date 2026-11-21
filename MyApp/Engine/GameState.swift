@@ -56,14 +56,6 @@ struct GameSnapshot: Codable, Equatable {
     var plannerRestReason: String?
     /// Quest days the player spent a rest day on, oldest first. `RestDays` sets how many a week may hold.
     var restDayKeys: [String] = []
-    /// Earned on perfect days. Spent in `Shop`.
-    var gold: Int = 0
-    /// Potions used, oldest first. Prices, cooldowns, and stat excuses read this.
-    var potionLog: [PotionUse] = []
-    /// Gold from the last day that ended. Nil when that day earned none. Since 2026-11-18 a day pays in items, so it stays nil.
-    var lastGoldReward: GoldReward?
-    /// Items from quests and chests. They are sold for gold in the inventory.
-    var inventory = InventoryState()
     /// Nil until the first integration refresh. Then `HitPoints` moves it on every refresh.
     var hitPoints: HitPointState?
     /// Nil until the first integration refresh. Then `Fatigue` moves it on every refresh.
@@ -94,11 +86,9 @@ struct GameSnapshot: Codable, Equatable {
         // Flying west across midnight moves the local date back. Keep the later day, so it is not judged twice.
         guard key > bundle.dayKey else { return }
         // The ending day's quests drop their items before its rows are replaced.
-        collectDrops()
         grantHolidayRecovery(previousKey: bundle.dayKey, key: key)
         settleScreenTime()
         settleHomeBy()
-        awardDayGold()
         recordQuestDay()
         keepEndedDay()
         recordMissedDayIfNeeded()
@@ -156,14 +146,13 @@ struct GameSnapshot: Codable, Equatable {
                 target: quest.progress.target,
                 done: quest.progress.current,
                 unit: quest.progress.unit,
-                // A potion skip is not real work, so split rotation and progression ignore it.
-                status: quest.skippedWithPotion ? .expired : quest.status
+                status: quest.status
             )
         }
     }
 
     /// A Screen Time row that stayed under the total cap all day completes as the day ends. The phone's last count comes in first.
-    /// A day with no reading at all stays pending: it opens no penalty, but it is no pass and pays no gold.
+    /// A day with no reading at all stays pending: it opens no penalty, but it is no pass.
     mutating func settleScreenTime() {
         if let minutes = PhoneScreenGroup.minutes(for: bundle.dayKey) {
             correctPhoneScreenTime(to: minutes)
@@ -379,9 +368,9 @@ struct GameSnapshot: Codable, Equatable {
         }
     }
 
-    /// A run row that real runs finished: no hand check and no potion.
+    /// A run row that real runs finished: no hand check.
     private func ranForReal(_ quest: Quest) -> Bool {
-        quest.status == .completed && !quest.skippedWithPotion && !quest.evidence.isEmpty && quest.evidence.allSatisfy { !$0.workoutIds.isEmpty }
+        quest.status == .completed && !quest.evidence.isEmpty && quest.evidence.allSatisfy { !$0.workoutIds.isEmpty }
     }
 
     /// Each penalty row gets, one time, the runs that finished rows hold now: the first pass after the row was
@@ -488,7 +477,7 @@ struct GameSnapshot: Codable, Equatable {
     /// No other change opens a finished row: when the plan from the start would open one without that gain (a row
     /// was put before it, such as the added 10K of a no-gym day), the finished rows keep their runs and the open
     /// rows share the rest. A finished row can change a run for a longer one that came later, so the rows are the
-    /// same whenever the runs were read. Rows with a hand check, a potion, or no note of their runs are not planned.
+    /// same whenever the runs were read. Rows with a hand check or no note of their runs are not planned.
     private mutating func assignRuns(skipping: Set<VerificationMethod>) {
         let dayKey = bundle.dayKey
         func notes(_ questId: String) -> [ShownWorkout] { progressLog.filter { $0.dayKey == dayKey && $0.questId == questId } }
@@ -770,7 +759,7 @@ struct GameSnapshot: Codable, Equatable {
         guard let data = UserDefaults.standard.data(forKey: storageKey) else { return nil }
         if let snapshot = try? decoded(data) { return snapshot }
         // The save exists but does not decode. The caller starts a new game and saves it under the same key,
-        // so keep these bytes: tokens, gold, and history can then be recovered by hand.
+        // so keep these bytes: tokens and history can then be recovered by hand.
         UserDefaults.standard.set(data, forKey: unreadableKey)
         return nil
     }
@@ -959,7 +948,6 @@ extension GameSnapshot {
         case hiddenUnlocks
         case noGymDayKey, burpeeSwap, noGymPlanDayKey, plannerRestDayKey, plannerRestReason, restDayKeys
         case questHistory, screenTime, stretchChecks
-        case gold, potionLog, lastGoldReward, inventory
         case hitPoints, fatigue, endedDay
         case habits
     }
@@ -991,10 +979,6 @@ extension GameSnapshot {
         questHistory = try container.decodeIfPresent(LossyArray<QuestDayRecord>.self, forKey: .questHistory)?.elements ?? []
         screenTime = try container.decodeIfPresent(ScreenTimeDay.self, forKey: .screenTime)
         stretchChecks = try container.decodeIfPresent(StretchChecks.self, forKey: .stretchChecks)
-        gold = try container.decodeIfPresent(Int.self, forKey: .gold) ?? 0
-        potionLog = try container.decodeIfPresent(LossyArray<PotionUse>.self, forKey: .potionLog)?.elements ?? []
-        lastGoldReward = try container.decodeIfPresent(GoldReward.self, forKey: .lastGoldReward)
-        inventory = try container.decodeIfPresent(InventoryState.self, forKey: .inventory) ?? InventoryState()
         hitPoints = try container.decodeIfPresent(HitPointState.self, forKey: .hitPoints)
         fatigue = try container.decodeIfPresent(FatigueState.self, forKey: .fatigue)
         endedDay = try container.decodeIfPresent(EndedDay.self, forKey: .endedDay)
@@ -1028,10 +1012,6 @@ extension GameSnapshot {
         try container.encodeIfPresent(screenTime, forKey: .screenTime)
         try container.encodeIfPresent(generationAttemptDayKey, forKey: .generationAttemptDayKey)
         try container.encodeIfPresent(generatedBundle, forKey: .generatedBundle)
-        try container.encode(gold, forKey: .gold)
-        try container.encode(potionLog, forKey: .potionLog)
-        try container.encodeIfPresent(lastGoldReward, forKey: .lastGoldReward)
-        try container.encode(inventory, forKey: .inventory)
         try container.encodeIfPresent(hitPoints, forKey: .hitPoints)
         try container.encodeIfPresent(fatigue, forKey: .fatigue)
         try container.encodeIfPresent(endedDay, forKey: .endedDay)
@@ -1086,8 +1066,8 @@ enum RebuiltRowRules {
     }
 }
 
-/// An array that drops the elements it cannot decode. One history row from a newer or an older build (a quest kind,
-/// a stat, or a potion that no longer exists) then costs that row, not the whole save.
+/// An array that drops the elements it cannot decode. One history row from a newer or an older build (a quest kind
+/// or a stat that no longer exists) then costs that row, not the whole save.
 struct LossyArray<Element: Decodable>: Decodable {
     var elements: [Element] = []
 

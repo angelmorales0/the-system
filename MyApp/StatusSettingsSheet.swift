@@ -78,7 +78,7 @@ struct StatusSettingsSheet: View {
             Button("Set home here") { store.setHomeHere() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Home by 9 pm starts tomorrow and holds every day, rest days too. Only a Moonlit Pass skips a night. The System needs Always location access; it saves only when you come home and leave.")
+            Text("Home by 9 pm starts tomorrow and holds every day, rest days too. The System needs Always location access; it saves only when you come home and leave.")
         }
         .confirmationDialog("Use one rest day?", isPresented: $confirmRest, titleVisibility: .visible) {
             Button("Use rest day") { store.useRestDay() }

@@ -1,17 +1,15 @@
 import SwiftUI
 
-/// The System's STATUS window: the overall level and XP, HP and fatigue, the seven stats, gold, and Full Recoveries.
+/// The System's STATUS window: the overall level and XP, HP and fatigue, the seven stats, and Full Recoveries.
 /// Overall XP is the seven stat levels added up (0...2450); the level is that share of 146.
 /// HP turns red when critical; the fatigue meter turns red at 80 or more.
-/// Tapping a stat opens its targets, the gold opens the shop, and the gear opens the settings.
+/// Tapping a stat opens its targets, and the gear opens the settings.
 struct StatusSheetView: View {
     @EnvironmentObject private var store: GameStore
     @State private var selectedStat: Stat?
     @State private var showSettings = false
-    @State private var showShop = false
     @State private var showBeliefs = false
     @State private var showContracts = false
-    @State private var showInventory = false
     /// The systems view comes first; the levels are one tap away.
     @State private var showLevels = false
 
@@ -41,13 +39,10 @@ struct StatusSheetView: View {
                             fatigue: store.fatigue,
                             stats: Stat.allCases.map { ($0, store.statLevels[$0]) },
                             fullRecoveryPoints: store.player.fullRecoveryBank,
-                            gold: store.snapshot.gold,
                             onSelectStat: { selectedStat = $0; SystemSound.systemOpen.play() },
                             onSettings: { showSettings = true; SystemSound.systemOpen.play() },
-                            onShop: { showShop = true; SystemSound.systemOpen.play() },
                             onBeliefs: { showBeliefs = true; SystemSound.systemOpen.play() },
-                            onContracts: { showContracts = true; SystemSound.systemOpen.play() },
-                            onInventory: { showInventory = true; SystemSound.systemOpen.play() }
+                            onContracts: { showContracts = true; SystemSound.systemOpen.play() }
                         )
                         }
                         }
@@ -67,20 +62,14 @@ struct StatusSheetView: View {
         .sheet(isPresented: $showSettings, onDismiss: { SystemSound.systemClose.play() }) {
             StatusSettingsSheet()
         }
-        .sheet(isPresented: $showShop, onDismiss: { SystemSound.systemClose.play() }) {
-            ShopSheet()
-        }
         .sheet(isPresented: $showBeliefs, onDismiss: { SystemSound.systemClose.play() }) {
             BeliefsSheet()
         }
         .sheet(isPresented: $showContracts, onDismiss: { SystemSound.systemClose.play() }) {
             ContractsSheet()
         }
-        .sheet(isPresented: $showInventory, onDismiss: { SystemSound.systemClose.play() }) {
-            InventorySheet()
-        }
         // A penalty covers every page, and a new day replaces the quests a sheet was opened for. Close the sheets,
-        // so no setting, token, or potion is used above the penalty screen or on a day the player did not choose it for.
+        // so no setting or token is used above the penalty screen or on a day the player did not choose it for.
         .onChange(of: store.openPenaltyQuest?.id) { _, penalty in
             if penalty != nil { closeSheets() }
         }
@@ -90,10 +79,8 @@ struct StatusSheetView: View {
     private func closeSheets() {
         selectedStat = nil
         showSettings = false
-        showShop = false
         showBeliefs = false
         showContracts = false
-        showInventory = false
     }
 }
 
@@ -106,13 +93,10 @@ private struct StatusSheetContent: View {
     let fatigue: Int
     let stats: [(Stat, Int)]
     let fullRecoveryPoints: Int
-    var gold = 0
     var onSelectStat: (Stat) -> Void = { _ in }
     var onSettings: () -> Void = {}
-    var onShop: () -> Void = {}
     var onBeliefs: () -> Void = {}
     var onContracts: () -> Void = {}
-    var onInventory: () -> Void = {}
     var body: some View {
         VStack(spacing: 22) {
             StatusTitleBox()
@@ -140,7 +124,6 @@ private struct StatusSheetContent: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        goldButton
                         Spacer(minLength: 8)
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("Full Recoveries:")
@@ -157,8 +140,6 @@ private struct StatusSheetContent: View {
             }
             StatusFrame {
                 VStack(spacing: 0) {
-                    linkButton("INVENTORY", action: onInventory)
-                    Rectangle().fill(QuestLight.ink.opacity(0.25)).frame(height: 0.5)
                     linkButton("CONTRACTS", action: onContracts)
                     Rectangle().fill(QuestLight.ink.opacity(0.25)).frame(height: 0.5)
                     linkButton("BELIEFS", action: onBeliefs)
@@ -184,27 +165,6 @@ private struct StatusSheetContent: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title.capitalized)
-    }
-
-    /// "Gold: 12,340" that opens the shop.
-    private var goldButton: some View {
-        Button(action: onShop) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("Gold:")
-                    .font(.footnote)
-                Text(verbatim: gold.formatted())
-                    .font(.subheadline.weight(.bold))
-                    .monospacedDigit()
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .opacity(0.7)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Gold \(gold), open shop")
-        .accessibilityAddTraits(.isButton)
     }
 
     private var settingsButton: some View {
