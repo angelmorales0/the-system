@@ -41,12 +41,18 @@ struct HabitState: Codable, Equatable {
     var studyMarks: [String: Bool] = [:]
     /// Habits the player typed in for a contract. Each one is a Systems row, marked by hand like the others.
     var customHabits: [CustomHabit] = []
+    /// The hand-marked Systems rows in their order, as the player edited them. Nil until the first edit:
+    /// the built-in rows then show, followed by the contract habits.
+    var habitRows: [HandHabit]? = nil
+    /// Marks of the rows the player added in the habit editor, by row id, then by quest day.
+    var rowMarks: [String: [String: Bool]] = [:]
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case beliefs, morningUnlockedDayKey, wokeAt, contracts, weights, tokenDebt, restDaysForfeited, homeSet, homeEvents
         case morningDoneDays, log, eatOutMarks, caffeineMarks, wholeFoodsMarks, travelMarks, studyMarks, customHabits
+        case habitRows, rowMarks
     }
 
     init(from decoder: Decoder) throws {
@@ -68,6 +74,8 @@ struct HabitState: Codable, Equatable {
         travelMarks = try container.decodeIfPresent([String: Bool].self, forKey: .travelMarks) ?? [:]
         studyMarks = try container.decodeIfPresent([String: Bool].self, forKey: .studyMarks) ?? [:]
         customHabits = try container.decodeIfPresent([CustomHabit].self, forKey: .customHabits) ?? []
+        habitRows = try? container.decodeIfPresent([HandHabit].self, forKey: .habitRows)
+        rowMarks = (try? container.decodeIfPresent([String: [String: Bool]].self, forKey: .rowMarks)) ?? [:]
     }
 }
 
@@ -348,7 +356,7 @@ enum ContractHabits {
 
     /// Key and name of each habit the player can pick, in Systems order, then "New habit".
     static func options(_ habits: HabitState) -> [(key: String, name: String)] {
-        [(homeBy, HomeBy.title), (screenTime, "Screen Time"), (stretching, DailyStretch.title)] + habits.handHabits.map { ($0.id, $0.name) } + [(new, "New habit…")]
+        [(homeBy, HomeBy.title), (screenTime, "Screen Time"), (stretching, DailyStretch.title)] + habits.allHandHabits.filter { $0.endDay == nil }.map { ($0.id, $0.name) } + [(new, "New habit…")]
     }
 
     /// Where the day's pass comes from, in words.
@@ -374,7 +382,7 @@ extension GameSnapshot {
         case ContractHabits.stretching: return rows.contains { $0.params[DailyStretch.dayParam] != nil && $0.status == .completed }
         default:
             // A hand habit: a past day without a mark has its default (fail, or pass for a limit habit).
-            guard let habit = habits.handHabits.first(where: { $0.id == key }) else { return false }
+            guard let habit = habits.allHandHabits.first(where: { $0.id == key }) else { return false }
             return habit.passed(on: dayKey, marks: habits.marks(habit), today: QuestDay.key(byAddingDays: 1, to: dayKey)) == true
         }
     }
@@ -697,7 +705,7 @@ enum SystemsView {
                 key > today ? .none : habit.passed(on: key, marks: saved, today: today).map { $0 ? .done : .missed } ?? .none
             }
             let summary = habit.weeklyLimit.map { limit in
-                "\(saved.filter { $0.value && $0.key >= week && $0.key <= today }.count)/\(limit) travel days"
+                "\(saved.filter { $0.value && $0.key >= week && $0.key <= today }.count)/\(limit) days"
             }
             return Track(name: habit.name, marks: marks, dayKeys: days, handHabit: habit, summary: summary, today: today)
         }
@@ -705,13 +713,14 @@ enum SystemsView {
             Track(name: "Home by 9 pm", marks: keys.map { mark($0) { $0.method == .homeBy } }),
             Track(name: "Screen Time", marks: keys.map { mark($0) { $0.method == .screenTimeLimit } }),
             Track(name: DailyStretch.title, marks: keys.map { mark($0) { $0.params[DailyStretch.dayParam] != nil } }),
-        ] + game.habits.handHabits.map(hand)
+        ] + game.habits.handHabits(on: today).map(hand)
     }
 }
 
 /// A habit the player marks by hand on the systems view: tap a day, then Pass or Fail. A past day without a mark fails.
-/// The three built-in ones, and the custom ones typed in for a contract (id "custom:<uuid>").
-struct HandHabit: Hashable {
+/// The built-in ones, the custom ones typed in for a contract (id "custom:<uuid>"), and the ones added in the habit
+/// editor (id "row:<uuid>"). The editor saves the whole list in `HabitState.habitRows`.
+struct HandHabit: Codable, Hashable {
     var id: String
     var name: String
     /// The first quest day the habit counts. Earlier days stay dim.
@@ -719,11 +728,27 @@ struct HandHabit: Hashable {
     /// Set for a limit habit (Traveling): a mark means the day was used (traveled), up to this many days a quest week.
     /// A used day within the limit passes, one past it fails, and a day without a mark passes.
     var weeklyLimit: Int? = nil
-    /// The first ending day whose fail opens the penalty, when it is later than `HandHabit.penaltyFirstDay`.
+    /// The first ending day whose fail opens the penalty. Nil: a fail never opens one.
     var penaltyFrom: String? = nil
+    /// The first day a fail no longer opens the penalty, after the player turned it off.
+    var penaltyEnd: String? = nil
+    /// The first day the row is gone, after the player removed it. Earlier days still count.
+    var endDay: String? = nil
 
     /// The two choices of the tap dialog: the label for true, then for false.
-    var choices: (yes: String, no: String) { weeklyLimit == nil ? ("Pass", "Fail") : ("Traveled", "Did not travel") }
+    var choices: (yes: String, no: String) { weeklyLimit == nil ? ("Pass", "Fail") : ("Did it", "Did not") }
+
+    /// The row is on the Systems page on this day: it was not removed before it.
+    func isShown(on dayKey: String) -> Bool { endDay.map { dayKey < $0 } ?? true }
+
+    /// A fail on this day opens the penalty (with the rule of two misses in a row).
+    func opensPenalty(on dayKey: String) -> Bool {
+        guard let penaltyFrom, dayKey >= penaltyFrom, dayKey >= firstDay, isShown(on: dayKey) else { return false }
+        return penaltyEnd.map { dayKey < $0 } ?? true
+    }
+
+    /// The penalty setting from tomorrow on: on, unless it is off or was turned off.
+    var penaltyOnFromTomorrow: Bool { penaltyFrom != nil && penaltyEnd == nil }
 
     /// The day's pass from the marks. Nil for a day with no mark that is still open (today) or before the first day.
     func passed(on dayKey: String, marks: [String: Bool], today: String) -> Bool? {
@@ -739,15 +764,17 @@ struct HandHabit: Hashable {
     }
 
     static let builtInFirstDay = "2026-11-18"
-    static let noEatingOut = HandHabit(id: "noEatingOut", name: "No eating out", firstDay: builtInFirstDay)
-    static let noCaffeine = HandHabit(id: "noCaffeine", name: "No caffeine", firstDay: builtInFirstDay)
-    static let wholeFoods = HandHabit(id: "wholeFoods", name: "Only whole foods", firstDay: builtInFirstDay)
+    static let noEatingOut = HandHabit(id: "noEatingOut", name: "No eating out", firstDay: builtInFirstDay, penaltyFrom: penaltyFirstDay)
+    static let noCaffeine = HandHabit(id: "noCaffeine", name: "No caffeine", firstDay: builtInFirstDay, penaltyFrom: penaltyFirstDay)
+    static let wholeFoods = HandHabit(id: "wholeFoods", name: "Only whole foods", firstDay: builtInFirstDay, penaltyFrom: penaltyFirstDay)
     /// Two study blocks of 1 hour each. Added 2026-11-19: that day shows its mark, but only from 2026-11-20 a fail opens the penalty.
     static let study = HandHabit(id: "study", name: "Study (2× 1 h blocks)", firstDay: "2026-11-19", penaltyFrom: "2026-11-20")
     static let builtIns = [noEatingOut, noCaffeine, wholeFoods, study]
     /// The first ending day whose failed habit opens the penalty (added 2026-11-19).
     static let penaltyFirstDay = "2026-11-19"
     static let customPrefix = "custom:"
+    /// Rows added in the habit editor.
+    static let rowPrefix = "row:"
 }
 
 /// A habit the player typed in when signing a contract. It stays a Systems row after the contract ends.
@@ -764,8 +791,15 @@ struct CustomHabit: Codable, Equatable, Identifiable {
 }
 
 extension HabitState {
-    /// The built-in hand habits, then the custom ones, oldest first.
-    var handHabits: [HandHabit] { HandHabit.builtIns + customHabits.map(\.handHabit) }
+    /// Every hand-marked row, removed ones too, in the player's order. Contract habits the list does not hold yet
+    /// come last. Removed rows still count for the days before they went.
+    var allHandHabits: [HandHabit] {
+        let rows = habitRows ?? HandHabit.builtIns
+        return rows + customHabits.map(\.handHabit).filter { custom in !rows.contains { $0.id == custom.id } }
+    }
+
+    /// The rows on the Systems page on `dayKey`.
+    func handHabits(on dayKey: String) -> [HandHabit] { allHandHabits.filter { $0.isShown(on: dayKey) } }
 
     func marks(_ habit: HandHabit) -> [String: Bool] { marks(id: habit.id) }
 
@@ -775,6 +809,7 @@ extension HabitState {
         case HandHabit.noCaffeine.id: return caffeineMarks
         case HandHabit.wholeFoods.id: return wholeFoodsMarks
         case HandHabit.study.id: return studyMarks
+        case _ where id.hasPrefix(HandHabit.rowPrefix): return rowMarks[id] ?? [:]
         default:
             let custom = id.hasPrefix(HandHabit.customPrefix) ? String(id.dropFirst(HandHabit.customPrefix.count)) : id
             return customHabits.first { $0.id == custom }?.marks ?? [:]
@@ -794,6 +829,8 @@ extension GameSnapshot {
         case HandHabit.noCaffeine.id: habits.caffeineMarks = marks.filter { $0.key >= QuestDay.key(byAddingDays: -60, to: bundle.dayKey) }
         case HandHabit.wholeFoods.id: habits.wholeFoodsMarks = marks.filter { $0.key >= QuestDay.key(byAddingDays: -60, to: bundle.dayKey) }
         case HandHabit.study.id: habits.studyMarks = marks.filter { $0.key >= QuestDay.key(byAddingDays: -60, to: bundle.dayKey) }
+        case _ where habit.id.hasPrefix(HandHabit.rowPrefix):
+            habits.rowMarks[habit.id] = marks.filter { $0.key >= QuestDay.key(byAddingDays: -400, to: bundle.dayKey) }
         default:
             let custom = String(habit.id.dropFirst(HandHabit.customPrefix.count))
             guard let index = habits.customHabits.firstIndex(where: { $0.id == custom }) else { return }

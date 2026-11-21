@@ -9,6 +9,7 @@ struct StatusSettingsSheet: View {
     @State private var showShields = false
     @State private var showScreenTime = false
     @State private var showAppIcon = false
+    @State private var showHabits = false
     @State private var confirmHome = false
     @AppStorage(SoundPlayer.enabledKey) private var soundOn = true
 
@@ -60,6 +61,7 @@ struct StatusSettingsSheet: View {
                     if on { SystemSound.systemOpen.play() }
                 }
                 SystemDivider()
+                link("HABITS") { showHabits = true }
                 link("PENALTY ZONE") { showShields = true }
                 link("SCREEN TIME") { showScreenTime = true }
                 link("APP ICON") { showAppIcon = true }
@@ -94,6 +96,9 @@ struct StatusSettingsSheet: View {
         }
         .sheet(isPresented: $showAppIcon, onDismiss: { SystemSound.systemClose.play() }) {
             AppIconSheet()
+        }
+        .sheet(isPresented: $showHabits, onDismiss: { SystemSound.systemClose.play() }) {
+            HabitsEditorSheet()
         }
     }
 

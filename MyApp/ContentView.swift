@@ -41,6 +41,10 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
+        #if DEBUG
+        // Launch with OPEN_HABITS=1 in the environment to open the habit editor at once (screenshots).
+        .sheet(isPresented: .constant(ProcessInfo.processInfo.environment["OPEN_HABITS"] == "1")) { HabitsEditorSheet() }
+        #endif
         // A new overall level shows its card at once, over every page.
         .overlay { LevelChangeOverlay() }
         .animation(.easeInOut(duration: 0.3), value: store.pendingLevelChange?.id)

@@ -108,7 +108,7 @@ final class GameStore: ObservableObject {
             + TrainingHistory.check() + QuestPlanner.check() + HitPoints.check() + Fatigue.check()
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
             + EndedDayRules.check() + WorkoutClaimRules.check() + RebuiltRowRules.check() + PlanAndLockRules.check()
-            + HevyRoutine.check() + HabitRules.check() + RunBurpees.check()
+            + HevyRoutine.check() + HabitRules.check() + HabitEditor.check() + RunBurpees.check()
         PenaltyHold.firstDay = hold
         PenaltyQuests.choiceOverride = nil
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
@@ -414,6 +414,18 @@ final class GameStore: ObservableObject {
         guard next != snapshot else { return }
         snapshot = next
         persist()
+    }
+
+    /// Runs one habit editor change. Returns why it was refused, or nil.
+    @discardableResult
+    func editHabits(_ change: (inout GameSnapshot) -> String?) -> String? {
+        var next = snapshot
+        let problem = change(&next)
+        guard problem == nil else { return problem }
+        guard next != snapshot else { return nil }
+        snapshot = next
+        persist()
+        return nil
     }
 
     /// Marks a day of a hand habit (No eating out, No caffeine, Only whole foods): true passed, false failed.

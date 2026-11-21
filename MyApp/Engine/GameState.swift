@@ -180,13 +180,13 @@ struct GameSnapshot: Codable, Equatable {
         endedDay?.monthPenalty = true
     }
 
-    /// The built-in habits that failed on a day that has ended. Days before `HandHabit.penaltyFirstDay`
+    /// The hand habits with the penalty on that failed on a day that has ended. Days before `HandHabit.penaltyFirstDay`
     /// or `PenaltyHold.firstDay` never count.
     func failedHabits(on dayKey: String) -> [HandHabit] {
         guard dayKey >= HandHabit.penaltyFirstDay, PenaltyHold.active(on: dayKey) else { return [] }
         let next = QuestDay.key(byAddingDays: 1, to: dayKey)
-        return HandHabit.builtIns.filter {
-            dayKey >= ($0.penaltyFrom ?? dayKey) && $0.passed(on: dayKey, marks: habits.marks($0), today: next) == false
+        return habits.allHandHabits.filter {
+            $0.opensPenalty(on: dayKey) && $0.passed(on: dayKey, marks: habits.marks($0), today: next) == false
         }
     }
 
@@ -202,7 +202,7 @@ struct GameSnapshot: Codable, Equatable {
             left.formIntersection(failedHabits(on: key))
             for habit in left { streaks[habit, default: 0] += 1 }
         }
-        return HandHabit.builtIns.filter { (streaks[$0] ?? 0) >= 2 && (streaks[$0] ?? 0) % 2 == 0 }
+        return habits.allHandHabits.filter { (streaks[$0] ?? 0) >= 2 && (streaks[$0] ?? 0) % 2 == 0 }
     }
 
     /// True when ending the day now would open a penalty.
