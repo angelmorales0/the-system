@@ -11,6 +11,7 @@ struct StatusSettingsSheet: View {
     @State private var showAppIcon = false
     @State private var confirmHome = false
     @AppStorage(SoundPlayer.enabledKey) private var soundOn = true
+    @AppStorage(UIStyle.tacticalKey) private var tactical = true
 
     var body: some View {
         QuestSheet(title: "Settings") {
@@ -59,6 +60,14 @@ struct StatusSettingsSheet: View {
                 .onChange(of: soundOn) { _, on in
                     if on { SystemSound.systemOpen.play() }
                 }
+                Toggle(isOn: $tactical) {
+                    Text("TACTICAL LAYOUT")
+                        .font(.caption.weight(.semibold))
+                        .tracking(1.1)
+                        .foregroundStyle(SystemTheme.muted)
+                }
+                .toggleStyle(QuestCheckToggleStyle())
+                .accessibilityIdentifier("tacticalLayoutToggle")
                 SystemDivider()
                 link("PENALTY ZONE") { showShields = true }
                 link("SCREEN TIME") { showScreenTime = true }

@@ -9,7 +9,8 @@ struct SystemView: View {
     @State private var stretchExpanded = false
     /// The gym split editor, opened from under the gym row.
     @State private var editingSplit = false
-    @State private var showLog = false
+    /// The tactical layout: typed labels, a boxed quest list, and a status log. Set in Settings.
+    @AppStorage(UIStyle.tacticalKey) private var tactical = true
 
     var body: some View {
         ZStack {
@@ -37,9 +38,6 @@ struct SystemView: View {
             }
         }
         .animation(.easeOut(duration: 0.25), value: store.pendingHiddenReveal?.id)
-        .sheet(isPresented: $showLog, onDismiss: { SystemSound.systemClose.play() }) {
-            BehaviorLogSheet()
-        }
 
         .sheet(isPresented: $editingSplit, onDismiss: { SystemSound.systemClose.play() }) {
             NavigationStack { SplitEditorSheet(dayId: GymSplit.day(named: store.bundle.headerLine)?.id) }
@@ -48,9 +46,30 @@ struct SystemView: View {
 
     private var questContent: some View {
         VStack(spacing: 0) {
-            QuestInfoHeader()
+            if tactical {
+                TacticalHeader()
+            } else {
+                QuestInfoHeader()
+            }
             ConnectionBanner()
                 .padding(.top, 14)
+            if !tactical {
+                arrivalLines
+            }
+            morningAndRestLines
+
+            Spacer(minLength: tactical ? 16 : 35)
+            if tactical {
+                TacticalQuestBox(done: goalsDone.done, total: goalsDone.total) { goalList }
+            } else {
+                classicGoalList
+            }
+            questFooter
+        }
+    }
+
+    /// "[Daily Quest: … has arrived.]" and today's belief. The classic layout only.
+    @ViewBuilder private var arrivalLines: some View {
             Spacer(minLength: 28)
             Text("[Daily Quest: \(store.bundle.headerLine)\nhas arrived.]")
                 .font(.system(.subheadline, design: .default).weight(.regular))
@@ -71,6 +90,10 @@ struct SystemView: View {
                     .padding(.horizontal, 12)
                     .accessibilityLabel("Today's belief: \(belief)")
             }
+    }
+
+    /// The morning lock line and the Rest Day reason. Both layouts show them.
+    @ViewBuilder private var morningAndRestLines: some View {
             // The morning lock holds until the first workout of the day.
             if store.snapshot.morningLockOn(now: store.clock) {
                 Text("MORNING LOCK · apps open after your first workout")
@@ -94,8 +117,22 @@ struct SystemView: View {
                     .padding(.horizontal, 24)
                     .accessibilityIdentifier("restReason")
             }
+    }
 
-            Spacer(minLength: 35)
+    /// Finished and total goal rows, for the tactical box header. The folded lifts count as one row.
+    private var goalsDone: (done: Int, total: Int) {
+        let rows = goalRows
+        let done = rows.filter { row in
+            switch row {
+            case .quest(let quest): quest.status == .completed
+            case .lifts(let lifts): lifts.filter { $0.kind != .optional }.allSatisfy { $0.status == .completed }
+            }
+        }.count
+        return (done, rows.count)
+    }
+
+    /// "GOAL" with its double line, then the list. The classic layout only.
+    @ViewBuilder private var classicGoalList: some View {
             VStack(spacing: 3) {
                 Text("GOAL")
                     .font(.system(.title2, design: .default).weight(.medium))
@@ -108,8 +145,14 @@ struct SystemView: View {
             .accessibilityAddTraits(.isHeader)
 
             Spacer(minLength: 23)
+            goalList
+    }
+
+    /// The goal rows, with the lifts and the stretches folded.
+    private var goalList: some View {
             VStack(spacing: 1) {
-                ForEach(goalRows) { row in
+                ForEach(Array(goalRows.enumerated()), id: \.element.id) { index, row in
+                    VStack(spacing: 1) {
                     switch row {
                     case .quest(let quest):
                         if quest.id == DailyStretch.questId, let day = StretchSplit.day(of: quest) {
@@ -166,9 +209,14 @@ struct SystemView: View {
                             }
                         }
                     }
+                    }
+                    .modifier(TacticalRowReveal(index: index, on: tactical))
                 }
             }
+    }
 
+    /// The optional quests, the check note, the log button, the warning, the ring, and the timer.
+    @ViewBuilder private var questFooter: some View {
             if !otherOptionalQuests.isEmpty {
                 VStack(spacing: 1) {
                     ForEach(otherOptionalQuests) { questRow($0) }
@@ -184,27 +232,15 @@ struct SystemView: View {
                     .padding(.top, 14)
             }
 
-            // The behavior log: one short note a day.
-            Button {
-                SystemSound.systemOpen.play()
-                showLog = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: store.snapshot.habits.log[store.bundle.dayKey] == nil ? "square.and.pencil" : "checkmark")
-                    Text(store.snapshot.habits.log[store.bundle.dayKey] == nil ? "WRITE TODAY'S LOG" : "TODAY'S LOG WRITTEN")
-                        .tracking(1)
-                }
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(QuestLight.ink.opacity(0.75))
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 10)
-            .accessibilityIdentifier("behaviorLogButton")
 
             Spacer(minLength: 38)
-            Text(warning)
+            Group {
+                if tactical {
+                    TypewriterText(warning, delay: 1.8, speed: 0.03)
+                } else {
+                    Text(warning)
+                }
+            }
                 .font(.system(.footnote, design: .default))
                 .lineSpacing(9)
                 .multilineTextAlignment(.center)
@@ -213,10 +249,28 @@ struct SystemView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 22)
             QuestSignalRing(dayClock: store.dayClock, missesRequiredSet: store.snapshot.missesRequiredSet)
-                .frame(width: 43, height: 43)
+                .frame(width: 64, height: 64)
             QuestDayTimer(dayClock: store.dayClock)
                 .padding(.top, 6)
+            if tactical {
+                TacticalLog(lines: logLines)
+                    .padding(.top, 14)
+            }
+    }
+
+    /// The status log: the last finished quest, the open count, and the penalty hold while it lasts.
+    private var logLines: [String] {
+        var lines: [String] = []
+        let goals = store.goalQuests
+        if let last = goals.last(where: { $0.status == .completed }) {
+            lines.append("> \(last.title.uppercased()) CLEAR")
         }
+        let open = goalsDone.total - goalsDone.done
+        lines.append(open == 0 ? "> ALL QUESTS CLEAR" : "> \(open) \(open == 1 ? "QUEST" : "QUESTS") REMAIN")
+        if !PenaltyHold.active(on: store.bundle.dayKey) {
+            lines.append("> PENALTY HOLD UNTIL \(PenaltyHold.firstDay.dropFirst(5))")
+        }
+        return lines
     }
 
     /// The goal list with the day's lifts folded into one row at the place of the first lift.
@@ -655,8 +709,10 @@ private struct QuestSignalRing: View {
                     var segment = context
                     segment.translateBy(x: size.width / 2, y: size.height / 2)
                     segment.rotate(by: .degrees(Double(index) * 360 / Double(DayClock.segments)))
-                    let rect = CGRect(x: -1.15, y: -size.height / 2 + 1, width: 2.3, height: 5.3)
-                    let path = Path(roundedRect: rect, cornerRadius: 0.8)
+                    // The dashes were drawn for a 43-point ring. They grow with the ring.
+                    let scale = size.width / 43
+                    let rect = CGRect(x: -1.15 * scale, y: -size.height / 2 + scale, width: 2.3 * scale, height: 5.3 * scale)
+                    let path = Path(roundedRect: rect, cornerRadius: 0.8 * scale)
                     // Dash 0 is at 12 o'clock and the index runs clockwise. The dark part grows clockwise
                     // from 12 o'clock, so the last lit dashes sit just left of the top.
                     let isLit = failed || index >= DayClock.segments - lit
