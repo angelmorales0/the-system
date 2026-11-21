@@ -5,7 +5,8 @@ import SwiftUI
 /// Each text types one time per launch. A redraw, a new row, or a second visit to the screen shows it at once.
 enum TacticalIntro {
     static var typed: Set<String> = []
-    static var rowsShown = false
+    /// The row groups that already faded in this launch: the quest list and the SYSTEMS rows.
+    static var shownGroups: Set<String> = []
     static let mono = Font.system(.caption2, design: .monospaced)
 }
 
@@ -111,6 +112,7 @@ struct TacticalHeader: View {
 
 /// The quest list in a thin box under "[ DAILY QUEST ]" and the count of finished quests.
 struct TacticalQuestBox<Content: View>: View {
+    var title = "[ DAILY QUEST ]"
     let done: Int
     let total: Int
     @ViewBuilder var content: Content
@@ -118,7 +120,7 @@ struct TacticalQuestBox<Content: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                TypewriterText("[ DAILY QUEST ]", delay: 0.8)
+                TypewriterText(title, delay: 0.8)
                 Spacer()
                 Text("\(done) / \(total)")
                     .monospacedDigit()
@@ -141,8 +143,15 @@ struct TacticalQuestBox<Content: View>: View {
 /// A quest row in the tactical box: a hairline on top, and a fade-in one row after another at launch.
 struct TacticalRowReveal: ViewModifier {
     let index: Int
+    var group = "quests"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var visible = TacticalIntro.rowsShown
+    @State private var visible: Bool
+
+    init(index: Int, group: String = "quests") {
+        self.index = index
+        self.group = group
+        _visible = State(initialValue: TacticalIntro.shownGroups.contains(group))
+    }
 
     func body(content: Content) -> some View {
             content
@@ -158,7 +167,7 @@ struct TacticalRowReveal: ViewModifier {
                     }
                     try? await Task.sleep(for: .seconds(1.0 + Double(index) * 0.12))
                     withAnimation(.easeOut(duration: 0.3)) { visible = true }
-                    TacticalIntro.rowsShown = true
+                    TacticalIntro.shownGroups.insert(group)
                 }
     }
 }
@@ -166,11 +175,12 @@ struct TacticalRowReveal: ViewModifier {
 /// The status log under the timer. Each line types after the one before it.
 struct TacticalLog: View {
     let lines: [String]
+    var delay = 2.6
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                TypewriterText(line, delay: 2.6 + Double(index) * 0.9, speed: 0.03)
+                TypewriterText(line, delay: delay + Double(index) * 0.9, speed: 0.03)
             }
         }
         .font(TacticalIntro.mono)

@@ -1,9 +1,26 @@
 import SwiftUI
 
-/// The second page: the SYSTEMS window, with the habit rows of the week.
+/// The second page: the SYSTEMS window, the habit rows of the last 28 days in the tactical style.
 /// The levels open from the LV and HP area on the quest window, in `LevelsWindow`.
 struct StatusSheetView: View {
     @EnvironmentObject private var store: GameStore
+
+    private var tracks: [SystemsView.Track] { store.systemsTracks }
+    /// Rows with a streak that is still going.
+    private var active: Int { tracks.filter { $0.summary == nil && $0.streak > 0 }.count }
+    /// Rows whose last day is a pass.
+    private var passedToday: Int { tracks.filter { $0.marks.last == .done }.count }
+
+    /// The log under the box: active streaks, the longest one, and the hand rows still open today.
+    private var logLines: [String] {
+        var lines = ["> \(active) \(active == 1 ? "STREAK" : "STREAKS") ACTIVE"]
+        if let best = tracks.filter({ $0.summary == nil }).max(by: { $0.streak < $1.streak }), best.streak > 0 {
+            lines.append("> LONGEST: \(best.name.uppercased()) \(best.streak)D")
+        }
+        let open = tracks.filter { $0.handHabit != nil && $0.handHabit?.weeklyLimit == nil && $0.marks.last == SystemsView.Mark.none }.count
+        if open > 0 { lines.append("> \(open) TO MARK TODAY") }
+        return lines
+    }
 
     var body: some View {
         ZStack {
@@ -11,9 +28,29 @@ struct StatusSheetView: View {
             GeometryReader { proxy in
                 ScrollView(showsIndicators: false) {
                     SystemPanel(padding: 14) {
-                        VStack(spacing: 18) {
-                            StatusTitleBox()
-                            SystemsPanel(tracks: store.systemsTracks) { store.setHandMark($0, $1, passed: $2) }
+                        VStack(alignment: .leading, spacing: 0) {
+                            HStack(spacing: 8) {
+                                TypewriterText("SYSTEM // HABITS")
+                                Spacer(minLength: 8)
+                                TypewriterText("\(active) ACTIVE", delay: 0.3)
+                                    .foregroundStyle(QuestLight.ink)
+                            }
+                            .foregroundStyle(SystemTheme.muted)
+                            .font(TacticalIntro.mono)
+                            .tracking(2)
+                            Rectangle().fill(QuestLight.cyan.opacity(0.25)).frame(height: 0.5)
+                                .padding(.top, 10)
+                                .padding(.bottom, 14)
+                            TypewriterText("LAST 28 DAYS", delay: 0.5)
+                                .foregroundStyle(SystemTheme.muted)
+                                .font(TacticalIntro.mono)
+                                .tracking(2)
+                            TacticalQuestBox(title: "[ SYSTEMS ]", done: passedToday, total: tracks.count) {
+                                SystemsPanel(tracks: tracks) { store.setHandMark($0, $1, passed: $2) }
+                            }
+                            .padding(.top, 14)
+                            TacticalLog(lines: logLines, delay: 2.0)
+                                .padding(.top, 14)
                         }
                     }
                     .frame(maxWidth: 460)
