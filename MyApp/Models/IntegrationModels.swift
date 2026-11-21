@@ -128,7 +128,7 @@ nonisolated struct HevyWorkout: Codable, Equatable {
     var exercises: [HevyExercise]
 }
 
-/// Hevy summary for one quest day (5:00 to 5:00): exercises, sets, reps, and kg. No API key and no notes.
+/// Hevy summary for one quest day (midnight to midnight): exercises, sets, reps, and kg. No API key and no notes.
 nonisolated struct HevyDayReading: Codable, Equatable {
     var available: Bool
     var configured: Bool

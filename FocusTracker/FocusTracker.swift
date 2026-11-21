@@ -15,7 +15,7 @@ final class FocusTracker {
     static let sendSeconds: TimeInterval = 15 * 60
     /// Days older than this are deleted from the Mac.
     static let keepDays = 30
-    static let dayStartHour = 5
+    static let dayStartHour = 0
     /// One slot per minute of a quest day, 25 hours so the fall DST day fits. Matches the Worker's 188 bytes.
     static let daySlots = 1504
     /// A minute is marked active once this much of it counted.
@@ -207,7 +207,7 @@ final class FocusTracker {
 
     static func minutes(_ seconds: Double) -> Int { Int((seconds / 60).rounded(.down)) }
 
-    /// Same rule as `QuestDay.key` in the iPhone app: a quest day runs from 5:00 to 5:00 local time.
+    /// Same rule as `QuestDay.key` in the iPhone app: a quest day runs from midnight to midnight local time.
     static func dayKey(for date: Date, calendar: Calendar = .autoupdatingCurrent) -> String {
         let local = calendar.component(.hour, from: date) < dayStartHour
             ? calendar.date(byAdding: .day, value: -1, to: date) ?? date
@@ -216,7 +216,7 @@ final class FocusTracker {
         return String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
     }
 
-    /// The minute of the quest day that `date` falls in: 0 at 5:00 local time.
+    /// The minute of the quest day that `date` falls in: 0 at midnight local time.
     static func slot(for date: Date, calendar: Calendar = .autoupdatingCurrent) -> Int? {
         let base = calendar.component(.hour, from: date) < dayStartHour
             ? calendar.date(byAdding: .day, value: -1, to: date) ?? date
@@ -243,14 +243,14 @@ final class FocusTracker {
         var errors: [String] = []
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "America/Los_Angeles") ?? .gmt
-        let early = calendar.date(from: DateComponents(year: 2026, month: 10, day: 25, hour: 4, minute: 59)) ?? .now
-        let morning = calendar.date(from: DateComponents(year: 2026, month: 10, day: 25, hour: 5)) ?? .now
+        let early = calendar.date(from: DateComponents(year: 2026, month: 10, day: 24, hour: 23, minute: 59)) ?? .now
+        let morning = calendar.date(from: DateComponents(year: 2026, month: 10, day: 25, hour: 0)) ?? .now
         if dayKey(for: early, calendar: calendar) != "2026-10-24" || dayKey(for: morning, calendar: calendar) != "2026-10-25" {
-            errors.append("4:59 should be the day before and 5:00 the new day")
+            errors.append("23:59 should be the day before and midnight the new day")
         }
         let nineTen = calendar.date(from: DateComponents(year: 2026, month: 10, day: 25, hour: 9, minute: 10, second: 40)) ?? .now
-        if slot(for: morning, calendar: calendar) != 0 || slot(for: nineTen, calendar: calendar) != 250 || slot(for: early, calendar: calendar) != 1439 {
-            errors.append("5:00 should be minute 0, 9:10 minute 250, and 4:59 minute 1439")
+        if slot(for: morning, calendar: calendar) != 0 || slot(for: nineTen, calendar: calendar) != 550 || slot(for: early, calendar: calendar) != 1439 {
+            errors.append("midnight should be minute 0, 9:10 minute 550, and 23:59 minute 1439")
         }
         var day = [UInt8](repeating: 0, count: daySlots)
         day[0] = 60; day[9] = 30; day[10] = 29

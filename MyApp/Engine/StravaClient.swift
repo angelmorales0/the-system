@@ -7,7 +7,7 @@ enum StravaClient {
 
     static var configured: Bool { SecretStore.has(.stravaTokens) }
 
-    /// One quest day (5:00 to 5:00) of Strava activities as workout events.
+    /// One quest day (midnight to midnight) of Strava activities as workout events.
     static func snapshot(dayKey: String, zone: TimeZone? = nil) async -> StravaDayReading {
         var base = StravaDayReading.disconnected(dayKey: dayKey, reason: "")
         guard configured else {

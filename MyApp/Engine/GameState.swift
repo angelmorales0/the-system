@@ -176,24 +176,42 @@ struct GameSnapshot: Codable, Equatable {
 
     /// Incomplete required quests escalate the penalty. A Full Recovery day does not.
     mutating func recordMissedDayIfNeeded() {
-        guard missesRequiredSet else { return }
+        guard missesRequiredSet, PenaltyHold.active(on: bundle.dayKey) else { return }
         player.penaltyOpen = true
     }
 
-    /// A built-in Systems habit failed on the ending day: a Fail mark, no mark, or a travel day past the weekly limit.
-    /// The penalty (the 10K or the burpees) opens, rest day or not. Late work on the day cannot lift it.
+    /// A built-in Systems habit failed on the ending day and on the day before: a Fail mark, no mark, or a travel day
+    /// past the weekly limit. The penalty (the 10K or the burpees) opens, rest day or not. Late work cannot lift it.
     /// Custom habits are judged by their contracts instead.
     mutating func openPenaltyForFailedHabits() {
-        guard !failedHabits(on: bundle.dayKey).isEmpty else { return }
+        guard !penaltyHabits(on: bundle.dayKey).isEmpty else { return }
         player.penaltyOpen = true
         endedDay?.monthPenalty = true
     }
 
-    /// The built-in habits that failed on a day that has ended. Days before `HandHabit.penaltyFirstDay` never count.
+    /// The built-in habits that failed on a day that has ended. Days before `HandHabit.penaltyFirstDay`
+    /// or `PenaltyHold.firstDay` never count.
     func failedHabits(on dayKey: String) -> [HandHabit] {
-        guard dayKey >= HandHabit.penaltyFirstDay else { return [] }
+        guard dayKey >= HandHabit.penaltyFirstDay, PenaltyHold.active(on: dayKey) else { return [] }
         let next = QuestDay.key(byAddingDays: 1, to: dayKey)
-        return HandHabit.builtIns.filter { $0.passed(on: dayKey, marks: habits.marks($0), today: next) == false }
+        return HandHabit.builtIns.filter {
+            dayKey >= ($0.penaltyFrom ?? dayKey) && $0.passed(on: dayKey, marks: habits.marks($0), today: next) == false
+        }
+    }
+
+    /// The habits whose miss on `dayKey` opens the penalty: the second miss in a row. A third miss in a row starts a new
+    /// pair, so the fourth opens the next penalty. A pass between two misses resets the count.
+    func penaltyHabits(on dayKey: String) -> [HandHabit] {
+        var streaks: [HandHabit: Int] = [:]
+        var key = dayKey
+        var left = Set(failedHabits(on: key))
+        for habit in left { streaks[habit] = 1 }
+        for _ in 0..<366 where !left.isEmpty {
+            key = QuestDay.key(byAddingDays: -1, to: key)
+            left.formIntersection(failedHabits(on: key))
+            for habit in left { streaks[habit, default: 0] += 1 }
+        }
+        return HandHabit.builtIns.filter { (streaks[$0] ?? 0) >= 2 && (streaks[$0] ?? 0) % 2 == 0 }
     }
 
     /// True when ending the day now would open a penalty.
@@ -218,7 +236,7 @@ struct GameSnapshot: Codable, Equatable {
     }
 
     /// Shown when the quest day on screen is ahead of the local date, after travel west. A rest then waits for the clock.
-    static let dayAheadMessage = "The quest day is ahead of the local date. Try again after 5:00."
+    static let dayAheadMessage = "The quest day is ahead of the local date. Try again after midnight."
 
     /// Spends one banked token. Today always becomes the Full Recovery day; finished work stays done.
     /// A day that ended while the app stayed open is judged first, so a token never hides its miss.
@@ -1079,5 +1097,31 @@ struct LossyArray<Element: Decodable>: Decodable {
                 break
             }
         }
+    }
+}
+
+/// Penalties stay in the rules but wait until `firstDay`. An ending quest day before it opens no penalty quest
+/// (missed required set, failed habit, or broken contract) and the monitor does not lock the phone for it.
+enum PenaltyHold {
+    /// The first ending quest day that can open a penalty.
+    static var firstDay = "2027-01-05"
+
+    static func active(on dayKey: String) -> Bool { dayKey >= firstDay }
+
+    /// A missed day before the hold ends opens no penalty and leaves no day for the monitor; the first held-free day does.
+    static func check() -> [String] {
+        var errors: [String] = []
+        let catalog = FallbackCatalog.bundled()
+        func missed(_ key: String) -> GameSnapshot? {
+            guard let start = QuestDay.start(of: key) else { return nil }
+            var day = GameSnapshot.fresh(catalog: catalog, now: start.addingTimeInterval(9 * 3600))
+            day.refreshIfNeeded(catalog: catalog, now: start.addingTimeInterval(33 * 3600))
+            return day
+        }
+        let lastHeld = QuestDay.key(byAddingDays: -1, to: firstDay)
+        if active(on: lastHeld) || !active(on: firstDay) { errors.append("the hold should end on \(firstDay)") }
+        if missed(lastHeld)?.player.penaltyOpen != false { errors.append("a missed \(lastHeld) should open no penalty") }
+        if missed(firstDay)?.player.penaltyOpen != true { errors.append("a missed \(firstDay) should open the penalty") }
+        return errors
     }
 }

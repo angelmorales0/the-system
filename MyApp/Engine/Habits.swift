@@ -77,7 +77,7 @@ struct HabitState: Codable, Equatable {
 /// of the day. Wake time is the end of the WHOOP night sleep; without one, the lock starts at 7:00. A wake after 7:00
 /// does not move the start: the lock is already on. A rest day (free rest day or Full Recovery) has no lock.
 /// No shop item skips it. Any of these ends it: a Hevy workout with a set (stretches count), a Strava activity, or an
-/// Apple Health workout of 10 minutes or more, started after waking (after 5:00 without a wake time).
+/// Apple Health workout of 10 minutes or more, started after waking (after midnight without a wake time).
 enum MorningLock {
     static let fallbackHour = 7
     static let minHealthSeconds = 10.0 * 60
@@ -123,7 +123,7 @@ extension GameSnapshot {
             habits.wokeAt[today] = wokeAt
             habits.wokeAt = habits.wokeAt.filter { $0.key >= QuestDay.key(byAddingDays: -7, to: today) }
         }
-        // Only workouts that start after today's wake (or 5:00) count, so yesterday's data never ends today's lock.
+        // Only workouts that start after today's wake (or midnight) count, so yesterday's data never ends today's lock.
         guard habits.morningUnlockedDayKey != today, let dayStart = QuestDay.start(of: today) else { return false }
         let after = habits.wokeAt[today] ?? dayStart
         guard MorningLock.unlockingWorkout(integrations, after: after) != nil else { return false }
@@ -503,7 +503,7 @@ extension GameSnapshot {
             habits.restDaysForfeited[target, default: 0] += 1
         }
         habits.restDaysForfeited = habits.restDaysForfeited.filter { $0.key >= QuestDay.key(byAddingDays: -21, to: week) }
-        if punishment.penaltyRun, let catalog {
+        if punishment.penaltyRun, PenaltyHold.active(on: today), let catalog {
             player.penaltyOpen = true
             // The contract's penalty: late work on the day that waits must not lift it.
             endedDay?.monthPenalty = true
@@ -715,6 +715,8 @@ struct HandHabit: Hashable {
     /// Set for a limit habit (Traveling): a mark means the day was used (traveled), up to this many days a quest week.
     /// A used day within the limit passes, one past it fails, and a day without a mark passes.
     var weeklyLimit: Int? = nil
+    /// The first ending day whose fail opens the penalty, when it is later than `HandHabit.penaltyFirstDay`.
+    var penaltyFrom: String? = nil
 
     /// The two choices of the tap dialog: the label for true, then for false.
     var choices: (yes: String, no: String) { weeklyLimit == nil ? ("Pass", "Fail") : ("Traveled", "Did not travel") }
@@ -737,8 +739,8 @@ struct HandHabit: Hashable {
     static let noCaffeine = HandHabit(id: "noCaffeine", name: "No caffeine", firstDay: builtInFirstDay)
     static let wholeFoods = HandHabit(id: "wholeFoods", name: "Only whole foods", firstDay: builtInFirstDay)
     static let travel = HandHabit(id: "travel", name: "Traveling (max 2 days a week)", firstDay: builtInFirstDay, weeklyLimit: 2)
-    /// Two study blocks of 1 hour each. It counts from 2026-11-20, the day after it was added.
-    static let study = HandHabit(id: "study", name: "Study (2× 1 h blocks)", firstDay: "2026-11-20")
+    /// Two study blocks of 1 hour each. Added 2026-11-19: that day shows its mark, but only from 2026-11-20 a fail opens the penalty.
+    static let study = HandHabit(id: "study", name: "Study (2× 1 h blocks)", firstDay: "2026-11-19", penaltyFrom: "2026-11-20")
     static let builtIns = [noEatingOut, noCaffeine, wholeFoods, study, travel]
     /// The first ending day whose failed habit opens the penalty (added 2026-11-19).
     static let penaltyFirstDay = "2026-11-19"
@@ -844,7 +846,7 @@ enum HabitRules {
         let catalog = FallbackCatalog.bundled()
         guard let monday = QuestDay.date(from: "2026-11-16") else { return ["could not build habit dates"] }
         // Morning lock: from 7:00 or an earlier wake, until a workout started after waking. Off on rest days.
-        let seven = (QuestDay.start(of: "2026-11-16") ?? monday).addingTimeInterval(2 * 3600)
+        let seven = (QuestDay.start(of: "2026-11-16") ?? monday).addingTimeInterval(7 * 3600)
         if MorningLock.start(dayKey: "2026-11-16", wokeAt: nil) != seven
             || MorningLock.start(dayKey: "2026-11-16", wokeAt: seven.addingTimeInterval(-3600)) != seven.addingTimeInterval(-3600)
             || MorningLock.start(dayKey: "2026-11-16", wokeAt: seven.addingTimeInterval(3600)) != seven {
@@ -865,9 +867,33 @@ enum HabitRules {
             unmarked.habits.wholeFoodsMarks = [:]
             unmarked.setHandMark(.noCaffeine, unmarked.bundle.dayKey, passed: true)
             if unmarked.failedHabits(on: unmarked.bundle.dayKey).map(\.id) != [HandHabit.wholeFoods.id] { errors.append("a day left unmarked should fail") }
+            // One miss is free. A second miss in a row opens the penalty, and the third starts a new pair.
             day.refreshIfNeeded(catalog: catalog, now: friday.addingTimeInterval(9 * 3600))
-            if !day.player.penaltyOpen || PenaltyQuests.rows(in: day.bundle).isEmpty { errors.append("a failed habit should open the penalty") }
+            if !day.penaltyHabits(on: "2026-11-19").isEmpty { errors.append("one failed habit day should not open the penalty") }
+            for habit in HandHabit.builtIns where habit.weeklyLimit == nil { day.setHandMark(habit, day.bundle.dayKey, passed: true) }
+            day.setHandMark(.noCaffeine, day.bundle.dayKey, passed: false)
+            var passedBetween = day
+            passedBetween.setHandMark(.noCaffeine, "2026-11-19", passed: true)
+            if !passedBetween.penaltyHabits(on: day.bundle.dayKey).isEmpty { errors.append("a pass between two misses should reset the count") }
+            day.refreshIfNeeded(catalog: catalog, now: friday.addingTimeInterval(33 * 3600))
+            if !day.player.penaltyOpen || PenaltyQuests.rows(in: day.bundle).isEmpty || day.penaltyHabits(on: "2026-11-20").map(\.id) != [HandHabit.noCaffeine.id] {
+                errors.append("a habit failed two days in a row should open the penalty")
+            }
+            for habit in HandHabit.builtIns where habit.weeklyLimit == nil { day.setHandMark(habit, day.bundle.dayKey, passed: habit != .noCaffeine) }
+            if !day.penaltyHabits(on: day.bundle.dayKey).isEmpty { errors.append("a third miss in a row should start a new pair") }
+            day.refreshIfNeeded(catalog: catalog, now: friday.addingTimeInterval(57 * 3600))
+            for habit in HandHabit.builtIns where habit.weeklyLimit == nil { day.setHandMark(habit, day.bundle.dayKey, passed: habit != .noCaffeine) }
+            if day.penaltyHabits(on: day.bundle.dayKey).map(\.id) != [HandHabit.noCaffeine.id] {
+                errors.append("a fourth miss in a row should open the next penalty")
+            }
             if !day.failedHabits(on: "2026-11-18").isEmpty { errors.append("days before the rule should not fail") }
+            // Study shows a Fail on its first day, but the penalty starts the next day.
+            var study = GameSnapshot.fresh(catalog: catalog, now: thursday.addingTimeInterval(9 * 3600))
+            for habit in HandHabit.builtIns where habit.weeklyLimit == nil { study.setHandMark(habit, study.bundle.dayKey, passed: true) }
+            study.setHandMark(.study, study.bundle.dayKey, passed: false)
+            if SystemsView.tracks(study).first(where: { $0.handHabit == .study })?.marks.last != .missed || !study.failedHabits(on: study.bundle.dayKey).isEmpty {
+                errors.append("a Study Fail on 2026-11-19 should show red and not open the penalty")
+            }
             var stretch = QuestBundle.empty
             stretch.quests = [DailyStretch.quest(mode: .performanceTraining, now: thursday)]
             if !stretch.openRequired.isEmpty { errors.append("an open Stretching row should not open a penalty") }

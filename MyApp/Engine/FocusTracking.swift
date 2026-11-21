@@ -65,7 +65,7 @@ enum FocusTracking {
         syncMonitoring(restart: true)
     }
 
-    /// One schedule per quest day (5:00 to 4:59) with an event at every FOC threshold. Without an "all apps"
+    /// One schedule per quest day (0:00 to 23:59) with an event at every FOC threshold. Without an "all apps"
     /// selection nothing is counted, so monitoring stops.
     /// A running count is left alone at launch: a restart sets every threshold back to zero, so the day's minutes
     /// before the launch would be lost and the day would read lower than it was. Only a new selection restarts it.
@@ -92,7 +92,7 @@ enum FocusTracking {
         }
         let schedule = DeviceActivitySchedule(
             intervalStart: DateComponents(hour: QuestDay.startHour, minute: 0),
-            intervalEnd: DateComponents(hour: QuestDay.startHour - 1, minute: 59),
+            intervalEnd: DateComponents(hour: (QuestDay.startHour + 23) % 24, minute: 59),
             repeats: true
         )
         try? center.startMonitoring(name, during: schedule, events: events)

@@ -7,7 +7,7 @@
 // POST /v1/screentime/mac
 //   {"deviceID": "...", "deviceName": "Work MacBook", "dayKey": "2026-10-26", "minutes": 280, "active": "<base64>"}
 //   Each Mac sends its running total for the quest day. A new value replaces that Mac's old one.
-//   "active" (optional) is a bitmap of the quest day's minutes: bit i is minute i after 5:00 local,
+//   "active" (optional) is a bitmap of the quest day's minutes: bit i is minute i after midnight local,
 //   byte i >> 3, bit 1 << (i & 7). It lets two Macs used in the same minute count that minute once.
 // GET  /v1/integrations/screentime/snapshot?day=2026-10-26
 //   {"available": true, "dayKey": "2026-10-26", "workMinutes": 412, "active": "<base64>", "devices": [...]}

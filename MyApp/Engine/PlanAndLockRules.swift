@@ -27,13 +27,13 @@ enum PlanAndLockRules {
         }
         if !twice.player.penaltyOpen { errors.append("a quest of the day should not close a penalty that has an open row") }
 
-        // Screen time overlap: phone minutes before 5:00 cannot overlap the Macs, whose day starts at 5:00.
+        // Screen time overlap: phone minutes before the Macs' first active minute cannot overlap them.
         if let dayStart = QuestDay.start(of: "2026-10-22") {
             var bitmap = Data(count: 180)
-            for slot in 0..<240 { bitmap[slot >> 3] |= 1 << UInt8(slot & 7) }
-            let early = [5: dayStart.addingTimeInterval(-175 * 60), 10: dayStart.addingTimeInterval(240 * 60)]
+            for slot in 240..<480 { bitmap[slot >> 3] |= 1 << UInt8(slot & 7) }
+            let early = [5: dayStart.addingTimeInterval(60 * 60), 10: dayStart.addingTimeInterval(200 * 60)]
             if ScreenOverlap.minutes(phoneTimes: early, macActive: bitmap, dayStart: dayStart) != 0 {
-                errors.append("phone minutes that can be before 5:00 are no sure overlap with the Macs")
+                errors.append("phone minutes before the Macs were active are no sure overlap with them")
             }
         }
 

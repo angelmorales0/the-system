@@ -9,7 +9,7 @@ enum WhoopClient {
 
     static var configured: Bool { SecretStore.has(.whoopTokens) }
 
-    /// Recovery, sleep, and strain for the calendar day `dayKey`, and the workouts of the quest day (5:00 to 5:00).
+    /// Recovery, sleep, and strain for the calendar day `dayKey`, and the workouts of the quest day (midnight to midnight).
     static func snapshot(dayKey: String, zone: TimeZone? = nil) async -> WhoopDayReading {
         var base = WhoopDayReading.disconnected(dayKey: dayKey, reason: "")
         guard configured else {

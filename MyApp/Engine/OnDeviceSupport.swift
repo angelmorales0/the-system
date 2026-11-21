@@ -227,7 +227,7 @@ enum OnDeviceTime {
         return (start, end)
     }
 
-    /// The quest day `dayKey` in `zone`: 5:00 to 5:00 the next morning, like `QuestDay.interval` and the Apple Health read.
+    /// The quest day `dayKey` in `zone`: midnight to midnight, like `QuestDay.interval` and the Apple Health read.
     /// The day's workouts come from this window, so a gym session at 1:00 counts for the quest day still on screen,
     /// and every source puts one workout on the same day.
     static func questDayBounds(_ dayKey: String, zone: TimeZone) -> (start: Date, end: Date)? {
@@ -239,7 +239,7 @@ enum OnDeviceTime {
         return (start, nextDay)
     }
 
-    /// The quest day that holds `date` in `zone`: before 5:00 it is still the day before.
+    /// The quest day that holds `date` in `zone`: the day starts at midnight.
     /// The same rule as `QuestDay.key`: the local hour decides, so the two agree on the days the clocks change.
     static func questDayKey(_ date: Date, zone: TimeZone) -> String {
         let calendar = calendar(zone)

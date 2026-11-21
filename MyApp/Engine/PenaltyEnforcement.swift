@@ -22,10 +22,10 @@ enum PenaltyGroup {
     /// The open penalty row with its progress, for the shield: "Penalty 10K [3.2/10km]".
     static let shieldLineKey = "penaltyShieldLine"
     static let startedAtKey = "penaltyStartedAt"
-    /// The quest day whose required set is still open. The monitor locks the phone at 5:00 when this day has ended.
+    /// The quest day whose required set is still open. The monitor locks the phone at midnight when this day has ended.
     static let openDayKey = "penaltyOpenDayKey"
     /// The quest day on which an open penalty waits with no row: a token day or a rest day. The penalty comes back
-    /// the next day, so the monitor locks the phone at 5:00 after this day, also when the app stays closed.
+    /// the next day, so the monitor locks the phone at midnight after this day, also when the app stays closed.
     static let owedDayKey = "penaltyOwedDayKey"
     static let storeName = "penalty"
     static let activityName = "penalty"
@@ -85,7 +85,7 @@ enum PenaltyEnforcement {
         } else {
             defaults.removeObject(forKey: PenaltyGroup.owedDayKey)
         }
-        // The 5:00 notice and the shield's "Open The System" notice need this permission. Ask when a penalty is open.
+        // The midnight notice and the shield's "Open The System" notice need this permission. Ask when a penalty is open.
         if penaltyOpen { requestNoticePermission() }
         scheduleDawnCheck()
         if !penaltyOpen || !penaltyVisible {
@@ -139,7 +139,7 @@ enum PenaltyEnforcement {
         store.application.denyAppRemoval = true
     }
 
-    /// A daily 15-minute window from 5:00. Its start runs the monitor, which locks the phone after a missed day.
+    /// A daily 15-minute window from midnight. Its start runs the monitor, which locks the phone after a missed day.
     private static func scheduleDawnCheck() {
         let schedule = DeviceActivitySchedule(
             intervalStart: DateComponents(hour: QuestDay.startHour, minute: 0),

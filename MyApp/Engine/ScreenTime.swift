@@ -149,7 +149,7 @@ enum ScreenTimeAlerts {
 enum PhoneScreenGroup {
     static let selectionKey = "screenTimeSelection"
     /// Calendar day → threshold minutes → when the monitor saw it, as seconds since 1970. Days run midnight to midnight, like Apple's Screen Time.
-    /// The newest days stay, so the 5:00 check still finds the day that ended at midnight.
+    /// The newest days stay, so the midnight check still finds the day that just ended.
     static let daysKey = "screenTimePhoneDays"
     static let activity = "screenTimeDay"
     /// Event names are this prefix plus the minutes they mark: `phone_95`.
@@ -193,7 +193,7 @@ enum PhoneScreenGroup {
         defaults.set(days, forKey: daysKey)
     }
 
-    /// The monitor's day: midnight to midnight, not the 5:00 quest day.
+    /// The monitor's day: midnight to midnight, the same span as the quest day.
     static func calendarDayKey(_ date: Date) -> String {
         let parts = Calendar.autoupdatingCurrent.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
@@ -271,8 +271,8 @@ enum ScreenOverlap {
         func active(_ slot: Int) -> Bool { macActive[slot >> 3] & (1 << UInt8(slot & 7)) != 0 }
         var shared = 0
         var lastMinutes = 0
-        // The phone counts from midnight, 5 hours before the quest day and the Macs' bitmap start. Phone minutes of a
-        // step can be anywhere from midnight on, so the first window starts there. Its slots before 5:00 hold no Mac minute.
+        // The phone counts from midnight, the quest day and the Macs' bitmap start. Phone minutes of a
+        // step can be anywhere from midnight on, so the first window starts there.
         var windowStart = -QuestDay.startHour * 60
         let steps = phoneTimes.filter { $0.key % windowMinutes == 0 }.sorted { $0.key < $1.key }
         // iOS can report many steps at once. A batch is one window, or the same Mac minute counts once per step.
@@ -511,7 +511,7 @@ enum ScreenTimeRules {
             || PhoneScreenGroup.thresholds != Array(1...(PhoneScreenGroup.thresholds.last ?? 0)) {
             errors.append("phone thresholds should run every minute from 1 past the total cap")
         }
-        // Each calendar day keeps its own count, so a count that ended at midnight is still there at 5:00.
+        // Each calendar day keeps its own count, so a count that ended at midnight is still there for the midnight check.
         let phoneSuite = "com.angelmorales.thesystem.selfcheck.phone"
         if let defaults = UserDefaults(suiteName: phoneSuite) {
             defaults.set(["2026-10-05": ["1": 10.0, "2": 70.0], "2026-10-06": ["1": 90.0]], forKey: PhoneScreenGroup.daysKey)

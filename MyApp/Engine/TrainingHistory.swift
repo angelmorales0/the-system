@@ -57,7 +57,7 @@ enum TrainingHistory {
         let zone = TimeZone(identifier: tz) ?? OnDeviceTime.losAngeles
         guard let today = OnDeviceTime.dayBounds(day, zone: zone)?.start,
               let start = OnDeviceTime.dayBounds(OnDeviceTime.addDays(day, -historyDays), zone: zone)?.start,
-              // To the end of the quest day, 5:00: a plan made after midnight still sees that night's runs.
+              // To the end of the quest day, midnight.
               let end = OnDeviceTime.questDayBounds(day, zone: zone)?.end else {
             return .object(["sources": .object(["error": .string("bad day")])])
         }

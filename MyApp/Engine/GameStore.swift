@@ -95,6 +95,9 @@ final class GameStore: ObservableObject {
         #if DEBUG
         // The older checks were written for the run penalty. The burpee one has its own check.
         PenaltyQuests.choiceOverride = .run
+        // The older checks use days in 2026, before the penalty hold ends: they run with the hold off.
+        let hold = PenaltyHold.firstDay
+        PenaltyHold.firstDay = ""
         let problems = PenaltyQuests.check() + VerificationFixtures.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check() + RecoveryLevel.check()
             + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check() + MacScreenClient.check()
@@ -106,8 +109,11 @@ final class GameStore: ObservableObject {
             + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
             + EndedDayRules.check() + WorkoutClaimRules.check() + RebuiltRowRules.check() + PlanAndLockRules.check()
             + HevyRoutine.check() + HabitRules.check()
+        PenaltyHold.firstDay = hold
         PenaltyQuests.choiceOverride = nil
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
+        let holdProblems = PenaltyHold.check()
+        precondition(holdProblems.isEmpty, holdProblems.joined(separator: "\n"))
         // The write to Hevy is checked with replies made in the check: it calls no server.
         Task { @MainActor in
             let writeProblems = await HevyRoutine.checkWrites()
@@ -831,7 +837,7 @@ final class GameStore: ObservableObject {
 
     /// Takes the newest phone count while the app stays open. The monitor writes it every minute of phone use.
     func readPhoneMinutes() {
-        // The app stayed open past 5:00: end the old day here, so it is judged on time and no tap can change it.
+        // The app stayed open past midnight: end the old day here, so it is judged on time and no tap can change it.
         guard QuestDay.key(for: .now) <= snapshot.bundle.dayKey else { return refreshForToday() }
         var next = snapshot
         let phone = PhoneScreenGroup.minutes(for: next.bundle.dayKey)
@@ -873,8 +879,8 @@ final class GameStore: ObservableObject {
     }
 
     private func refreshIntegrations(now: Date) {
-        // A wake in the background (Apple Health) after 5:00 finds yesterday's day here. End it first: its quests must
-        // not be checked against today's data, and its closed penalty flag must not lift the lock the monitor set at 5:00.
+        // A wake in the background (Apple Health) after midnight finds yesterday's day here. End it first: its quests must
+        // not be checked against today's data, and its closed penalty flag must not lift the lock the monitor set at midnight.
         guard QuestDay.key(for: now) <= snapshot.bundle.dayKey else { return refreshForToday(now: now) }
         guard !refreshingIntegrations else { return }
         refreshingIntegrations = true
@@ -893,7 +899,7 @@ final class GameStore: ObservableObject {
             let macScreen = await MacScreenClient.load(dayKey: dayKey)
             guard let self else { return }
             self.refreshingIntegrations = false
-            // The day changed during the read (the app slept through 5:00 in the middle of it): this data is
+            // The day changed during the read (the app slept through midnight in the middle of it): this data is
             // yesterday's. Drop it and read for the new day.
             guard !(self.snapshot.bundle.dayKey > dayKey && QuestDay.key(for: .now) == self.snapshot.bundle.dayKey) else {
                 self.refreshIntegrations(now: .now)
@@ -1060,8 +1066,8 @@ final class GameStore: ObservableObject {
             questTitle: title,
             shieldLine: open.map(Self.shieldLine) ?? title,
             dayKey: snapshot.bundle.dayKey,
-            openDayKey: snapshot.missesRequiredSet ? snapshot.bundle.dayKey : nil,
-            // A penalty that waits through a token day or a rest day comes back tomorrow: the monitor locks at 5:00.
+            openDayKey: snapshot.missesRequiredSet && PenaltyHold.active(on: snapshot.bundle.dayKey) ? snapshot.bundle.dayKey : nil,
+            // A penalty that waits through a token day or a rest day comes back tomorrow: the monitor locks at midnight.
             owedDayKey: snapshot.player.penaltyOpen && !visible ? snapshot.bundle.dayKey : nil
         )
         guard persistence == .standard else { return }

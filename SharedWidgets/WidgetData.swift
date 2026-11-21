@@ -43,7 +43,7 @@ struct WidgetData: Codable, Equatable {
     var maxHP: Int
     var gold: Int
     var updatedAt: Date
-    /// The quest screen's timer ring: the day's start and its deadline (5:00 the next morning).
+    /// The quest screen's timer ring: the day's start and its deadline (the next midnight).
     var ringStart: Date?
     var ringEnd: Date?
     /// The quest screen's warning line: "Failure to complete the daily quest will result in a penalty."

@@ -5,7 +5,7 @@ import ManagedSettings
 import UserNotifications
 
 /// Re-asserts the penalty lock while a penalty is active. It does not start a Live Activity.
-/// At 5:00 it locks the phone if the quest day that just ended left its required set open, even when the app is closed.
+/// At midnight it locks the phone if the quest day that just ended left its required set open, even when the app is closed.
 /// Interval end does not lift shields; only the main app clears them after the penalty quests are done.
 /// And it counts phone screen time: each threshold event of the daily count writes its minutes for the app to read.
 /// This target is `nonisolated`. If the SDK marks these overrides isolated, drop the `nonisolated` keyword.
@@ -59,7 +59,7 @@ enum PenaltyMonitorGroup {
     static let hiddenSelectionKey = "penaltyHiddenSelection"
     static let storeName = "penalty"
     static let dawnActivity = "penaltyDawn"
-    static let dayStartHour = 5
+    static let dayStartHour = 0
 }
 
 enum PenaltyMonitorShields {
@@ -72,7 +72,7 @@ enum PenaltyMonitorShields {
         lockEverything()
     }
 
-    /// The app writes the open quest day. If that day ended before this 5:00, the penalty starts now.
+    /// The app writes the open quest day. If that day ended before this midnight, the penalty starts now.
     /// It also writes the day on which an open penalty waited (a token day or a rest day): that penalty comes back now.
     nonisolated static func lockIfDayMissed(now: Date) {
         let defaults = UserDefaults(suiteName: PenaltyMonitorGroup.suiteName) ?? .standard
@@ -122,7 +122,7 @@ enum PenaltyMonitorShields {
         return selection.applicationTokens
     }
 
-    /// Same rule as `QuestDay.key` in the app: before 5:00 is still the day before.
+    /// Same rule as `QuestDay.key` in the app: the day starts at midnight.
     nonisolated static func questDayKey(for date: Date) -> String {
         let calendar = Calendar.autoupdatingCurrent
         let local = calendar.component(.hour, from: date) < PenaltyMonitorGroup.dayStartHour

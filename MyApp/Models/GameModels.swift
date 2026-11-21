@@ -370,7 +370,7 @@ struct MorningSignals: Codable, Equatable {
 }
 
 enum QuestDay {
-    /// The phone's current time zone, so the quest day starts at 5:00 local time while traveling.
+    /// The phone's current time zone, so the quest day starts at midnight local time while traveling.
     static var timeZone: TimeZone { .autoupdatingCurrent }
 
     static var calendar: Calendar {
@@ -379,8 +379,8 @@ enum QuestDay {
         return calendar
     }
 
-    /// A quest day runs from 5:00 local time to 5:00 the next morning. 1:00 AM still belongs to the day before.
-    static let startHour = 5
+    /// A quest day runs from midnight to midnight local time: the calendar day.
+    static let startHour = 0
 
     static func key(for date: Date) -> String {
         let local = calendar.component(.hour, from: date) < startHour
@@ -390,13 +390,13 @@ enum QuestDay {
         return String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
     }
 
-    /// 5:00 local time on the quest day `key`.
+    /// Midnight local time at the start of the quest day `key`.
     static func start(of key: String) -> Date? {
         guard let noon = date(from: key) else { return nil }
         return calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: noon)
     }
 
-    /// The quest day that holds `date`, from its 5:00 start to the next day's 5:00.
+    /// The quest day that holds `date`, from its midnight start to the next midnight.
     static func interval(for date: Date) -> DateInterval {
         let key = key(for: date)
         guard let start = Self.start(of: key),
@@ -406,7 +406,7 @@ enum QuestDay {
         return DateInterval(start: start, end: end)
     }
 
-    /// The last second before the next quest day starts at 5:00.
+    /// The last second before the next quest day starts at midnight.
     static func endOfDay(_ date: Date) -> Date {
         interval(for: date).end.addingTimeInterval(-1)
     }

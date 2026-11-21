@@ -16,7 +16,7 @@ enum HevyClient {
 
     static func headers(_ key: String) -> [String: String] { ["api-key": key] }
 
-    /// One quest day (5:00 to 5:00) of Hevy workouts. `key` nil returns the TODO before any request.
+    /// One quest day (midnight to midnight) of Hevy workouts. `key` nil returns the TODO before any request.
     static func snapshot(dayKey: String, key: String? = SecretStore.read(.hevyApiKey), zone: TimeZone? = nil) async -> HevyDayReading {
         var base = HevyDayReading.disconnected(dayKey: dayKey, reason: "")
         guard let key else {
@@ -156,12 +156,12 @@ enum HevyClient {
         if workout(.object(["title": .string("no start")])) != nil {
             errors.append("a Hevy workout without a start time should be skipped")
         }
-        // The day filter follows the quest day, 5:00 to 5:00: 00:30 on Oct 3 is still Oct 2, and 05:30 on Oct 3 is not.
+        // The day filter follows the quest day, midnight to midnight: 23:30 on Oct 2 is Oct 2, 23:30 on Oct 1 and 00:30 on Oct 3 are not.
         if let (start, end) = OnDeviceTime.questDayBounds("2026-10-02", zone: OnDeviceTime.losAngeles),
-           let inside = OnDeviceTime.parse("2026-10-02T14:00:00Z"), let night = OnDeviceTime.parse("2026-10-03T07:30:00Z"),
-           let early = OnDeviceTime.parse("2026-10-02T11:30:00Z"), let after = OnDeviceTime.parse("2026-10-03T12:30:00Z") {
+           let inside = OnDeviceTime.parse("2026-10-02T14:00:00Z"), let night = OnDeviceTime.parse("2026-10-03T06:30:00Z"),
+           let early = OnDeviceTime.parse("2026-10-02T06:30:00Z"), let after = OnDeviceTime.parse("2026-10-03T07:30:00Z") {
             if !(inside >= start && inside < end) || !(night >= start && night < end) || (early >= start) || (after < end) {
-                errors.append("the Hevy day filter should follow the quest day, 5:00 to 5:00")
+                errors.append("the Hevy day filter should follow the quest day, midnight to midnight")
             }
         } else {
             errors.append("day bounds should parse")
