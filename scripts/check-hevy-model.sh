@@ -79,6 +79,6 @@ replay replay-b3aa1f7-list AtMostOneRoutine
 replay replay-b3aa1f7-no-id AtMostOneRoutine
 replay replay-b3aa1f7-simulator OneWriteAtATime
 replay replay-b3aa1f7-simulator-stays EventuallyLatest
-replay replay-late-requests AtMostOneRoutine
+replay replay-late-requests WrittenPlanStays
 
 [ "$failed" = 0 ] && echo "HEVY MODEL PASSED" || { echo "HEVY MODEL FAILED"; exit 1; }

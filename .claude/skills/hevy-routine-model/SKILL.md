@@ -90,7 +90,7 @@ A plan is a number.
 | `replay-b3aa1f7-no-id.cfg` | b3aa1f7: `routineId(in:) ?? id` kept the gone id after a reply with no id | `AtMostOneRoutine` |
 | `replay-b3aa1f7-simulator.cfg` | b3aa1f7: a Simulator build wrote with the same key | `OneWriteAtATime` |
 | `replay-b3aa1f7-simulator-stays.cfg` | b3aa1f7: the Simulator's day stayed over the phone's routine | `EventuallyLatest` |
-| `replay-late-requests.cfg` | before the settle wait: a write with no reply was followed by another write at once | `AtMostOneRoutine` |
+| `replay-late-requests.cfg` | before the settle wait: a write with no reply was followed by another write at once | `WrittenPlanStays` (and `AtMostOneRoutine`) |
 
 `WrittenPlanStays` also breaks in `replay-75159f3.cfg`; TLC stops at the first
 broken invariant, so the gate checks the one named above.
