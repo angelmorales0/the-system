@@ -11,15 +11,11 @@ struct VerificationContext: Equatable {
     var dayKey: String
     var assignedAt: Date
     var manualConfirmsToday: Int
-    /// `reuseKey` values already claimed today by a different quest.
-    var claimedKeys: Set<String>
+    /// The proof that other quests used today.
+    var claimed = WorkoutClaims()
     var timerElapsedSec: TimeInterval?
     var userConfirmed: Bool
     var integrations: DayIntegrationSnapshot = .empty(dayKey: "")
-    /// Workout recording ids already claimed today by a different quest (`Evidence.workoutIds`).
-    var claimedWorkoutIds: Set<String> = []
-    /// The workouts already claimed today by a different quest, for the match by time (`Evidence.isSession`).
-    var claimedSessions: [Evidence] = []
     /// The exercises of the day's other Hevy rows, as `StrengthLevel.normalizedName` gives them.
     /// A stand-in lift that has its own row counts for that row, not for the lift it can stand in for.
     var otherExercises: Set<String> = []
@@ -27,10 +23,28 @@ struct VerificationContext: Equatable {
     /// first row of its group only, so one set never fills two rows.
     var earlierExercises: Set<String> = []
 
-    /// True when another quest already used this workout: one of its recordings, or a session at the same time.
-    func claims(_ workout: CanonicalWorkout) -> Bool {
-        if claimedWorkoutIds.contains(workout.id) || workout.members.contains(where: { claimedWorkoutIds.contains($0.id) }) { return true }
-        return claimedSessions.contains { $0.isSession(start: workout.start, end: workout.end, family: workout.sportFamily.rawValue) }
+}
+
+/// The proof that other quests used today. One workout clears one quest: the same evidence, any recording of the
+/// same workout, or a workout at the same time is used.
+struct WorkoutClaims: Equatable {
+    private var used: [Evidence]
+
+    init(_ used: [Evidence] = []) {
+        self.used = used
+    }
+
+    mutating func add(_ evidence: Evidence) {
+        used.append(evidence)
+    }
+
+    func covers(_ evidence: Evidence) -> Bool {
+        used.contains { $0.reuseKey == evidence.reuseKey || GameSnapshot.sameWorkout($0, evidence) }
+    }
+
+    func covers(_ workout: CanonicalWorkout) -> Bool {
+        covers(Evidence(source: "", externalId: "\(Evidence.workoutPrefix)\(workout.id)", payloadHash: "", timestamp: workout.end,
+                        recordings: workout.members.map(\.id), sessionStart: workout.start, family: workout.sportFamily.rawValue))
     }
 }
 
@@ -100,7 +114,7 @@ struct ManualConfirmVerifier: Verifier {
             payload: "confirm|\(quest.id)|\(context.dayKey)|\(context.now.timeIntervalSince1970)",
             timestamp: context.now
         )
-        if context.claimedKeys.contains(evidence.reuseKey) {
+        if context.claimed.covers(evidence) {
             return .failed(reason: "That evidence was already used for another quest today.")
         }
         return .completed(evidence: evidence)
@@ -128,7 +142,7 @@ struct TimerSessionVerifier: Verifier {
             payload: "timer|\(quest.id)|\(context.dayKey)|\(Int(safeElapsed.rounded(.down)))",
             timestamp: context.now
         )
-        if context.claimedKeys.contains(evidence.reuseKey) {
+        if context.claimed.covers(evidence) {
             return .failed(reason: "That evidence was already used for another quest today.")
         }
         guard safeElapsed + 0.001 >= required else {
@@ -368,7 +382,6 @@ enum VerificationFixtures {
             dayKey: dayKey,
             assignedAt: assignedAt,
             manualConfirmsToday: confirms,
-            claimedKeys: [],
             timerElapsedSec: elapsed,
             userConfirmed: confirmed
         )

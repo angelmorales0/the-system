@@ -928,8 +928,7 @@ enum GymSplit {
         let sets = Array(repeating: StrengthLevel.workingSet(lb: 185, reps: 6), count: 3)
         lifted.hevy = HevyDayReading(available: true, configured: true, reason: "", dayKey: mock.dayKey,
                                      workouts: [StrengthLevel.workout([HevyExercise(title: "Hip Thrust (Barbell)", sets: sets)], daysAgo: 0, now: now)])
-        let verification = VerificationContext(now: now, dayKey: mock.dayKey, assignedAt: now, manualConfirmsToday: 0, claimedKeys: [],
-                                               timerElapsedSec: nil, userConfirmed: false, integrations: lifted)
+        let verification = VerificationContext(now: now, dayKey: mock.dayKey, assignedAt: now, manualConfirmsToday: 0, timerElapsedSec: nil, userConfirmed: false, integrations: lifted)
         if case .completed = HevySetsVerifier().evaluate(quest: thrustRow, context: verification) {} else {
             errors.append("the Hevy check should complete Hip Thrust 2×5-9 from 3 sets of \"Hip Thrust (Barbell)\"")
         }

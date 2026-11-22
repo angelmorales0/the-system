@@ -740,8 +740,7 @@ enum PlanAndLockRules {
                   deadline: morning, difficulty: .normal, mode: .performanceTraining, progress: QuestProgress(current: 0, target: Double(sets), unit: "sets"), status: .pending)
         }
         func completes(_ quest: Quest, _ data: DayIntegrationSnapshot, others: Set<String> = []) -> Bool {
-            let context = VerificationContext(now: morning, dayKey: "2026-10-22", assignedAt: morning, manualConfirmsToday: 0, claimedKeys: [],
-                                              timerElapsedSec: nil, userConfirmed: false, integrations: data, otherExercises: others)
+            let context = VerificationContext(now: morning, dayKey: "2026-10-22", assignedAt: morning, manualConfirmsToday: 0, timerElapsedSec: nil, userConfirmed: false, integrations: data, otherExercises: others)
             if case .completed = HevySetsVerifier().evaluate(quest: quest, context: context) { return true }
             return false
         }
