@@ -385,7 +385,6 @@ enum QuestDay {
         time(on: key, minutes: 0)
     }
 
-    /// The wall-clock time `minutes` after midnight on the quest day `key`, also on the days the clocks change.
     static func time(on key: String, minutes: Int) -> Date? {
         guard let noon = date(from: key) else { return nil }
         return calendar.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: noon)

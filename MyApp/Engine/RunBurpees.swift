@@ -15,7 +15,6 @@ struct BurpeeSwap: Codable, Equatable {
 enum RunBurpees {
     static let reps = 300
     static let title = "300 Burpees"
-    /// The day's Hevy routine holds the burpees as one set of 300, from the row's `sets` and `reps` params.
     static let routineSets = 1
     /// The param that marks a burpee row made from a run.
     static let markKey = "replacesRun"
@@ -82,7 +81,6 @@ enum RunBurpees {
         // A rebuild of the day keeps the swap.
         let rebuilt = day.finished(day.bundle.replacing(runId, with: day.burpeeSwap?.runs.first), catalog: catalog, now: noon)
         if rebuilt.quests.first(where: { $0.id == runId }).map({ isBurpeeRow($0) }) != true { errors.append("a rebuilt day should keep the burpees") }
-        // The day's Hevy routine holds the burpees as one set of 300.
         let plan = HevyRoutine.plan(for: day.bundle, history: [], templates: ["burpee": "T1"])
         let burpee = plan?.exercises.first { $0.name == "Burpee" }
         if burpee?.templateId != "T1" || burpee?.sets.count != 1 || burpee?.sets.first?.repsLow != 300 {

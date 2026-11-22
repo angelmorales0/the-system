@@ -1,12 +1,9 @@
 #!/bin/bash
-# Lints every app extension's Info.plist against one table of required values.
-# To add an extension: add its folder to EXTENSIONS below. A target missing here fails the lint.
 set -u
 cd "$(dirname "$0")/.."
 PBX=system.xcodeproj/project.pbxproj
 PB=/usr/libexec/PlistBuddy
 
-# folder|NSExtensionPointIdentifier|NSExtensionPrincipalClass (empty when the extension has none)
 EXTENSIONS='
 PenaltyActivity|com.apple.widgetkit-extension|
 PenaltyMonitor|com.apple.deviceactivity.monitor-extension|$(PRODUCT_MODULE_NAME).PenaltyDeviceActivityMonitor

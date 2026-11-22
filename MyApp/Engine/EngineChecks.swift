@@ -1,10 +1,8 @@
-/// Every synchronous engine self-check. The app runs them at DEBUG launch; `scripts/engine-checks.sh` runs them in CI.
 enum EngineChecks {
     static func run() -> [String] {
         PenaltyQuests.choiceOverride = .run
         let hold = PenaltyHold.firstDay
         PenaltyHold.firstDay = ""
-        // The older checks were written for the run penalty and for days before the penalty hold ends.
         let ruleProblems = PenaltyQuests.check() + VerificationFixtures.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check() + RecoveryLevel.check()
             + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
             + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check() + MacScreenClient.check()

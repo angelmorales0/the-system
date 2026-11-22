@@ -1,5 +1,4 @@
 #!/bin/bash
-# Compiles the engine as a macOS program and runs every EngineChecks suite.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 out="${TMPDIR:-/tmp}/engine-checks"
