@@ -249,15 +249,12 @@ enum OnDeviceTime {
     }
 }
 
-/// One history read from a connected service. A read that failed or stopped part way holds no rows,
-/// so it can never pass for a history with no workouts in it.
 enum HistoryRead<Rows> {
     case complete(Rows)
     case partial
     case failed(String)
     case notConfigured
 
-    /// The source's status as the stat screen shows it.
     var label: String {
         switch self {
         case .complete: "ok"

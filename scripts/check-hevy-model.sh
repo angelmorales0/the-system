@@ -1,5 +1,4 @@
 #!/bin/bash
-# Model-checks the write of the Hevy routine (formal/hevy-routine) with TLC.
 #   scripts/check-hevy-model.sh            the gate: code fingerprint, current model, every replay
 #   scripts/check-hevy-model.sh <config>   one config, e.g. finding-late-requests
 #   scripts/check-hevy-model.sh --sync     store the fingerprint of the covered code after a review

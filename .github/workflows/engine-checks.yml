@@ -16,6 +16,7 @@ jobs:
           swift --version
       - run: scripts/lint-extensions.sh
       - run: scripts/lint-day-math.sh
+      - run: scripts/lint-shared-keys.sh
       - run: scripts/engine-checks.sh
   hevy-model:
     runs-on: ubuntu-latest

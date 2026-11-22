@@ -16,7 +16,7 @@ class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
             return
         }
         if PhoneScreenMonitor.activities.contains(activity.rawValue) { return }
-        if activity.rawValue == PenaltyMonitorGroup.dawnActivity {
+        if activity.rawValue == PenaltyMonitorGroup.midnightActivityName {
             PenaltyMonitorShields.lockIfDayMissed(now: Date())
             return
         }
@@ -33,7 +33,7 @@ class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
             return
         }
         if PhoneScreenMonitor.activities.contains(activity.rawValue) { return }
-        if activity.rawValue == PenaltyMonitorGroup.dawnActivity || activity.rawValue == MorningLockMonitor.activity { return }
+        if activity.rawValue == PenaltyMonitorGroup.midnightActivityName || activity.rawValue == MorningLockMonitor.activity { return }
         PenaltyMonitorShields.reassert()
     }
 
@@ -48,7 +48,6 @@ class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
     }
 }
 
-/// Mirrors `PenaltyGroup` in the app. Keep the strings in step.
 enum PenaltyMonitorGroup {
     static let suiteName = "group.com.angelmorales.thesystem"
     static let penaltyActiveKey = "penaltyActive"
@@ -58,7 +57,7 @@ enum PenaltyMonitorGroup {
     static let allowedSelectionKey = "penaltyAllowedSelection"
     static let hiddenSelectionKey = "penaltyHiddenSelection"
     static let storeName = "penalty"
-    static let dawnActivity = "penaltyDawn"
+    static let midnightActivityName = "penaltyDawn"
 }
 
 enum PenaltyMonitorShields {

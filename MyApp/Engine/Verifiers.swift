@@ -11,7 +11,6 @@ struct VerificationContext: Equatable {
     var dayKey: String
     var assignedAt: Date
     var manualConfirmsToday: Int
-    /// The proof that other quests used today.
     var claimed = WorkoutClaims()
     var timerElapsedSec: TimeInterval?
     var userConfirmed: Bool
@@ -25,8 +24,6 @@ struct VerificationContext: Equatable {
 
 }
 
-/// The proof that other quests used today. One workout clears one quest: the same evidence, any recording of the
-/// same workout, or a workout at the same time is used.
 struct WorkoutClaims: Equatable {
     private var used: [Evidence]
 
