@@ -96,10 +96,12 @@ extension GameSnapshot {
 
     /// Settles the ended day against its own data, `integrations`, and the Macs' last minutes. Returns what changed.
     /// `healthRead` is false when Apple Health could not be read (a locked phone): its workouts may still be missing.
+    /// A Health read that failed (`HealthAccess.unreadable`) counts the same.
     @discardableResult
     mutating func settleEndedDay(integrations: DayIntegrationSnapshot, mac: LateMacRead = LateMacRead(), healthRead: Bool = true,
                                  catalog: FallbackCatalog, now: Date) -> LateSettle {
         guard var ended = endedDay else { return LateSettle() }
+        let healthRead = healthRead && integrations.health.access != .unreadable
         let dayKey = ended.bundle.dayKey
         guard dayKey < bundle.dayKey else {
             endedDay = nil
@@ -215,11 +217,11 @@ enum EndedDayRules {
         func isLift(_ quest: Quest) -> Bool { TrainingDay.isStrength(quest) && quest.id != DailyStretch.questId }
         let run = WorkoutEvent(source: "strava", externalId: "late-run", sport: "Run", start: dayOne.addingTimeInterval(50_000),
                                end: dayOne.addingTimeInterval(53_300), movingTimeSec: 3_300, distanceMeters: 10_020)
-        func data(strava: [WorkoutEvent] = [], hevy: [HevyWorkout] = [], stravaUp: Bool = true) -> DayIntegrationSnapshot {
+        func data(strava: [WorkoutEvent] = [], hevy: [HevyWorkout] = [], stravaUp: Bool = true, health: HealthDaySummary = .unavailable) -> DayIntegrationSnapshot {
             DayIntegrationSnapshot.make(
                 whoop: .disconnected(dayKey: keyOne, reason: ""),
                 strava: StravaDayReading(available: stravaUp, configured: true, reason: "", dayKey: keyOne, activities: strava),
-                health: .unavailable,
+                health: health,
                 hevy: HevyDayReading(available: true, configured: true, reason: "", dayKey: keyOne, workouts: hevy)
             )
         }
@@ -246,6 +248,14 @@ enum EndedDayRules {
         missed.refreshIfNeeded(catalog: catalog, now: dayTwo)
         if missed.settleEndedDay(integrations: data(), catalog: catalog, now: dayTwo) != LateSettle() || !missed.player.penaltyOpen || missed.endedDay != nil {
             errors.append("an ended day with no late work should keep its penalty")
+        }
+
+        // Apple Health could not be read (a locked phone): its late run may be there, so the day waits for a real read.
+        var locked = GameSnapshot.fresh(catalog: catalog, now: dayOne)
+        locked.refreshIfNeeded(catalog: catalog, now: dayTwo)
+        _ = locked.settleEndedDay(integrations: data(health: HealthDaySummary(access: .unreadable, workouts: [])), catalog: catalog, now: dayTwo)
+        if locked.endedDay == nil || locked.endedDay?.reads != 0 {
+            errors.append("an ended day read while Apple Health was locked should wait for a read with Health, got \(String(describing: locked.endedDay?.reads))")
         }
 
         // A service that did not answer: the day waits, at most `maxReads` reads.

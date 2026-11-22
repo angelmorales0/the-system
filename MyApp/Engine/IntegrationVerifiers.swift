@@ -10,6 +10,8 @@ struct HealthKitWorkoutVerifier: Verifier {
             return .incomplete(reason: "TODO: HealthKit workouts are not available on this device.")
         case .notRequested:
             return .incomplete(reason: "TODO: Allow Health access for workouts.")
+        case .unreadable:
+            return .unchanged
         case .requested:
             break
         }
