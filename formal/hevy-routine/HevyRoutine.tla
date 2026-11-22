@@ -154,13 +154,14 @@ StatInputsLoaded(d) ==
 ListAnswered(t) ==
     /\ pc[t] = "list"
     /\ reply[t] \in {"found", "empty", "failed"}
+    /\ UNCHANGED settling
     /\ CASE reply[t] = "found" -> SendPut(t, replyId[t]) /\ UNCHANGED <<storedId, signature>>
          [] reply[t] = "empty" -> SendPost(t) /\ UNCHANGED <<storedId, signature>>
          [] reply[t] = "failed" ->
               IF ListFailureMakesRoutine
               THEN SendPost(t) /\ UNCHANGED <<storedId, signature>>
               ELSE UNCHANGED <<storedId, signature>> /\ Return(t)
-    /\ UNCHANGED <<routines, nextId, plan, settling, late, faults, deletes>>
+    /\ UNCHANGED <<routines, nextId, plan, late, faults, deletes>>
 
 PutAnswered(t) ==
     LET d == Owner(t) IN

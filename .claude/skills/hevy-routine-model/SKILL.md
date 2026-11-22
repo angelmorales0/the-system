@@ -43,7 +43,7 @@ To run one config and see the full TLC output:
 
 ## Coverage
 
-Sync commit: `2f50c46d0a0cc5eb64aad78a2f1d3dc9574f1eb1`. At this commit the model
+Sync commit: `0471af976779fb07dbdc4a7aae509351cce7524d`. At this commit the model
 describes this code:
 
 | Code | Model |
@@ -130,7 +130,7 @@ the last rows the device wrote, `routines` is the account.
 ## When the covered code changes
 
 1. Read the diff of the covered functions since the sync commit:
-   `git diff 2f50c46d0a0cc5eb64aad78a2f1d3dc9574f1eb1 -- MyApp/Engine/HevyRoutine.swift MyApp/Engine/GameStore.swift`.
+   `git diff 0471af976779fb07dbdc4a7aae509351cce7524d -- MyApp/Engine/HevyRoutine.swift MyApp/Engine/GameStore.swift`.
 2. Change `formal/hevy-routine/HevyRoutine.tla` so each step still matches the
    code. Add a variable or action for each new await, flag, or stored key.
 3. Run `scripts/check-hevy-model.sh`. Read any break as above.
