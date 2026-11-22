@@ -85,7 +85,8 @@ final class HealthKitStore {
         }
         let interval = QuestDay.interval(for: day)
         let predicate = HKQuery.predicateForSamples(withStart: interval.start, end: interval.end, options: .strictStartDate)
-        return HealthDaySummary(access: .requested, workouts: await workoutEvents(predicate: predicate) ?? [])
+        guard let workouts = await workoutEvents(predicate: predicate) else { return HealthDaySummary(access: .unreadable, workouts: []) }
+        return HealthDaySummary(access: .requested, workouts: workouts)
     }
 
     func startObservers() {

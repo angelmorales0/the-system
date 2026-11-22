@@ -46,6 +46,8 @@ enum HealthAccess: String, Codable, Equatable {
     case unavailable
     case notRequested
     case requested
+    /// Access was given, but the read failed (a locked phone): Health may hold workouts that this read did not see.
+    case unreadable
 }
 
 struct HealthDaySummary: Equatable {
