@@ -90,6 +90,8 @@ final class GameStore: ObservableObject {
     /// True once the stat histories (Hevy, WHOOP, Strava, Apple Health) loaded one time. Before that the levels keep
     /// their last saved values: levels from empty histories read 0, and the lower max HP would cut the player's HP.
     private var statHistoriesLoaded = false
+    /// The last weigh-in that Apple Health gave, for a launch on a locked phone, when Health cannot be read.
+    private static let lastBodyMassKey = "com.angelmorales.thesystem.lastBodyMass"
 
     init(persistence: GamePersistence = .standard) {
         #if DEBUG
@@ -830,7 +832,7 @@ final class GameStore: ObservableObject {
             let endedData = await Self.endedDayData(endedKey, workouts: endedMissed)
             let endedMac = await Self.endedMacRead(endedKey)
             let health = await HealthKitBridge.summary(on: now)
-            let bodyMass = await HealthKitBridge.latestBodyMass(days: EnduranceLevel.bodyWeightWindowDays, now: now)
+            let bodyMassRead = await HealthKitBridge.latestBodyMass(days: EnduranceLevel.bodyWeightWindowDays, now: now)
             let remote = await IntegrationClient.load(dayKey: dayKey)
             let focusDays = FocusTracking.loadDays()
             let macScreen = await MacScreenClient.load(dayKey: dayKey)
@@ -867,6 +869,15 @@ final class GameStore: ObservableObject {
                 hevy: remote.hevy
             )
             // The stat levels first: max HP is built from them.
+            let bodyMass: BodyMassReading?
+            switch bodyMassRead {
+            case .complete(let reading):
+                bodyMass = reading
+                UserDefaults.standard.set(try? JSONEncoder().encode(reading), forKey: Self.lastBodyMassKey)
+            case .partial, .failed, .notConfigured:
+                bodyMass = self.statInputs?.bodyMass ?? UserDefaults.standard.data(forKey: Self.lastBodyMassKey)
+                    .flatMap { try? JSONDecoder().decode(BodyMassReading?.self, from: $0) } ?? nil
+            }
             self.statInputs = (remote.codeforces, remote.monkeytype, remote.financeMonths, bodyMass, focusDays, self.statInputs?.inputs ?? StatInputs())
             self.recomputeStatLevels(now: now)
             let unlocked = next.checkMorningLock(integrations: day, wokeAt: remote.whoop.wokeAt)
