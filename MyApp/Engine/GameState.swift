@@ -789,7 +789,9 @@ struct GameSnapshot: Codable, Equatable {
         let session = evidence.session
         let reused = evidenceLog.contains { use in
             guard use.dayKey == bundle.dayKey, use.questId != questId else { return false }
-            return use.evidence.reuseKey == evidence.reuseKey
+            if use.evidence.reuseKey == evidence.reuseKey || !use.evidence.workoutIds.isDisjoint(with: workoutIds) { return true }
+            guard let session else { return false }
+            return use.evidence.isSession(start: session.start, end: session.end, family: evidence.family)
         }
         if reused {
             return "That evidence was already used for another quest today."

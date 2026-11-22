@@ -29,7 +29,8 @@ struct VerificationContext: Equatable {
 
     /// True when another quest already used this workout: one of its recordings, or a session at the same time.
     func claims(_ workout: CanonicalWorkout) -> Bool {
-        claimedWorkoutIds.contains(workout.id)
+        if claimedWorkoutIds.contains(workout.id) || workout.members.contains(where: { claimedWorkoutIds.contains($0.id) }) { return true }
+        return claimedSessions.contains { $0.isSession(start: workout.start, end: workout.end, family: workout.sportFamily.rawValue) }
     }
 }
 
