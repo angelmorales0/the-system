@@ -575,7 +575,7 @@ enum HomeBy {
 
     /// The row's time on the quest day.
     static func deadline(_ dayKey: String, minutes: Int = defaultMinutes) -> Date? {
-        QuestDay.start(of: dayKey)?.addingTimeInterval(Double(minutes) * 60)
+        QuestDay.time(on: dayKey, minutes: minutes)
     }
 
     /// The time a row was made with. Rows from before the setting existed are 9:00 pm.
