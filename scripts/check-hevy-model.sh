@@ -1,6 +1,6 @@
 #!/bin/bash
 #   scripts/check-hevy-model.sh            the gate: code fingerprint, current model, every replay
-#   scripts/check-hevy-model.sh <config>   one config, e.g. finding-late-requests
+#   scripts/check-hevy-model.sh <config>   one config, e.g. replay-late-requests
 #   scripts/check-hevy-model.sh --sync     store the fingerprint of the covered code after a review
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -79,5 +79,6 @@ replay replay-b3aa1f7-list AtMostOneRoutine
 replay replay-b3aa1f7-no-id AtMostOneRoutine
 replay replay-b3aa1f7-simulator OneWriteAtATime
 replay replay-b3aa1f7-simulator-stays EventuallyLatest
+replay replay-late-requests AtMostOneRoutine
 
 [ "$failed" = 0 ] && echo "HEVY MODEL PASSED" || { echo "HEVY MODEL FAILED"; exit 1; }

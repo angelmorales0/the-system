@@ -7,6 +7,7 @@
 (*   HevyRoutine.existingRoutine(...)   -> GET /v1/routines                *)
 (*   UserDefaults hevyRoutineId         -> storedId                        *)
 (*   UserDefaults signatureKey          -> signature                       *)
+(*   UserDefaults settleKey             -> settling                        *)
 (*                                                                         *)
 (* A task step is one MainActor job: the code between two awaits.          *)
 (* Plans are numbers. The phone's plan grows by one at each change of the  *)
@@ -24,6 +25,7 @@ CONSTANTS
     ListFailureMakesRoutine,  \* before b3aa1f7: an unread list counted as "none"
     StaleIdOnNoIdReply,       \* before b3aa1f7: routineId(in:) ?? id kept the old id
     KeepStaleIdBeforePost,    \* before 75159f3: no removeObject(forKey: idKey) before POST
+    NoSettle,                 \* before the settle fix: a write with no reply did not wait
     \* An assumption, not a code switch: the request reaches Hevy after the
     \* app stopped waiting (OnDeviceHTTP timeout, 12 s for a send).
     LateRequests
@@ -39,6 +41,7 @@ VARIABLES
     plan,       \* the day's rows on each device (snapshot.bundle)
     storedId,   \* hevyRoutineId in each device's UserDefaults
     signature,  \* the plan last written by each device
+    settling,   \* a PUT or POST got no reply: no write until it settles
     writing,    \* writingHevyRoutine
     again,      \* hevyRoutineAgain
     pc,         \* where each sync task waits: idle, list, put, post
@@ -50,7 +53,7 @@ VARIABLES
     faults,
     deletes
 
-vars == <<routines, nextId, plan, storedId, signature, writing, again,
+vars == <<routines, nextId, plan, storedId, signature, settling, writing, again,
           pc, wplan, wid, reply, replyId, late, faults, deletes>>
 taskVars == <<pc, wplan, wid, reply, replyId>>
 
@@ -65,6 +68,7 @@ Init ==
         /\ storedId = [d \in Devices |-> IF start = "thisInstall" /\ d = "Phone" THEN 1 ELSE Nil]
     /\ plan = [d \in Devices |-> IF d = "Phone" THEN 1 ELSE SimPlan]
     /\ signature = [d \in Devices |-> 0]
+    /\ settling = [d \in Devices |-> FALSE]
     /\ writing = [d \in Devices |-> FALSE]
     /\ again = [d \in Devices |-> FALSE]
     /\ pc = [t \in Tasks |-> "idle"]
@@ -106,7 +110,7 @@ WriteHevyRoutine(d, p) ==
     ELSE IF writing[d]
     THEN /\ again' = [again EXCEPT ![d] = TRUE]
          /\ UNCHANGED <<writing, taskVars>>
-    ELSE IF signature[d] = p THEN UNCHANGED <<writing, again, taskVars>>
+    ELSE IF signature[d] = p \/ settling[d] THEN UNCHANGED <<writing, again, taskVars>>
     ELSE \E k \in 1..Slots :
             /\ pc[<<d, k>>] = "idle"
             /\ writing' = [writing EXCEPT ![d] = TRUE]
@@ -115,10 +119,10 @@ WriteHevyRoutine(d, p) ==
 
 (* sync() returns; the completion in writeHevyRoutine clears the flag and,  *)
 (* when the rows changed during the write, writes again with the new rows.  *)
-(* Needs storedId' and signature' set before it.                            *)
+(* Needs storedId', signature' and settling' set before it.                 *)
 Return(t) ==
     LET d == Owner(t) IN
-    IF again[d] /\ signature'[d] # plan[d]
+    IF again[d] /\ signature'[d] # plan[d] /\ ~settling'[d]
     THEN /\ again' = [again EXCEPT ![d] = FALSE]
          /\ UNCHANGED writing
          /\ Send(t, plan[d], storedId'[d])
@@ -130,6 +134,8 @@ Return(t) ==
          /\ reply' = [reply EXCEPT ![t] = "none"]
          /\ replyId' = [replyId EXCEPT ![t] = Nil]
 
+Unsure(d) == settling' = IF NoSettle THEN settling ELSE [settling EXCEPT ![d] = TRUE]
+
 ---------------------------------------------------------------------------
 (* The app *)
 
@@ -137,12 +143,12 @@ RowsChange ==
     /\ plan["Phone"] < MaxPlan
     /\ plan' = [plan EXCEPT !["Phone"] = @ + 1]
     /\ WriteHevyRoutine("Phone", plan["Phone"] + 1)
-    /\ UNCHANGED <<routines, nextId, storedId, signature, late, faults, deletes>>
+    /\ UNCHANGED <<routines, nextId, storedId, signature, settling, late, faults, deletes>>
 
 (* refreshStatInputs ends: self.writeHevyRoutine(now: now). *)
 StatInputsLoaded(d) ==
     /\ WriteHevyRoutine(d, plan[d])
-    /\ UNCHANGED <<routines, nextId, plan, storedId, signature, late, faults, deletes>>
+    /\ UNCHANGED <<routines, nextId, plan, storedId, signature, settling, late, faults, deletes>>
 
 (* existingRoutine returns .found, .none, or .failed. *)
 ListAnswered(t) ==
@@ -154,7 +160,7 @@ ListAnswered(t) ==
               IF ListFailureMakesRoutine
               THEN SendPost(t) /\ UNCHANGED <<storedId, signature>>
               ELSE UNCHANGED <<storedId, signature>> /\ Return(t)
-    /\ UNCHANGED <<routines, nextId, plan, late, faults, deletes>>
+    /\ UNCHANGED <<routines, nextId, plan, settling, late, faults, deletes>>
 
 PutAnswered(t) ==
     LET d == Owner(t) IN
@@ -163,14 +169,17 @@ PutAnswered(t) ==
     /\ CASE reply[t] = "ok" ->
               /\ storedId' = [storedId EXCEPT ![d] = wid[t]]
               /\ signature' = [signature EXCEPT ![d] = wplan[t]]
+              /\ UNCHANGED settling
               /\ Return(t)
          [] reply[t] = "notFound" ->
               /\ storedId' = IF KeepStaleIdBeforePost THEN storedId
                              ELSE [storedId EXCEPT ![d] = Nil]
-              /\ UNCHANGED signature
+              /\ UNCHANGED <<signature, settling>>
               /\ SendPost(t)
-         [] reply[t] \in {"lost", "err"} ->
-              UNCHANGED <<storedId, signature>> /\ Return(t)
+         [] reply[t] = "lost" ->
+              UNCHANGED <<storedId, signature>> /\ Unsure(d) /\ Return(t)
+         [] reply[t] = "err" ->
+              UNCHANGED <<storedId, signature, settling>> /\ Return(t)
     /\ UNCHANGED <<routines, nextId, plan, late, faults, deletes>>
 
 PostAnswered(t) ==
@@ -184,11 +193,12 @@ PostAnswered(t) ==
               /\ storedId' = [storedId EXCEPT ![d] = IF StaleIdOnNoIdReply THEN wid[t] ELSE Nil]
               /\ signature' = [signature EXCEPT ![d] = wplan[t]]
          [] reply[t] = "lost" ->
-              UNCHANGED <<storedId, signature>>
+              UNCHANGED <<storedId, signature>> /\ Unsure(d)
          [] reply[t] = "err" ->
               /\ storedId' = IF StaleIdOnNoIdReply THEN storedId
                              ELSE [storedId EXCEPT ![d] = Nil]
               /\ UNCHANGED signature
+    /\ reply[t] \in {"ok", "okNoId", "err"} => UNCHANGED settling
     /\ Return(t)
     /\ UNCHANGED <<routines, nextId, plan, late, faults, deletes>>
 
@@ -233,7 +243,7 @@ HevyAnswers(t) ==
               \/ /\ Fault
                  /\ \E r \in {"lost", "err"} : reply' = [reply EXCEPT ![t] = r]
                  /\ UNCHANGED <<routines, nextId, replyId>>
-    /\ UNCHANGED <<plan, storedId, signature, writing, again, pc, wplan, wid, late, deletes>>
+    /\ UNCHANGED <<plan, storedId, signature, settling, writing, again, pc, wplan, wid, late, deletes>>
 
 (* The app's timeout ends the wait; the request still reaches Hevy later. *)
 AppStopsWaiting(t) ==
@@ -241,22 +251,30 @@ AppStopsWaiting(t) ==
     /\ reply[t] = "wait"
     /\ pc[t] \in {"put", "post"}
     /\ Fault
-    /\ late' = late \cup {[op |-> pc[t], id |-> wid[t], plan |-> wplan[t]]}
+    /\ late' = late \cup {[op |-> pc[t], id |-> wid[t], plan |-> wplan[t], dev |-> Owner(t)]}
     /\ reply' = [reply EXCEPT ![t] = "lost"]
-    /\ UNCHANGED <<routines, nextId, plan, storedId, signature, writing, again, pc, wplan, wid, replyId, deletes>>
+    /\ UNCHANGED <<routines, nextId, plan, storedId, signature, settling, writing, again, pc, wplan, wid, replyId, deletes>>
 
 HevyHandlesLate(m) ==
     /\ late' = late \ {m}
     /\ IF m.op = "put"
        THEN routines' = Put(m.id, m.plan) /\ UNCHANGED nextId
        ELSE routines' = Made(m.plan) /\ nextId' = nextId + 1
-    /\ UNCHANGED <<plan, storedId, signature, writing, again, taskVars, faults, deletes>>
+    /\ UNCHANGED <<plan, storedId, signature, settling, writing, again, taskVars, faults, deletes>>
+
+(* settleKey's time passes. The assumption that makes it safe: Hevy handles *)
+(* or drops a request within HevyRoutine.settleSeconds of its send.          *)
+Settles(d) ==
+    /\ settling[d]
+    /\ \A m \in late : m.dev # d
+    /\ settling' = [settling EXCEPT ![d] = FALSE]
+    /\ UNCHANGED <<routines, nextId, plan, storedId, signature, writing, again, taskVars, late, faults, deletes>>
 
 PlayerDeletesRoutine ==
     /\ deletes < MaxDeletes
     /\ \E r \in routines : routines' = routines \ {r}
     /\ deletes' = deletes + 1
-    /\ UNCHANGED <<nextId, plan, storedId, signature, writing, again, taskVars, late, faults>>
+    /\ UNCHANGED <<nextId, plan, storedId, signature, settling, writing, again, taskVars, late, faults>>
 
 ---------------------------------------------------------------------------
 
@@ -266,12 +284,14 @@ Next ==
     \/ \E t \in Tasks : ListAnswered(t) \/ PutAnswered(t) \/ PostAnswered(t)
     \/ \E t \in Tasks : HevyAnswers(t) \/ AppStopsWaiting(t)
     \/ \E m \in late : HevyHandlesLate(m)
+    \/ \E d \in Devices : Settles(d)
     \/ PlayerDeletesRoutine
 
 Fairness ==
     /\ WF_vars(StatInputsLoaded("Phone"))
     /\ \A t \in Tasks : WF_vars(ListAnswered(t) \/ PutAnswered(t) \/ PostAnswered(t) \/ HevyAnswers(t))
     /\ WF_vars(\E m \in late : HevyHandlesLate(m))
+    /\ WF_vars(Settles("Phone"))
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
