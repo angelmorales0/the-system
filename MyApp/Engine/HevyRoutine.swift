@@ -225,7 +225,7 @@ enum HevyRoutine {
 
     /// "Bench Press 3×3-5" gives 3 to 5. "Dead Hang 3×60s" and "Farmers Walk 3×40m" give nil: time and distance.
     /// The sets come before the mark, so a number in the exercise's name ("Max 10 Push Up 3×8") is not the reps.
-    /// A row's own `reps` param wins over its title, like the 300 burpees: 10 sets of 30 under the title "300 Burpees".
+    /// A row's own `reps` param wins over its title, like the 300 burpees: one set of 300 under the title "300 Burpees".
     static func repRange(_ quest: Quest) -> (low: Int, high: Int)? {
         if let reps = quest.verification.params["reps"]?.doubleValue, reps >= 1 { return (Int(reps), Int(reps)) }
         let pattern = #"\d+\s*[×xX]\s*(\d+)(?:\s*[-–]\s*(\d+))?(?!\d|\s*(?:s|sec|m|min|km)\b)"#

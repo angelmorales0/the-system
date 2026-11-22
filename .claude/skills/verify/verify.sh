@@ -3,7 +3,7 @@
 # the iOS app in the Simulator twice (fresh install + relaunch) and checks for crashes.
 # Exit codes: 0 pass, 1 Simulator build failed, 2 device build failed,
 #             3 Simulator setup failed, 4 app crashed or did not stay running,
-#             5 FocusTracker (macOS) build failed.
+#             5 FocusTracker (macOS) build failed, 6 extension Info.plist lint failed.
 
 #
 # Env overrides:
@@ -28,8 +28,13 @@ show_build_errors() {
     grep -A6 'error: Embedded binary' "$1" | head -20
 }
 
-# 1. Simulator build
-echo "== [1/5] Build for iOS Simulator"
+# 1. Extension Info.plist lint
+echo "== [1/6] Lint app extension Info.plist files"
+LINT_OUT=$("$ROOT/scripts/lint-extensions.sh" 2>&1) || { echo "$LINT_OUT"; fail "Extension lint (scripts/lint-extensions.sh)" 6; }
+echo "   ok"
+
+# 2. Simulator build
+echo "== [2/6] Build for iOS Simulator"
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
     -destination 'generic/platform=iOS Simulator' -derivedDataPath "$DD" \
     CODE_SIGNING_ALLOWED=NO build > "$OUT/build-sim.log" 2>&1
@@ -40,8 +45,8 @@ fi
 WARNINGS=$(grep -E '^/.*: warning:' "$OUT/build-sim.log" | sort -u | wc -l | tr -d ' ')
 echo "   ok ($WARNINGS warnings in files compiled this run)"
 
-# 2. Device build (no signing: signing needs the user's Apple account in Xcode)
-echo "== [2/5] Build for iOS device (unsigned)"
+# 3. Device build (no signing: signing needs the user's Apple account in Xcode)
+echo "== [3/6] Build for iOS device (unsigned)"
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
     -destination 'generic/platform=iOS' -derivedDataPath "$DD" \
     CODE_SIGNING_ALLOWED=NO build > "$OUT/build-device.log" 2>&1
@@ -51,8 +56,8 @@ if ! grep -q 'BUILD SUCCEEDED' "$OUT/build-device.log"; then
 fi
 echo "   ok"
 
-# 3. Mac tracker build
-echo "== [3/5] Build FocusTracker for macOS (unsigned)"
+# 4. Mac tracker build
+echo "== [4/6] Build FocusTracker for macOS (unsigned)"
 xcodebuild -project "$PROJECT" -scheme FocusTracker -configuration Debug \
     -destination 'generic/platform=macOS' -derivedDataPath "$DD" \
     CODE_SIGNING_ALLOWED=NO build > "$OUT/build-mac.log" 2>&1
@@ -62,8 +67,8 @@ if ! grep -q 'BUILD SUCCEEDED' "$OUT/build-mac.log"; then
 fi
 echo "   ok"
 
-# 4. Simulator setup
-echo "== [4/5] Prepare Simulator"
+# 5. Simulator setup
+echo "== [5/6] Prepare Simulator"
 UDID="${SIM_UDID:-$(xcrun simctl list devices available | grep -E '^\s+iPhone' | head -1 | grep -oE '[0-9A-F-]{36}')}"
 [ -n "$UDID" ] || fail "No available iPhone Simulator" 3
 xcrun simctl boot "$UDID" 2>/dev/null
@@ -74,7 +79,7 @@ BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.pli
 xcrun simctl install "$UDID" "$APP" || fail "Install failed" 3
 echo "   $UDID  $BUNDLE_ID"
 
-# 5. Launch twice: first launch (fresh state) and relaunch (saved state)
+# 6. Launch twice: first launch (fresh state) and relaunch (saved state)
 CRASH_DIR="$HOME/Library/Logs/DiagnosticReports"
 MARKER="$OUT/.launch-marker"
 run_once() {
@@ -108,7 +113,7 @@ run_once() {
     fi
     echo "   $label launch ok (${RUN_SECONDS}s) screenshot: $OUT/screen-$label.png"
 }
-echo "== [5/5] Run in Simulator"
+echo "== [6/6] Run in Simulator"
 run_once first
 run_once relaunch
 

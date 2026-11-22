@@ -4,7 +4,7 @@ import Foundation
 ///
 /// The row keeps its id, so rebuilds, the day's record, and the no-gym rules still see one workout row. While it is
 /// burpees it is a Hevy rep row ("Burpee", 300 reps in any number of sets), and the day's Hevy routine holds it as
-/// 10 sets of 30. The swap icon on the row brings the run back while no burpee is logged.
+/// one set of 300. The swap icon on the row brings the run back while no burpee is logged.
 /// Burpees count for one row only: a day whose penalty is burpees keeps its run, and the other way round.
 struct BurpeeSwap: Codable, Equatable {
     var dayKey: String
@@ -15,9 +15,8 @@ struct BurpeeSwap: Codable, Equatable {
 enum RunBurpees {
     static let reps = 300
     static let title = "300 Burpees"
-    /// The day's Hevy routine holds the burpees as 10 sets of 30, from the row's `sets` and `reps` params.
-    static let routineSets = 10
-    static let routineReps = 30
+    /// The day's Hevy routine holds the burpees as one set of 300, from the row's `sets` and `reps` params.
+    static let routineSets = 1
     /// The param that marks a burpee row made from a run.
     static let markKey = "replacesRun"
 
@@ -42,7 +41,7 @@ enum RunBurpees {
             "exercise": .string(PenaltyQuests.burpeeExercise),
             "totalReps": .number(Double(reps)),
             "sets": .number(Double(routineSets)),
-            "reps": .number(Double(routineReps)),
+            "reps": .number(Double(reps)),
             markKey: .bool(true),
         ])
         row.progress = QuestProgress(current: 0, target: Double(reps), unit: "reps")
@@ -83,11 +82,11 @@ enum RunBurpees {
         // A rebuild of the day keeps the swap.
         let rebuilt = day.finished(day.bundle.replacing(runId, with: day.burpeeSwap?.runs.first), catalog: catalog, now: noon)
         if rebuilt.quests.first(where: { $0.id == runId }).map({ isBurpeeRow($0) }) != true { errors.append("a rebuilt day should keep the burpees") }
-        // The day's Hevy routine holds the burpees as 10 sets of 30.
+        // The day's Hevy routine holds the burpees as one set of 300.
         let plan = HevyRoutine.plan(for: day.bundle, history: [], templates: ["burpee": "T1"])
         let burpee = plan?.exercises.first { $0.name == "Burpee" }
-        if burpee?.templateId != "T1" || burpee?.sets.count != 10 || burpee?.sets.first?.repsLow != 30 {
-            errors.append("the Hevy routine should hold 10×30 burpees, got \(String(describing: burpee))")
+        if burpee?.templateId != "T1" || burpee?.sets.count != 1 || burpee?.sets.first?.repsLow != 300 {
+            errors.append("the Hevy routine should hold one set of 300 burpees, got \(String(describing: burpee))")
         }
         // 300 reps in Hevy, in any sets, complete the row.
         var hevy = DayIntegrationSnapshot.empty(dayKey: day.bundle.dayKey)
