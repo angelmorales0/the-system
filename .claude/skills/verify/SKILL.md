@@ -16,15 +16,16 @@ user a change is done, and do not ask them to build in Xcode, until it passes.
 
 Run it with a 600000 ms timeout. It takes a few minutes.
 
-The script does 5 steps and stops at the first failure:
+The script does 6 steps and stops at the first failure:
 
 | Step | What it checks | Exit code on failure |
 |---|---|---|
-| 1 | `xcodebuild` for the iOS Simulator (scheme `MyApp`, Debug) | 1 |
-| 2 | `xcodebuild` for a real iPhone, without signing | 2 |
-| 3 | `xcodebuild` for the Mac tracker (scheme `FocusTracker`, macOS), without signing | 5 |
-| 4 | Boot a Simulator and install the app (fresh data) | 3 |
-| 5 | Launch the app twice (first launch, then relaunch). Each launch must stay alive for `RUN_SECONDS` (15) with no crash, no `precondition`/`fatalError`, and no crash report | 4 |
+| 1 | `scripts/lint-extensions.sh`: each app extension `Info.plist` has the right `NSExtensionPointIdentifier` and principal class, and `GENERATE_INFOPLIST_FILE = YES` | 6 |
+| 2 | `xcodebuild` for the iOS Simulator (scheme `MyApp`, Debug) | 1 |
+| 3 | `xcodebuild` for a real iPhone, without signing | 2 |
+| 4 | `xcodebuild` for the Mac tracker (scheme `FocusTracker`, macOS), without signing | 5 |
+| 5 | Boot a Simulator and install the app (fresh data) | 3 |
+| 6 | Launch the app twice (first launch, then relaunch). Each launch must stay alive for `RUN_SECONDS` (15) with no crash, no `precondition`/`fatalError`, and no crash report | 4 |
 
 Logs and screenshots go to `$TMPDIR/system-verify/`.
 
@@ -34,18 +35,19 @@ Logs and screenshots go to `$TMPDIR/system-verify/`.
    with the Read tool. Make sure the screen shows the feature that you changed and
    no error or blank screen. If the change is on a screen that the app does not
    show at launch, say that you could not see it in the screenshot.
-2. **Exit 1, 2, or 5:** Fix the compile errors that the script printed. Read the full
+2. **Exit 6:** Do what the printed `ERROR:` lines say. Each line names the fix. To add a new extension, add a row to the table in `scripts/lint-extensions.sh`. Then run the script again.
+3. **Exit 1, 2, or 5:** Fix the compile errors that the script printed. Read the full
    log only if the printed errors are not enough. Then run the script again.
-3. **Exit 3:** This is an environment problem (no Simulator, boot failure). Try
+4. **Exit 3:** This is an environment problem (no Simulator, boot failure). Try
    `SIM_UDID=<id>` with another device from `xcrun simctl list devices available`.
    Tell the user if it still fails.
-4. **Exit 4:** Read the console log and the crash report that the script printed.
+5. **Exit 4:** Read the console log and the crash report that the script printed.
    In Debug builds, `GameStore.init` runs self-checks (`VerificationFixtures`,
    `TargetRules`, `QuestGenerationRules`, `IntegrationRules`, `PenaltyRules`) and
    calls `precondition` when one fails. The message names the failed check.
    Decide if the bug is in the app or in the check, fix the real cause, and run
    the script again.
-5. Repeat until it passes. Do not weaken or delete a self-check only to make it
+6. Repeat until it passes. Do not weaken or delete a self-check only to make it
    pass. Change a check only when the check itself is wrong, and say why.
 
 ## Lessons from past failures
