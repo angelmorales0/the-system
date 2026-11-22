@@ -437,7 +437,7 @@ enum HevyRoutine {
     static func check() -> [String] {
         var errors: [String] = []
         let catalog = FallbackCatalog.bundled()
-        guard let now = QuestDay.start(of: "2026-10-05")?.addingTimeInterval(4 * 3_600) else { return ["could not build routine dates"] }
+        guard let now = QuestDay.time(on: "2026-10-05", minutes: 240) else { return ["could not build routine dates"] }
         let day = GameSnapshot.fresh(catalog: catalog, now: now)
         let lifts = day.bundle.quests.filter { $0.verification.method == .hevySets && $0.id != DailyStretch.questId }
         guard let bench = lifts.first(where: { $0.title.hasPrefix("Bench Press") }), let pull = lifts.first(where: { $0.title.hasPrefix("Pull Up") }) else {
@@ -614,7 +614,7 @@ extension HevyRoutine {
     static func checkWrites() async -> [String] {
         var errors: [String] = []
         let catalog = FallbackCatalog.bundled()
-        guard let now = QuestDay.start(of: "2026-10-05")?.addingTimeInterval(4 * 3_600) else { return ["could not build routine dates"] }
+        guard let now = QuestDay.time(on: "2026-10-05", minutes: 240) else { return ["could not build routine dates"] }
         let bundle = GameSnapshot.fresh(catalog: catalog, now: now).bundle
         var other = bundle
         other.headerLine = "Squat Day"

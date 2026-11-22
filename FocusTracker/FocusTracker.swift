@@ -15,7 +15,6 @@ final class FocusTracker {
     static let sendSeconds: TimeInterval = 15 * 60
     /// Days older than this are deleted from the Mac.
     static let keepDays = 30
-    static let dayStartHour = 0
     /// One slot per minute of a quest day, 25 hours so the fall DST day fits. Matches the Worker's 188 bytes.
     static let daySlots = 1504
     /// A minute is marked active once this much of it counted.
@@ -209,19 +208,13 @@ final class FocusTracker {
 
     /// Same rule as `QuestDay.key` in the iPhone app: a quest day runs from midnight to midnight local time.
     static func dayKey(for date: Date, calendar: Calendar = .autoupdatingCurrent) -> String {
-        let local = calendar.component(.hour, from: date) < dayStartHour
-            ? calendar.date(byAdding: .day, value: -1, to: date) ?? date
-            : date
-        let parts = calendar.dateComponents([.year, .month, .day], from: local)
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
     }
 
     /// The minute of the quest day that `date` falls in: 0 at midnight local time.
     static func slot(for date: Date, calendar: Calendar = .autoupdatingCurrent) -> Int? {
-        let base = calendar.component(.hour, from: date) < dayStartHour
-            ? calendar.date(byAdding: .day, value: -1, to: date) ?? date
-            : date
-        guard let start = calendar.date(bySettingHour: dayStartHour, minute: 0, second: 0, of: base) else { return nil }
+        let start = calendar.startOfDay(for: date)
         let slot = Int(date.timeIntervalSince(start) / 60)
         return (0..<daySlots).contains(slot) ? slot : nil
     }

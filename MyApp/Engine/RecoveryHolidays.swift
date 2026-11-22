@@ -66,8 +66,8 @@ enum RecoveryHolidayRules {
 
         // A day rollover onto Christmas banks exactly one token.
         let catalog = FallbackCatalog.bundled()
-        guard let eve = QuestDay.start(of: "2026-12-24")?.addingTimeInterval(3_600),
-              let christmas = QuestDay.start(of: "2026-12-25")?.addingTimeInterval(3_600) else {
+        guard let eve = QuestDay.time(on: "2026-12-24", minutes: 60),
+              let christmas = QuestDay.time(on: "2026-12-25", minutes: 60) else {
             return errors + ["could not build holiday dates"]
         }
         var snapshot = GameSnapshot.fresh(catalog: catalog, now: eve)

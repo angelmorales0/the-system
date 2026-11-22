@@ -18,7 +18,7 @@ struct DayClock: Codable, Equatable {
     func deadline(in calendar: Calendar) -> Date {
         let parts = dayKey.split(separator: "-").compactMap { Int($0) }
         guard parts.count == 3,
-              let dayStart = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: QuestDay.startHour)),
+              let dayStart = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])),
               let next = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
             return QuestDay.endOfDay(startedAt).addingTimeInterval(1)
         }

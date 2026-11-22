@@ -282,7 +282,7 @@ enum ScreenOverlap {
         var lastMinutes = 0
         // The phone counts from midnight, the quest day and the Macs' bitmap start. Phone minutes of a
         // step can be anywhere from midnight on, so the first window starts there.
-        var windowStart = -QuestDay.startHour * 60
+        var windowStart = 0
         let steps = phoneTimes.filter { $0.key % windowMinutes == 0 }.sorted { $0.key < $1.key }
         // iOS can report many steps at once. A batch is one window, or the same Mac minute counts once per step.
         let windows = steps.indices.filter { index in

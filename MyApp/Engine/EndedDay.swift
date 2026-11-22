@@ -202,7 +202,7 @@ enum EndedDayRules {
     static func check() -> [String] {
         var errors: [String] = []
         let catalog = FallbackCatalog.bundled()
-        guard let dayOne = QuestDay.start(of: "2026-10-05")?.addingTimeInterval(3_600) else { return ["could not build ended day dates"] }
+        guard let dayOne = QuestDay.time(on: "2026-10-05", minutes: 60) else { return ["could not build ended day dates"] }
         let dayTwo = dayOne.addingTimeInterval(86_400)
         let keyOne = QuestDay.key(for: dayOne)
 

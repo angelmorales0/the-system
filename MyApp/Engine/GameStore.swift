@@ -930,7 +930,7 @@ final class GameStore: ObservableObject {
 
     /// The workouts of the quest day `dayKey`, which has ended. Nil when no day waits for a late read.
     private static func endedDayData(_ dayKey: String?, workouts: Bool) async -> DayIntegrationSnapshot? {
-        guard let dayKey, let inside = QuestDay.start(of: dayKey)?.addingTimeInterval(3_600) else { return nil }
+        guard let dayKey, let inside = QuestDay.time(on: dayKey, minutes: 60) else { return nil }
         // A day that is kept only for the Macs' minutes has every workout row done: nothing to read.
         guard workouts else { return .empty(dayKey: dayKey) }
         async let hevy = HevyClient.snapshot(dayKey: dayKey)

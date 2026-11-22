@@ -98,8 +98,7 @@ enum MorningLock {
 
     /// 7:00 on the quest day, or the wake time when it is earlier and on that quest day.
     static func start(dayKey: String, wokeAt: Date?) -> Date? {
-        guard let dayStart = QuestDay.start(of: dayKey) else { return nil }
-        let seven = dayStart.addingTimeInterval(Double(fallbackHour - QuestDay.startHour) * 3600)
+        guard let seven = QuestDay.time(on: dayKey, minutes: fallbackHour * 60) else { return nil }
         guard let wokeAt, QuestDay.key(for: wokeAt) == dayKey else { return seven }
         return min(wokeAt, seven)
     }
@@ -576,7 +575,7 @@ enum HomeBy {
 
     /// The row's time on the quest day.
     static func deadline(_ dayKey: String, minutes: Int = defaultMinutes) -> Date? {
-        QuestDay.start(of: dayKey)?.addingTimeInterval(Double(minutes - QuestDay.startHour * 60) * 60)
+        QuestDay.time(on: dayKey, minutes: minutes)
     }
 
     /// The time a row was made with. Rows from before the setting existed are 9:00 pm.

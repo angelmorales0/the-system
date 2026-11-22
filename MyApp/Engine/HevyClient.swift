@@ -24,7 +24,7 @@ enum HevyClient {
             return base
         }
         base.configured = true
-        guard let (start, end) = OnDeviceTime.questDayBounds(dayKey, zone: zone ?? QuestDay.timeZone) else { return base }
+        guard let (start, end) = OnDeviceTime.dayBounds(dayKey, zone: zone ?? QuestDay.timeZone) else { return base }
         var workouts: [HevyWorkout] = []
         for number in 1...maxPages {
             guard let url = page(number),
@@ -157,7 +157,7 @@ enum HevyClient {
             errors.append("a Hevy workout without a start time should be skipped")
         }
         // The day filter follows the quest day, midnight to midnight: 23:30 on Oct 2 is Oct 2, 23:30 on Oct 1 and 00:30 on Oct 3 are not.
-        if let (start, end) = OnDeviceTime.questDayBounds("2026-10-02", zone: OnDeviceTime.losAngeles),
+        if let (start, end) = OnDeviceTime.dayBounds("2026-10-02", zone: OnDeviceTime.losAngeles),
            let inside = OnDeviceTime.parse("2026-10-02T14:00:00Z"), let night = OnDeviceTime.parse("2026-10-03T06:30:00Z"),
            let early = OnDeviceTime.parse("2026-10-02T06:30:00Z"), let after = OnDeviceTime.parse("2026-10-03T07:30:00Z") {
             if !(inside >= start && inside < end) || !(night >= start && night < end) || (early >= start) || (after < end) {
@@ -172,7 +172,7 @@ enum HevyClient {
                 guard let midnight = OnDeviceTime.dayBounds(day, zone: OnDeviceTime.losAngeles)?.start else { continue }
                 for quarter in 0..<100 {
                     let moment = midnight.addingTimeInterval(Double(quarter) * 900)
-                    if OnDeviceTime.questDayKey(moment, zone: OnDeviceTime.losAngeles) != QuestDay.key(for: moment) {
+                    if OnDeviceTime.dayKey(moment, zone: OnDeviceTime.losAngeles) != QuestDay.key(for: moment) {
                         errors.append("the quest day of \(OnDeviceTime.utcString(moment)) should be the same in the history and in the app")
                         break
                     }
