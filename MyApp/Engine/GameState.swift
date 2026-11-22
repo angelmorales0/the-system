@@ -304,18 +304,15 @@ struct GameSnapshot: Codable, Equatable {
         integrations: DayIntegrationSnapshot = .empty(dayKey: "")
     ) -> VerificationContext {
         let others = evidenceLog.filter { $0.dayKey == bundle.dayKey && $0.questId != quest.id }
-        let claimed = Set(others.map(\.evidence.reuseKey))
         return VerificationContext(
             now: now,
             dayKey: bundle.dayKey,
             assignedAt: quest.assignedAt,
             manualConfirmsToday: manualConfirmCount(on: bundle.dayKey, excluding: quest.id),
-            claimedKeys: claimed,
+            claimed: WorkoutClaims(others.map(\.evidence)),
             timerElapsedSec: timerElapsed,
             userConfirmed: userConfirmed,
             integrations: integrations,
-            claimedWorkoutIds: others.reduce(into: Set<String>()) { $0.formUnion($1.evidence.workoutIds) },
-            claimedSessions: others.map(\.evidence).filter { $0.session != nil },
             otherExercises: Set(bundle.quests.filter { $0.id != quest.id && $0.verification.method == .hevySets && $0.id != DailyStretch.questId }
                 .map { StrengthLevel.normalizedName($0.verification.params["exercise"]?.stringValue ?? $0.title) }),
             earlierExercises: Set(bundle.quests.prefix { $0.id != quest.id }.filter { $0.verification.method == .hevySets && $0.id != DailyStretch.questId }
@@ -421,9 +418,7 @@ struct GameSnapshot: Codable, Equatable {
             && (quest.status != .completed || ranForReal(quest)) {
             var context = verificationContext(for: quest, now: now, timerElapsed: nil, userConfirmed: false, integrations: integrations)
             let fixed = fixedUses(for: quest)
-            context.claimedKeys = Set(fixed.map(\.reuseKey))
-            context.claimedWorkoutIds = fixed.reduce(into: Set<String>()) { $0.formUnion($1.workoutIds) }
-            context.claimedSessions = fixed.filter { $0.session != nil }
+            context.claimed = WorkoutClaims(fixed)
             let verifier = VerifierRegistry.verifier(for: quest.verification.method)
             // One round for each workout of the day at most.
             rounds: for _ in 0...integrations.workouts.count {
@@ -438,9 +433,7 @@ struct GameSnapshot: Codable, Equatable {
                 guard !ids.isEmpty, let workout = integrations.workouts.first(where: { ids.contains($0.id) || $0.members.contains { ids.contains($0.id) } }),
                       let meters = workout.distanceMeters, meters > 0 else { break rounds }
                 noteRun(evidence, meters: meters, questId: quest.id)
-                context.claimedKeys.insert(evidence.reuseKey)
-                context.claimedWorkoutIds.formUnion(ids)
-                if evidence.session != nil { context.claimedSessions.append(evidence) }
+                context.claimed.add(evidence)
             }
         }
     }
@@ -785,15 +778,8 @@ struct GameSnapshot: Codable, Equatable {
         if evidence.source == "llm" || evidence.externalId.isEmpty {
             return "Completion has to come from a verifier."
         }
-        let workoutIds = evidence.workoutIds
-        let session = evidence.session
-        let reused = evidenceLog.contains { use in
-            guard use.dayKey == bundle.dayKey, use.questId != questId else { return false }
-            if use.evidence.reuseKey == evidence.reuseKey || !use.evidence.workoutIds.isDisjoint(with: workoutIds) { return true }
-            guard let session else { return false }
-            return use.evidence.isSession(start: session.start, end: session.end, family: evidence.family)
-        }
-        if reused {
+        let others = evidenceLog.filter { $0.dayKey == bundle.dayKey && $0.questId != questId }
+        if WorkoutClaims(others.map(\.evidence)).covers(evidence) {
             return "That evidence was already used for another quest today."
         }
         return nil

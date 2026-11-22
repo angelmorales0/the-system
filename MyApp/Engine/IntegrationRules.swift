@@ -18,8 +18,7 @@ enum IntegrationRules {
             let workout = HevyWorkout(id: "w", title: "Lower", start: now.addingTimeInterval(-3600), end: now, exercises: [walked])
             var data = DayIntegrationSnapshot.empty(dayKey: dayKey)
             data.hevy = HevyDayReading(available: true, configured: true, reason: "", dayKey: dayKey, workouts: [workout])
-            let context = VerificationContext(now: now, dayKey: dayKey, assignedAt: now, manualConfirmsToday: 0, claimedKeys: [],
-                                              timerElapsedSec: nil, userConfirmed: false, integrations: data)
+            let context = VerificationContext(now: now, dayKey: dayKey, assignedAt: now, manualConfirmsToday: 0, timerElapsedSec: nil, userConfirmed: false, integrations: data)
             if case .completed = HevySetsVerifier().evaluate(quest: quest, context: context) {} else {
                 errors.append("2 distance sets should fill a 2×60s timed row")
             }
@@ -241,7 +240,7 @@ enum IntegrationRules {
                 errors.append("Hevy completion should cite the exercise, got \(evidence.externalId)")
             }
             var claimed = benchContext(lifted)
-            claimed.claimedKeys = [evidence.reuseKey]
+            claimed.claimed = WorkoutClaims([evidence])
             if case .failed = HevySetsVerifier().evaluate(quest: benchQuest, context: claimed) {
             } else {
                 errors.append("the same Hevy sets must not clear two quests")
@@ -424,7 +423,6 @@ enum IntegrationRules {
             dayKey: "2026-10-01",
             assignedAt: now,
             manualConfirmsToday: 0,
-            claimedKeys: [],
             timerElapsedSec: nil,
             userConfirmed: false,
             integrations: integrations

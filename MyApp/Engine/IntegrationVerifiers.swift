@@ -22,7 +22,7 @@ struct HealthKitWorkoutVerifier: Verifier {
         }
         let matches = candidates.filter { $0.movingTimeSec + 0.001 >= minimum && DistanceRule.meets($0, minDistance) }
         // Every run long enough is used by another row: a shorter run that no row used still shows as progress.
-        if minDistance != nil, matches.allSatisfy({ context.claims($0) }) {
+        if minDistance != nil, matches.allSatisfy({ context.claimed.covers($0) }) {
             let shown = DistanceRule.progress(candidates, quest: quest, context: context, source: "healthkit")
             if shown != .unchanged || matches.isEmpty { return shown }
         }
@@ -73,7 +73,7 @@ struct StravaActivityVerifier: Verifier {
         let matches = candidates.filter { $0.movingTimeSec + 0.001 >= minimum && DistanceRule.meets($0, minDistance) }
         let source = candidates.contains { $0.members.contains { $0.source == "strava" } } || candidates.isEmpty ? "strava" : "healthkit"
         // Every run long enough is used by another row: a shorter run that no row used still shows as progress.
-        if minDistance != nil, matches.allSatisfy({ context.claims($0) }) {
+        if minDistance != nil, matches.allSatisfy({ context.claimed.covers($0) }) {
             let shown = DistanceRule.progress(candidates, quest: quest, context: context, source: source)
             if shown != .unchanged || matches.isEmpty { return shown }
         }
@@ -171,7 +171,7 @@ struct HevySetsVerifier: Verifier {
             payload: "hevy|\(mode)|\(key)|\(context.dayKey)|\(total)|\(workoutIds.sorted().joined(separator: ","))",
             timestamp: latest ?? context.now
         )
-        if context.claimedKeys.contains(evidence.reuseKey) {
+        if context.claimed.covers(evidence) {
             return .failed(reason: "Those sets were already used for another quest today.")
         }
         let target = minDuration ?? totalReps ?? params["sets"]?.doubleValue ?? quest.progress.target
@@ -296,7 +296,7 @@ private func workoutResult(_ matches: [CanonicalWorkout], quest: Quest, context:
             family: workout.sportFamily.rawValue
         )
         // Already used under another source's id, or seen again through one source alone: still the same workout.
-        if !context.claimedKeys.contains(evidence.reuseKey), !context.claims(workout) {
+        if !context.claimed.covers(evidence) {
             return .completed(evidence: evidence)
         }
     }
@@ -317,7 +317,7 @@ private func scalarResult(
         payload: "\(source)|\(externalId)|\(context.dayKey)|\(current)",
         timestamp: context.now
     )
-    if context.claimedKeys.contains(evidence.reuseKey) {
+    if context.claimed.covers(evidence) {
         return .failed(reason: "That evidence was already used for another quest today.")
     }
     guard current + 0.001 >= minimum else {
@@ -348,7 +348,7 @@ enum DistanceRule {
 
     /// The longest matching workout that has not reached the distance yet, as partial progress.
     static func progress(_ candidates: [CanonicalWorkout], quest: Quest, context: VerificationContext, source: String) -> VerificationResult {
-        guard let workout = candidates.filter({ ($0.distanceMeters ?? 0) > 0 && !context.claims($0) }).max(by: { ($0.distanceMeters ?? 0) < ($1.distanceMeters ?? 0) }),
+        guard let workout = candidates.filter({ ($0.distanceMeters ?? 0) > 0 && !context.claimed.covers($0) }).max(by: { ($0.distanceMeters ?? 0) < ($1.distanceMeters ?? 0) }),
               let meters = workout.distanceMeters else { return .unchanged }
         let evidence = Evidence.make(
             source: source,

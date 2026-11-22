@@ -96,7 +96,7 @@ enum RunBurpees {
             ]),
         ])
         let context = VerificationContext(now: noon.addingTimeInterval(3600), dayKey: day.bundle.dayKey, assignedAt: noon, manualConfirmsToday: 0,
-                                          claimedKeys: [], timerElapsedSec: nil, userConfirmed: false, integrations: hevy)
+                                          timerElapsedSec: nil, userConfirmed: false, integrations: hevy)
         if case .completed = HevySetsVerifier().evaluate(quest: row, context: context) {} else {
             errors.append("300 burpees in Hevy should complete the row")
         }

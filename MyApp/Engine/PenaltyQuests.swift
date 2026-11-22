@@ -187,7 +187,7 @@ extension PenaltyQuests {
         let verifier = HevySetsVerifier()
         let context = { (integrations: DayIntegrationSnapshot) in
             VerificationContext(now: now.addingTimeInterval(10_000), dayKey: burpeeDay.bundle.dayKey, assignedAt: now, manualConfirmsToday: 0,
-                                claimedKeys: [], timerElapsedSec: nil, userConfirmed: false, integrations: integrations)
+                                timerElapsedSec: nil, userConfirmed: false, integrations: integrations)
         }
         switch verifier.evaluate(quest: row, context: context(hevy([[60, 60], [100]]))) {
         case .progress(let current, _) where current == 220: break
