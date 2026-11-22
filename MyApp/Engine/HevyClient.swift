@@ -49,22 +49,21 @@ enum HevyClient {
     }
 
     /// Every workout since `start`, newest first, for the 30-day training history. The status says what happened.
-    static func history(since start: Date, key: String? = SecretStore.read(.hevyApiKey)) async -> (workouts: [HevyWorkout], status: String) {
-        guard let key else { return ([], "not configured") }
+    static func history(since start: Date, key: String? = SecretStore.read(.hevyApiKey)) async -> HistoryRead<[HevyWorkout]> {
+        guard let key else { return .notConfigured }
         var workouts: [HevyWorkout] = []
         for number in 1...historyPages {
             guard let url = page(number),
                   let payload = await OnDeviceHTTP.getJSON(url, headers: headers(key)),
                   let items = payload["workouts"]?.arrayValue else {
-                // A later page failed: the list is short. The stat cache must not take it for the full history.
-                return (workouts, number > 1 ? "partial" : "request failed")
+                return number > 1 ? .partial : .failed("request failed")
             }
             let parsed = items.compactMap(workout)
             workouts += parsed.filter { $0.start >= start }
             if parsed.isEmpty || parsed.contains(where: { $0.start < start }) { break }
             if number >= (payload["page_count"]?.intValue ?? number) { break }
         }
-        return (workouts, "ok")
+        return .complete(workouts)
     }
 
     /// For the Test button: one page of one workout.

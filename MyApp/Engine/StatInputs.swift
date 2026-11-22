@@ -122,18 +122,18 @@ enum StatInputLoader {
         }
         let full = cache.hevyWorkouts.isEmpty || due(cache.hevyFullFetchAt, now: now, after: fullRefreshSeconds)
         let since = full ? windowStart : incrementalStart(newest: cache.hevyWorkouts.map(\.start).max(), windowStart: windowStart)
-        let (workouts, status) = await HevyClient.history(since: since)
-        sources["hevy"] = status
-        switch status {
-        case "ok":
+        let read = await HevyClient.history(since: since)
+        sources["hevy"] = read.label
+        switch read {
+        case .complete(let workouts):
             cache.hevyWorkouts = merge(cache.hevyWorkouts, workouts, full: full, id: \.id, date: \.start, windowStart: windowStart)
             cache.hevyFetchedAt = now
             if full { cache.hevyFullFetchAt = now }
-        case "not configured":
+        case .notConfigured:
             cache.hevyWorkouts = []
             cache.hevyFetchedAt = now
             cache.hevyFullFetchAt = nil
-        default:
+        case .partial, .failed:
             break
         }
         return cache
@@ -150,20 +150,20 @@ enum StatInputLoader {
         let full = cache.whoopDays.isEmpty || due(cache.whoopFullFetchAt, now: now, after: fullRefreshSeconds)
         let newest = cache.whoopDays.map(\.dayKey).max().flatMap { OnDeviceTime.dayBounds($0, zone: zone)?.start }
         let start = full ? windowStart : incrementalStart(newest: newest, windowStart: windowStart)
-        let (days, status) = await WhoopRecovery.history(start: start, end: now, zone: zone)
-        sources["whoop"] = status
-        switch status {
-        case "ok":
+        let read = await WhoopRecovery.history(start: start, end: now, zone: zone)
+        sources["whoop"] = read.label
+        switch read {
+        case .complete(let days):
             var byDay = full ? [:] : Dictionary(cache.whoopDays.map { ($0.dayKey, $0) }, uniquingKeysWith: { _, new in new })
             for day in days { byDay[day.dayKey] = day }
             cache.whoopDays = byDay.keys.filter { $0 >= windowKey }.sorted().compactMap { byDay[$0] }
             cache.whoopFetchedAt = now
             if full { cache.whoopFullFetchAt = now }
-        case "not configured":
+        case .notConfigured:
             cache.whoopDays = []
             cache.whoopFetchedAt = now
             cache.whoopFullFetchAt = nil
-        default:
+        case .partial, .failed:
             break
         }
         return cache
@@ -178,19 +178,19 @@ enum StatInputLoader {
         }
         let full = cache.stravaEvents.isEmpty || due(cache.stravaFullFetchAt, now: now, after: fullRefreshSeconds)
         let start = full ? windowStart : incrementalStart(newest: cache.stravaEvents.map(\.start).max(), windowStart: windowStart)
-        let (activities, status) = await StravaClient.history(start: start, end: now)
-        sources["strava"] = status
-        switch status {
-        case "ok":
+        let read = await StravaClient.history(start: start, end: now)
+        sources["strava"] = read.label
+        switch read {
+        case .complete(let activities):
             let events = activities.compactMap(StravaClient.activity)
             cache.stravaEvents = merge(cache.stravaEvents, events, full: full, id: \.id, date: \.start, windowStart: windowStart)
             cache.stravaFetchedAt = now
             if full { cache.stravaFullFetchAt = now }
-        case "not configured":
+        case .notConfigured:
             cache.stravaEvents = []
             cache.stravaFetchedAt = now
             cache.stravaFullFetchAt = nil
-        default:
+        case .partial, .failed:
             break
         }
         return cache

@@ -8,7 +8,6 @@ import Foundation
 /// No tokens, notes, Strava activity names, or GPS traces leave this file.
 enum TrainingHistory {
     static let historyDays = 30
-    static let cacheSeconds: TimeInterval = 15 * 60
     static let lbPerKg = 2.20462
 
     // A run counts as a 10K or 5K within GPS rounding, like the app's 50 m tolerance.
@@ -43,50 +42,6 @@ enum TrainingHistory {
     static let heavyLowerPattern = "squat|deadlift"
     static let lowerPattern = "squat|deadlift|lunge|leg press|hip thrust|step up|leg curl|leg extension|calf|romanian|rdl|good morning"
     static let runTypes: Set<String> = ["run", "trailrun", "virtualrun"]
-
-    private static var cache: [String: (at: Date, history: JSONValue)] = [:]
-
-    // MARK: - Building
-
-    /// Training history for the context's quest day. Cached per day and time zone for 15 minutes.
-    static func build(context: JSONValue, now: Date = .now) async -> JSONValue {
-        let day = context["player"]?["localDate"]?.stringValue ?? ""
-        let tz = context["player"]?["timezone"]?.stringValue ?? ""
-        let key = "\(day)|\(tz)"
-        if let cached = cache[key], now.timeIntervalSince(cached.at) < cacheSeconds { return cached.history }
-        let zone = TimeZone(identifier: tz) ?? OnDeviceTime.losAngeles
-        guard let today = OnDeviceTime.dayBounds(day, zone: zone)?.start,
-              let start = OnDeviceTime.dayBounds(OnDeviceTime.addDays(day, -historyDays), zone: zone)?.start,
-              // To the end of the quest day, midnight.
-              let end = OnDeviceTime.dayBounds(day, zone: zone)?.end else {
-            return .object(["sources": .object(["error": .string("bad day")])])
-        }
-        _ = today
-        async let hevy = HevyClient.history(since: start)
-        async let strava = StravaClient.history(start: start, end: end)
-        async let whoop = WhoopClient.history(start: start, end: end)
-        let (workouts, activities, recovery) = await (hevy, strava, whoop)
-        var history = summarize(
-            today: day,
-            zone: zone,
-            workouts: workouts.workouts,
-            activities: activities.activities,
-            whoop: recovery.records,
-            goals: context["goals"] ?? .object([:]),
-            questDays: context["recentDays"]?.arrayValue ?? [],
-            // A gym day holds one run at most: the app keeps a day at two workouts (`TrainingDay.cappingWorkouts`),
-            // so a plan with two runs and lifts would lose a run after it passed this check.
-            legDay: context["split"]?["today"]?["exercises"]?.arrayValue?.isEmpty == false && context["constraints"]?["noGymToday"].truthy != true
-        ).objectValue ?? [:]
-        history["sources"] = .object(["hevy": .string(workouts.status), "strava": .string(activities.status), "whoop": .string(recovery.status)])
-        // Strava did not answer: its empty list is not "0 km in 6 days". With no window the plan keeps the default run,
-        // and the next request reads Strava again.
-        let stravaRead = activities.status == "ok"
-        if !stravaRead { history["runWindow"] = nil }
-        let result = JSONValue.object(history)
-        if stravaRead { cache[key] = (now, result) }
-        return result
-    }
 
     // MARK: - Summaries (pure)
 

@@ -9,19 +9,18 @@ enum WhoopRecovery {
 
     /// Up to `days` days back from `now`, oldest first. The status says what happened.
     /// `zone` nil uses the phone's current time zone.
-    static func history(start: Date, end: Date, zone: TimeZone? = nil) async -> (days: [RecoveryDay], status: String) {
+    static func history(start: Date, end: Date, zone: TimeZone? = nil) async -> HistoryRead<[RecoveryDay]> {
         let zone = zone ?? QuestDay.timeZone
-        guard WhoopClient.configured else { return ([], "not configured") }
-        guard let token = await OAuthClient.accessToken(.whoop) else { return ([], "token refresh failed") }
+        guard WhoopClient.configured else { return .notConfigured }
+        guard let token = await OAuthClient.accessToken(.whoop) else { return .failed("token refresh failed") }
         async let cycles = WhoopClient.recordsChecked(token, "/v2/cycle", start, end)
         async let recoveries = WhoopClient.recordsChecked(token, "/v2/recovery", start, end)
         async let sleeps = WhoopClient.recordsChecked(token, "/v2/activity/sleep", start, end)
         async let workouts = WhoopClient.recordsChecked(token, "/v2/activity/workout", start, end)
         let (cycleRead, recoveryRead, sleepRead, workoutRead) = await (cycles, recoveries, sleeps, workouts)
-        if cycleRead.records.isEmpty { return ([], "request failed or no data") }
-        // One collection did not answer in full: rows without their sleep or recovery must not replace the saved ones.
-        guard cycleRead.complete, recoveryRead.complete, sleepRead.complete, workoutRead.complete else { return ([], "partial") }
-        return (days(cycles: cycleRead.records, recoveries: recoveryRead.records, sleeps: sleepRead.records, workouts: workoutRead.records, zone: zone), "ok")
+        if cycleRead.records.isEmpty { return .failed("request failed or no data") }
+        guard cycleRead.complete, recoveryRead.complete, sleepRead.complete, workoutRead.complete else { return .partial }
+        return .complete(days(cycles: cycleRead.records, recoveries: recoveryRead.records, sleeps: sleepRead.records, workouts: workoutRead.records, zone: zone))
     }
 
     /// Pure: the four WHOOP collections → one row per local day, oldest first. Nutrition fields stay nil.
