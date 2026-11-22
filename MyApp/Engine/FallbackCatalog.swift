@@ -68,7 +68,7 @@ struct FallbackCatalog {
                 return catalog
             }
         }
-        return FallbackCatalog(table: [:])
+        preconditionFailure("FallbackCatalog.json is missing from the bundle or does not decode")
     }
 
     func missingCoverage(modes: [QuestMode] = QuestMode.allCases) -> [String] {

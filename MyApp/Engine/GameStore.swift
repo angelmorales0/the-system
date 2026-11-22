@@ -93,34 +93,13 @@ final class GameStore: ObservableObject {
 
     init(persistence: GamePersistence = .standard) {
         #if DEBUG
-        // The older checks were written for the run penalty. The burpee one has its own check.
-        PenaltyQuests.choiceOverride = .run
-        // The older checks use days in 2026, before the penalty hold ends: they run with the hold off.
-        let hold = PenaltyHold.firstDay
-        PenaltyHold.firstDay = ""
-        let problems = PenaltyQuests.check() + VerificationFixtures.check() + QuestGenerationRules.check() + IntegrationRules.check() + PenaltyRules.check() + RecoveryLevel.check()
-            + StrengthLevel.check() + EnduranceLevel.check() + IntelligenceLevel.check()
-            + AgilityLevel.check() + FocusLevel.check() + FinanceLevel.check() + StatLevelSet.check() + StatTargets.check() + FocusTracking.check() + MacScreenClient.check()
-            + HiddenQuestRules.check() + RecoveryHolidayRules.check()
-            + DailyStretch.check() + StretchSplit.check() + TrainingDay.check() + ModePicker.checkFixtures() + GymSplit.check() + ScreenTimeRules.check()
-            + NoGymDayRules.check() + PenaltyDecay.check() + RestRules.check() + RestScore.check() + SecretStore.check() + SecretSeed.check() + ConnectionStatusStore.check() + ConnectionAlerts.check() + LevelAlerts.check()
-            + HevyClient.check() + OAuthClient.check() + StravaClient.check() + WhoopClient.check() + CodeforcesClient.check() + MonkeytypeClient.check() + MercuryClient.check()
-            + TrainingHistory.check() + HitPoints.check() + Fatigue.check()
-            + AgilityHevy.check() + WhoopRecovery.check() + EnduranceEfforts.check() + ZoneTwo.check() + StatInputLoader.check()
-            + EndedDayRules.check() + WorkoutClaimRules.check() + RebuiltRowRules.check() + PlanAndLockRules.check()
-            + HevyRoutine.check() + HabitRules.check() + HabitEditor.check() + RunBurpees.check() + DailyLines.check()
-        PenaltyHold.firstDay = hold
-        PenaltyQuests.choiceOverride = nil
+        let problems = EngineChecks.run()
         precondition(problems.isEmpty, problems.joined(separator: "\n"))
-        let holdProblems = PenaltyHold.check()
-        precondition(holdProblems.isEmpty, holdProblems.joined(separator: "\n"))
         // The write to Hevy is checked with replies made in the check: it calls no server.
         Task { @MainActor in
             let writeProblems = await HevyRoutine.checkWrites()
             precondition(writeProblems.isEmpty, writeProblems.joined(separator: "\n"))
         }
-        let ringProblems = DayClockRules.check()
-        precondition(ringProblems.isEmpty, ringProblems.joined(separator: "\n"))
         #endif
 
         // The build's keys go into the Keychain before anything reads, so an Xcode install needs no typing.
