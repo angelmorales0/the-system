@@ -43,7 +43,7 @@ To run one config and see the full TLC output:
 
 ## Coverage
 
-Sync commit: `2f50c46d0a0cc5eb64aad78a2f1d3dc9574f1eb1`. At this commit the model
+Sync commit: `0471af976779fb07dbdc4a7aae509351cce7524d`. At this commit the model
 describes this code:
 
 | Code | Model |
@@ -51,7 +51,7 @@ describes this code:
 | `GameStore.writeHevyRoutine(now:)`: `#if targetEnvironment(simulator)`, the `writingHevyRoutine` guard, `hevyRoutineAgain`, the completion that writes again | `WriteHevyRoutine`, `Return`, switch `SimulatorWrites` |
 | `GameStore.snapshot.didSet` (`rowsKey` changed) | `RowsChange` |
 | `GameStore.refreshStatInputs(now:)` completion | `StatInputsLoaded` |
-| `HevyRoutine.sync(...)`: signature guard, stored `idKey`, PUT, 404, `removeObject(forKey: idKey)` before POST, POST reply with and without an id, non-2xx | `WriteHevyRoutine`, `PutAnswered`, `PostAnswered`, switches `KeepStaleIdBeforePost`, `StaleIdOnNoIdReply` |
+| `HevyRoutine.sync(...)`: signature guard, `settleKey` wait and `unsure()`, stored `idKey`, PUT, 404, `removeObject(forKey: idKey)` before POST, POST reply with and without an id, non-2xx | `WriteHevyRoutine`, `PutAnswered`, `PostAnswered`, switches `KeepStaleIdBeforePost`, `StaleIdOnNoIdReply` |
 | `HevyRoutine.existingRoutine(...)`: `.found`, `.none`, `.failed` | `ListAnswered`, switch `ListFailureMakesRoutine` |
 | Hevy: GET/PUT/POST `/v1/routines`, lost replies, 5xx, replies with no id; the player deletes the routine | `HevyAnswers`, `PlayerDeletesRoutine` |
 
@@ -72,8 +72,11 @@ A plan is a number.
 - Start states: an empty account; a routine from an earlier install and no
   stored id; a routine and its stored id.
 - Hevy's list shows a new routine at once. A list that lags is not modeled.
-- A request reaches Hevy before the app stops waiting (`LateRequests = FALSE`).
-  See "Known findings".
+- The gate runs with `LateRequests = TRUE`: a PUT or POST can reach Hevy after
+  `OnDeviceHTTP.sendJSON` stopped waiting (12 s). The code then waits
+  `HevyRoutine.settleSeconds` (120 s, stored under `settleKey`) before it writes
+  again. The model's `Settles` step assumes Hevy handles or drops a request
+  within that time. If Hevy can take longer, raise `settleSeconds`.
 - Not covered: 400 and 403 replies, `routinePages` paging, the player renaming
   or copying the routine, two phones, a day change during a write, the
   contents of the routine.
@@ -87,6 +90,7 @@ A plan is a number.
 | `replay-b3aa1f7-no-id.cfg` | b3aa1f7: `routineId(in:) ?? id` kept the gone id after a reply with no id | `AtMostOneRoutine` |
 | `replay-b3aa1f7-simulator.cfg` | b3aa1f7: a Simulator build wrote with the same key | `OneWriteAtATime` |
 | `replay-b3aa1f7-simulator-stays.cfg` | b3aa1f7: the Simulator's day stayed over the phone's routine | `EventuallyLatest` |
+| `replay-late-requests.cfg` | before the settle wait: a write with no reply was followed by another write at once | `WrittenPlanStays` (and `AtMostOneRoutine`) |
 
 `WrittenPlanStays` also breaks in `replay-75159f3.cfg`; TLC stops at the first
 broken invariant, so the gate checks the one named above.
@@ -97,17 +101,8 @@ rows, so no property here breaks.
 
 ## Known findings (current code)
 
-`finding-late-requests.cfg` lets a request reach Hevy after
-`OnDeviceHTTP.sendJSON` stopped waiting (12 s). The current code breaks two
-properties:
-
-- `AtMostOneRoutine`: the list reads "none", the POST times out, the next write
-  reads "none" again and posts, then the first POST lands. Two routines.
-- `WrittenPlanStays`: a PUT of the old rows times out, the PUT of the new rows
-  succeeds, then the old PUT lands over it.
-
-Run it with `scripts/check-hevy-model.sh finding-late-requests`. It is not part
-of the gate. Do not turn the switch off in a replay to make it pass.
+None. The late-request finding is fixed by the settle wait and replayed by
+`replay-late-requests.cfg`.
 
 ## Read a result
 
@@ -135,7 +130,7 @@ the last rows the device wrote, `routines` is the account.
 ## When the covered code changes
 
 1. Read the diff of the covered functions since the sync commit:
-   `git diff 2f50c46d0a0cc5eb64aad78a2f1d3dc9574f1eb1 -- MyApp/Engine/HevyRoutine.swift MyApp/Engine/GameStore.swift`.
+   `git diff 0471af976779fb07dbdc4a7aae509351cce7524d -- MyApp/Engine/HevyRoutine.swift MyApp/Engine/GameStore.swift`.
 2. Change `formal/hevy-routine/HevyRoutine.tla` so each step still matches the
    code. Add a variable or action for each new await, flag, or stored key.
 3. Run `scripts/check-hevy-model.sh`. Read any break as above.

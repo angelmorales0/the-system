@@ -18,6 +18,10 @@ enum HevyRoutine {
     static let readKey = "hevyRoutineTemplateTypes.read.v2"
     /// Hevy's answer to the last routine it refused, for the developer. The player does not see it.
     static let errorKey = "hevyRoutineError"
+    /// A PUT or POST with no reply can still reach Hevy later. No write goes out until this time.
+    static let settleKey = "hevyRoutineSettleUntil"
+    /// Longer than Hevy takes to handle or drop a request; the routine model assumes it.
+    static let settleSeconds: TimeInterval = 120
     static let missingKey = "hevyRoutineTemplateIds.missing"
     /// Hevy lists 100 exercise templates in a page. The built-in list and a player's own exercises fit in these.
     static let templatePages = 12
@@ -361,7 +365,7 @@ enum HevyRoutine {
     /// A new routine is made only when Hevy's list was read to its end and holds none of the app's, or when Hevy
     /// says the stored one is gone (404). Any failure to read or write leaves Hevy as it is and tries again later.
     static func sync(bundle: QuestBundle, history: [HevyWorkout], key: String? = SecretStore.read(.hevyApiKey),
-                     defaults: UserDefaults = .standard, transport: Transport = .live) async -> String? {
+                     defaults: UserDefaults = .standard, transport: Transport = .live, now: Date = .now) async -> String? {
         guard let key else { return nil }
         var templates = defaults.dictionary(forKey: templatesKey) as? [String: String] ?? [:]
         var types = defaults.dictionary(forKey: typesKey) as? [String: String] ?? [:]
@@ -389,20 +393,26 @@ enum HevyRoutine {
         let signature = signature(plan)
         // The same routine is sent one time, also when Hevy refused it: a new day or a new plan sends again.
         guard defaults.string(forKey: signatureKey) != signature, defaults.string(forKey: refusedKey) != signature else { return nil }
+        let noAnswer = "Hevy did not answer. The routine is written at the next refresh."
+        if let until = defaults.object(forKey: settleKey) as? Date, now < until { return noAnswer }
+        func unsure() -> String {
+            defaults.set(now.addingTimeInterval(settleSeconds), forKey: settleKey)
+            return noAnswer
+        }
 
         var id = defaults.string(forKey: idKey)
         if id == nil {
             switch await existingRoutine(key: key, transport: transport) {
             case .found(let found): id = found
             case .none: break
-            case .failed: return "Hevy did not answer. The routine is written at the next refresh."
+            case .failed: return noAnswer
             }
         }
         var reply: (status: Int, json: JSONValue?)?
         var created = false
         if let id, let url = URL(string: "\(HevyClient.api)/v1/routines/\(id)") {
             reply = await transport.send("PUT", url, HevyClient.headers(key), body(plan, create: false))
-            guard reply != nil else { return "Hevy did not answer. The routine is written at the next refresh." }
+            guard reply != nil else { return unsure() }
         }
         // No routine yet, or the player deleted it in Hevy.
         if id == nil || reply?.status == 404, let url = URL(string: "\(HevyClient.api)/v1/routines") {
@@ -411,7 +421,7 @@ enum HevyRoutine {
             reply = await transport.send("POST", url, HevyClient.headers(key), body(plan, create: true))
             created = true
         }
-        guard let reply else { return "Hevy did not answer. The routine is written at the next refresh." }
+        guard let reply else { return unsure() }
         guard (200..<300).contains(reply.status) else {
             if created { defaults.removeObject(forKey: idKey) }
             if reply.status == 403 { return "Hevy holds its limit of routines. Delete one in Hevy, and the day's routine is written." }
@@ -621,7 +631,7 @@ extension HevyRoutine {
         /// Hevy, as far as this check needs it.
         final class Hevy {
             var routines: [(id: String, title: String)] = []
-            var listFails = false, sendFails = false, missing: Set<String> = [], refuse: Int? = nil, replyHasId = true, postReplyLost = false
+            var listFails = false, sendFails = false, missing: Set<String> = [], refuse: Int? = nil, replyHasId = true, postReplyLost = false, postLate = false
             var calls: [String] = []
             var made = 0
         }
@@ -652,6 +662,7 @@ extension HevyRoutine {
                         hevy.routines[at].title = title
                         return (200, .object(["routine": .object(["id": .string(hevy.routines[at].id)])]))
                     }
+                    if hevy.postLate { return nil }
                     hevy.made += 1
                     let id = "made-\(hevy.made)"
                     hevy.routines.append((id, title))
@@ -665,10 +676,11 @@ extension HevyRoutine {
             UserDefaults().removePersistentDomain(forName: name)
             return (UserDefaults(suiteName: name) ?? .standard, name)
         }
-        func write(_ hevy: Hevy, _ defaults: UserDefaults, _ day: QuestBundle) async -> String? {
+        func write(_ hevy: Hevy, _ defaults: UserDefaults, _ day: QuestBundle, at time: Date = now) async -> String? {
             hevy.calls = []
-            return await sync(bundle: day, history: [], key: "check", defaults: defaults, transport: transport(hevy))
+            return await sync(bundle: day, history: [], key: "check", defaults: defaults, transport: transport(hevy), now: time)
         }
+        let settled = now.addingTimeInterval(settleSeconds + 1)
 
         // No routine yet and the list cannot be read: nothing is made. One can be there.
         var (defaults, suite) = fresh("list")
@@ -700,7 +712,7 @@ extension HevyRoutine {
         hevy.sendFails = false
         // The player deleted the routine in Hevy: a new one is made, and its id replaces the old one.
         hevy.missing = ["made-1"]
-        _ = await write(hevy, defaults, bundle)
+        _ = await write(hevy, defaults, bundle, at: settled)
         if hevy.made != 2 || hevy.calls != ["PUT made-1", "POST routines"] || defaults.string(forKey: idKey) != "made-2" {
             errors.append("a deleted routine should be made again one time, got \(hevy.calls) id \(defaults.string(forKey: idKey) ?? "none")")
         }
@@ -737,9 +749,25 @@ extension HevyRoutine {
         _ = await write(hevy, defaults, bundle)
         let lostId = defaults.string(forKey: idKey)
         hevy.postReplyLost = false
-        _ = await write(hevy, defaults, bundle)
+        _ = await write(hevy, defaults, bundle, at: settled)
         if lostId != nil || hevy.made != 1 || hevy.calls.last != "PUT made-1" || defaults.string(forKey: idKey) != "made-1" {
             errors.append("a new routine whose reply is lost should not be made a second time, got \(hevy.calls) made \(hevy.made)")
+        }
+        UserDefaults().removePersistentDomain(forName: suite)
+
+        // Hevy gets the new routine after the app stopped waiting: no write goes out until it has landed, so the next
+        // write finds it by its title and makes no second one.
+        (defaults, suite) = fresh("late")
+        hevy = Hevy()
+        hevy.postLate = true
+        _ = await write(hevy, defaults, bundle)
+        hevy.postLate = false
+        _ = await write(hevy, defaults, other, at: now.addingTimeInterval(settleSeconds / 2))
+        let waitCalls = hevy.calls
+        hevy.routines.append(("late", "\(titlePrefix): \(bundle.headerLine)"))
+        _ = await write(hevy, defaults, other, at: settled)
+        if !waitCalls.isEmpty || hevy.made != 0 || hevy.routines.count != 1 || hevy.calls.last != "PUT late" {
+            errors.append("a routine that lands after the app stopped waiting should not be made a second time, got \(waitCalls) then \(hevy.calls)")
         }
         UserDefaults().removePersistentDomain(forName: suite)
 
