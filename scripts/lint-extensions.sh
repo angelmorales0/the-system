@@ -24,7 +24,7 @@ for t in $targets; do
   echo "$tabled" | grep -qx "$t" || err "$PBX: extension target $t has no entry in EXTENSIONS in scripts/lint-extensions.sh; add \"$t|<NSExtensionPointIdentifier>|<principal class>\" to the table"
 done
 
-for f in $(find . -name Info.plist -not -path './.*' -not -path './backend/*' -not -path './screentime-worker/*' | sed 's|^\./||'); do
+for f in $(git ls-files '*Info.plist'); do
   d=${f%%/*}
   $PB -c 'Print NSExtension' "$f" >/dev/null 2>&1 || continue
   echo "$tabled" | grep -qx "$d" || err "$f: has an NSExtension but folder $d has no entry in EXTENSIONS in scripts/lint-extensions.sh; add it"
