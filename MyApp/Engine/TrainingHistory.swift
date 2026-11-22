@@ -191,7 +191,8 @@ enum TrainingHistory {
                 // The trend compares a session only with earlier ones of its own kind.
                 let bestReps = sets.map { $0.reps ?? 0 }.max() ?? 0
                 let kind = top.map { ($0.reps ?? 0) <= heavyRepsMax ? "heavy" : "light" } ?? (bestReps > 0 ? repsKind(sets.map { $0.reps ?? 0 }) : "timed")
-                sessions[name, default: []].append(.object([
+                let totalReps = sets.reduce(0) { $0 + ($1.reps ?? 0) }
+                let session: [String: JSONValue] = [
                     "kind": .string(kind),
                     "date": .string(day),
                     "sets": .array(sets.map { .string(setText($0)) }),
@@ -199,11 +200,12 @@ enum TrainingHistory {
                     "topSetKg": top?.weightKg.map(JSONValue.number) ?? .null,
                     "e1rmKg": topE1rm.map { .number(pyRound($0, 1)) } ?? .null,
                     "e1rmLb": topE1rm.map { .number(pyRound($0 * lbPerKg)) } ?? .null,
-                    "bestReps": .number(Double(sets.map { $0.reps ?? 0 }.max() ?? 0)),
-                    "totalReps": .number(Double(sets.reduce(0) { $0 + ($1.reps ?? 0) })),
+                    "bestReps": .number(Double(bestReps)),
+                    "totalReps": .number(Double(totalReps)),
                     "seconds": seconds > 0 ? .number(seconds) : .null,
                     "bestSeconds": bestSeconds > 0 ? .number(bestSeconds) : .null,
-                ]))
+                ]
+                sessions[name, default: []].append(.object(session))
             }
         }
         for name in lifts.order {
