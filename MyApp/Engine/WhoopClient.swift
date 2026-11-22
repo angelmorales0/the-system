@@ -56,18 +56,6 @@ enum WhoopClient {
         return reading
     }
 
-    /// Cycles, recoveries, and sleeps from `start` to `end`, for the training history.
-    static func history(start: Date, end: Date) async -> (records: [String: [JSONValue]], status: String) {
-        let empty: [String: [JSONValue]] = ["cycles": [], "recoveries": [], "sleeps": []]
-        guard configured else { return (empty, "not configured") }
-        guard let token = await OAuthClient.accessToken(.whoop) else { return (empty, "token refresh failed") }
-        async let cycles = records(token, "/v2/cycle", start, end)
-        async let recoveries = records(token, "/v2/recovery", start, end)
-        async let sleeps = records(token, "/v2/activity/sleep", start, end)
-        let result = await ["cycles": cycles, "recoveries": recoveries, "sleeps": sleeps]
-        if result.values.allSatisfy(\.isEmpty) { return (result, "request failed or no data") }
-        return (result, "ok")
-    }
 
     static func test() async -> (ok: Bool, message: String) {
         guard let token = await OAuthClient.accessToken(.whoop) else { return (false, "Sign in to WHOOP again: the token could not be refreshed.") }

@@ -32,20 +32,19 @@ enum StravaClient {
     }
 
     /// Raw activities between `start` and `end` for the training history. Up to 3 pages of 100.
-    static func history(start: Date, end: Date) async -> (activities: [JSONValue], status: String) {
-        guard configured else { return ([], "not configured") }
-        guard let token = await OAuthClient.accessToken(.strava) else { return ([], "token refresh failed") }
+    static func history(start: Date, end: Date) async -> HistoryRead<[JSONValue]> {
+        guard configured else { return .notConfigured }
+        guard let token = await OAuthClient.accessToken(.strava) else { return .failed("token refresh failed") }
         var activities: [JSONValue] = []
         for page in 1...3 {
             guard let url = activitiesURL(after: start, before: end, perPage: 100, page: page),
                   let payload = await OnDeviceHTTP.getJSON(url, headers: bearer(token))?.arrayValue else {
-                // A later page failed: the list is short, and its newest runs are the ones missing.
-                return (activities, page > 1 ? "partial" : "request failed")
+                return page > 1 ? .partial : .failed("request failed")
             }
             activities += payload.filter { $0.objectValue != nil }
             if payload.count < 100 { break }
         }
-        return (activities, "ok")
+        return .complete(activities)
     }
 
     static func test() async -> (ok: Bool, message: String) {
