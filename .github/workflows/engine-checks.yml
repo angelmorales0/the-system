@@ -14,4 +14,5 @@ jobs:
           ls -d /Applications/Xcode*.app
           sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
           swift --version
+      - run: scripts/lint-day-math.sh
       - run: scripts/engine-checks.sh

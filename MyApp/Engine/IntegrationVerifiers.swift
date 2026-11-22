@@ -391,7 +391,7 @@ enum WorkoutClaimRules {
     static func check() -> [String] {
         var errors: [String] = []
         let catalog = FallbackCatalog.bundled()
-        guard let now = QuestDay.start(of: "2026-10-05")?.addingTimeInterval(3_600) else { return ["could not build claim dates"] }
+        guard let now = QuestDay.time(on: "2026-10-05", minutes: 60) else { return ["could not build claim dates"] }
         func recording(_ source: String, _ id: String, startsAfter seconds: TimeInterval) -> WorkoutEvent {
             let start = now.addingTimeInterval(3_600 + seconds)
             return WorkoutEvent(source: source, externalId: id, sport: source == "strava" ? "Run" : "running", start: start,

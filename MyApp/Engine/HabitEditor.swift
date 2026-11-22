@@ -131,8 +131,15 @@ enum HabitEditor {
             errors.append("the Home by title should read the time, got \(HomeBy.title(22 * 60 + 30))")
         }
         if HomeBy.quest(mode: .performanceTraining, minutes: 22 * 60 + 30, now: monday).title != "Home by 10:30 pm"
-            || HomeBy.deadline(tomorrow, minutes: 22 * 60 + 30) != QuestDay.start(of: tomorrow)?.addingTimeInterval(22.5 * 3600) {
+            || HomeBy.deadline(tomorrow, minutes: 22 * 60 + 30).map({ QuestDay.calendar.dateComponents([.hour, .minute], from: $0) }) != DateComponents(hour: 22, minute: 30) {
             errors.append("the Home by row should be judged at its own time")
+        }
+        for clockChange in ["2026-03-08", "2026-11-01"] {
+            let deadline = HomeBy.deadline(clockChange, minutes: 22 * 60 + 30)
+            if deadline.map({ QuestDay.calendar.dateComponents([.hour, .minute], from: $0) }) != DateComponents(hour: 22, minute: 30)
+                || deadline.map(QuestDay.key(for:)) != clockChange {
+                errors.append("Home by 10:30 pm on \(clockChange), when the clocks change, should be 22:30 that day")
+            }
         }
         if homeBy.habits.homeByStreakStart(on: tomorrow) != tomorrow || homeBy.habits.homeByStreakStart(on: today) != nil {
             errors.append("a new Home by time should start a new streak on its first day")

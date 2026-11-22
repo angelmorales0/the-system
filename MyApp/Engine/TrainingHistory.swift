@@ -58,7 +58,7 @@ enum TrainingHistory {
         guard let today = OnDeviceTime.dayBounds(day, zone: zone)?.start,
               let start = OnDeviceTime.dayBounds(OnDeviceTime.addDays(day, -historyDays), zone: zone)?.start,
               // To the end of the quest day, midnight.
-              let end = OnDeviceTime.questDayBounds(day, zone: zone)?.end else {
+              let end = OnDeviceTime.dayBounds(day, zone: zone)?.end else {
             return .object(["sources": .object(["error": .string("bad day")])])
         }
         _ = today
@@ -170,7 +170,7 @@ enum TrainingHistory {
         var lifts = Lifts()
         var sessions: [String: [JSONValue]] = [:]
         for workout in workouts.sorted(by: { $0.start < $1.start }) {
-            let day = OnDeviceTime.questDayKey(workout.start, zone: zone)
+            let day = OnDeviceTime.dayKey(workout.start, zone: zone)
             for exercise in workout.exercises {
                 let name = baseName(exercise.title)
                 let sets = workingSets(exercise)
@@ -352,7 +352,7 @@ enum TrainingHistory {
     /// One row per Hevy workout, newest first, marked when it held heavy squat or deadlift work.
     static func liftSessions(_ workouts: [HevyWorkout], lifts: Lifts, today: String, zone: TimeZone) -> [JSONValue] {
         workouts.sorted(by: { $0.start > $1.start }).map { workout in
-            let day = OnDeviceTime.questDayKey(workout.start, zone: zone)
+            let day = OnDeviceTime.dayKey(workout.start, zone: zone)
             var names: [String] = []
             var heavy = false
             for exercise in workout.exercises {
@@ -380,7 +380,7 @@ enum TrainingHistory {
             guard let start = OnDeviceTime.parse(item["start_date"]?.stringValue ?? "") else { continue }
             // The quest day, as the quests count it: a run at 0:30 belongs to the day before. `withQuestRuns` compares
             // these rows with quest days, and a calendar key would count such a run two times.
-            let day = OnDeviceTime.questDayKey(start, zone: zone)
+            let day = OnDeviceTime.dayKey(start, zone: zone)
             let sportType = item["sport_type"]?.stringValue ?? ""
             let type = item["type"]?.stringValue ?? ""
             let sport = !sportType.isEmpty ? sportType : !type.isEmpty ? type : "other"

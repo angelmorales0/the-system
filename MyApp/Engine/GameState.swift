@@ -1036,7 +1036,7 @@ enum RebuiltRowRules {
     static func check() -> [String] {
         var errors: [String] = []
         let catalog = FallbackCatalog.bundled()
-        guard let now = QuestDay.start(of: "2026-10-05")?.addingTimeInterval(3_600) else { return ["could not build rebuild dates"] }
+        guard let now = QuestDay.time(on: "2026-10-05", minutes: 60) else { return ["could not build rebuild dates"] }
         func row(_ snapshot: GameSnapshot, _ id: String) -> Quest? { snapshot.bundle.quests.first { $0.id == id } }
 
         var day = GameSnapshot.fresh(catalog: catalog, now: now)

@@ -6,7 +6,7 @@ enum PlanAndLockRules {
     static func check() -> [String] {
         var errors: [String] = []
         let catalog = FallbackCatalog.bundled()
-        guard let morning = QuestDay.start(of: "2026-10-22")?.addingTimeInterval(4 * 3_600) else { return ["could not build plan dates"] }
+        guard let morning = QuestDay.time(on: "2026-10-22", minutes: 240) else { return ["could not build plan dates"] }
 
         // A penalty that opens after the day's penalty run is a new debt: it gets its own open row.
         var twice = GameSnapshot.fresh(catalog: catalog, now: morning)
@@ -31,8 +31,8 @@ enum PlanAndLockRules {
         if let dayStart = QuestDay.start(of: "2026-10-22") {
             var bitmap = Data(count: 180)
             for slot in 240..<480 { bitmap[slot >> 3] |= 1 << UInt8(slot & 7) }
-            let early = [5: dayStart.addingTimeInterval(60 * 60), 10: dayStart.addingTimeInterval(200 * 60)]
-            if ScreenOverlap.minutes(phoneTimes: early, macActive: bitmap, dayStart: dayStart) != 0 {
+            if let one = QuestDay.time(on: "2026-10-22", minutes: 60), let late = QuestDay.time(on: "2026-10-22", minutes: 200),
+               ScreenOverlap.minutes(phoneTimes: [5: one, 10: late], macActive: bitmap, dayStart: dayStart) != 0 {
                 errors.append("phone minutes before the Macs were active are no sure overlap with them")
             }
         }

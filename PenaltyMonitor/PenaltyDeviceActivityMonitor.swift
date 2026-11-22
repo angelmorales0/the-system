@@ -48,7 +48,7 @@ class PenaltyDeviceActivityMonitor: DeviceActivityMonitor {
     }
 }
 
-/// Mirrors `PenaltyGroup` and `QuestDay.startHour` in the app. Keep the strings in step.
+/// Mirrors `PenaltyGroup` in the app. Keep the strings in step.
 enum PenaltyMonitorGroup {
     static let suiteName = "group.com.angelmorales.thesystem"
     static let penaltyActiveKey = "penaltyActive"
@@ -59,7 +59,6 @@ enum PenaltyMonitorGroup {
     static let hiddenSelectionKey = "penaltyHiddenSelection"
     static let storeName = "penalty"
     static let dawnActivity = "penaltyDawn"
-    static let dayStartHour = 0
 }
 
 enum PenaltyMonitorShields {
@@ -124,11 +123,7 @@ enum PenaltyMonitorShields {
 
     /// Same rule as `QuestDay.key` in the app: the day starts at midnight.
     nonisolated static func questDayKey(for date: Date) -> String {
-        let calendar = Calendar.autoupdatingCurrent
-        let local = calendar.component(.hour, from: date) < PenaltyMonitorGroup.dayStartHour
-            ? calendar.date(byAdding: .day, value: -1, to: date) ?? date
-            : date
-        let parts = calendar.dateComponents([.year, .month, .day], from: local)
+        let parts = Calendar.autoupdatingCurrent.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
     }
 }

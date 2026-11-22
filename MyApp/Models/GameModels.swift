@@ -375,20 +375,20 @@ enum QuestDay {
     }
 
     /// A quest day runs from midnight to midnight local time: the calendar day.
-    static let startHour = 0
-
     static func key(for date: Date) -> String {
-        let local = calendar.component(.hour, from: date) < startHour
-            ? calendar.date(byAdding: .day, value: -1, to: date) ?? date
-            : date
-        let parts = calendar.dateComponents([.year, .month, .day], from: local)
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
     }
 
     /// Midnight local time at the start of the quest day `key`.
     static func start(of key: String) -> Date? {
+        time(on: key, minutes: 0)
+    }
+
+    /// The wall-clock time `minutes` after midnight on the quest day `key`, also on the days the clocks change.
+    static func time(on key: String, minutes: Int) -> Date? {
         guard let noon = date(from: key) else { return nil }
-        return calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: noon)
+        return calendar.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: noon)
     }
 
     /// The quest day that holds `date`, from its midnight start to the next midnight.

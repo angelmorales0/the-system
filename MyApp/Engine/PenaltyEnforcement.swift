@@ -29,7 +29,7 @@ enum PenaltyGroup {
     static let owedDayKey = "penaltyOwedDayKey"
     static let storeName = "penalty"
     static let activityName = "penalty"
-    /// Starts every day at `QuestDay.startHour`, so a missed day locks the phone even if the app stays closed.
+    /// Starts every day at midnight, so a missed day locks the phone even if the app stays closed.
     static let dawnActivityName = "penaltyDawn"
     /// ActivityKit removes a Live Activity after about 8 hours. Shields are separate and stay up.
     static let liveActivityLimit: TimeInterval = 8 * 60 * 60
@@ -142,8 +142,8 @@ enum PenaltyEnforcement {
     /// A daily 15-minute window from midnight. Its start runs the monitor, which locks the phone after a missed day.
     private static func scheduleDawnCheck() {
         let schedule = DeviceActivitySchedule(
-            intervalStart: DateComponents(hour: QuestDay.startHour, minute: 0),
-            intervalEnd: DateComponents(hour: QuestDay.startHour, minute: 15),
+            intervalStart: DateComponents(hour: 0, minute: 0),
+            intervalEnd: DateComponents(hour: 0, minute: 15),
             repeats: true
         )
         try? DeviceActivityCenter().startMonitoring(DeviceActivityName(PenaltyGroup.dawnActivityName), during: schedule)

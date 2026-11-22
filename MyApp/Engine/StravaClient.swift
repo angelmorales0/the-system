@@ -19,7 +19,7 @@ enum StravaClient {
             base.reason = "TODO: Strava token refresh failed. Sign in again in Status → Connections."
             return base
         }
-        guard let (start, end) = OnDeviceTime.questDayBounds(dayKey, zone: zone ?? QuestDay.timeZone),
+        guard let (start, end) = OnDeviceTime.dayBounds(dayKey, zone: zone ?? QuestDay.timeZone),
               let url = activitiesURL(after: start, before: end, perPage: 50),
               let payload = await OnDeviceHTTP.getJSON(url, headers: bearer(token))?.arrayValue else {
             base.reason = "TODO: Strava request failed."

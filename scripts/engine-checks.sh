@@ -10,4 +10,4 @@ swiftc -Onone -default-isolation MainActor -module-name Harness \
   scripts/engine-checks/main.swift -o "$out/run" \
   -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker MyApp-Info.plist
 cp MyApp/Resources/FallbackCatalog.json "$out/"
-"$out/run"
+TZ=America/Los_Angeles "$out/run"

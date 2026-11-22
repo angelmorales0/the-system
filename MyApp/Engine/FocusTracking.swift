@@ -77,7 +77,7 @@ enum FocusTracking {
         FocusGroup.defaults.set(!isEmpty(social), forKey: FocusGroup.socialTrackedKey)
         let wanted = isEmpty(all) ? 0 : FocusLevel.screenThresholds.count + (isEmpty(social) ? 0 : FocusLevel.socialThresholds.count)
         if !restart, wanted > 0, center.activities.contains(name), center.events(for: name).count == wanted,
-           center.schedule(for: name)?.intervalStart.hour == QuestDay.startHour { return }
+           center.schedule(for: name)?.intervalStart.hour == 0 { return }
         center.stopMonitoring([name])
         guard !isEmpty(all) else { return }
 
@@ -91,8 +91,8 @@ enum FocusTracking {
             }
         }
         let schedule = DeviceActivitySchedule(
-            intervalStart: DateComponents(hour: QuestDay.startHour, minute: 0),
-            intervalEnd: DateComponents(hour: (QuestDay.startHour + 23) % 24, minute: 59),
+            intervalStart: DateComponents(hour: 0, minute: 0),
+            intervalEnd: DateComponents(hour: 23, minute: 59),
             repeats: true
         )
         try? center.startMonitoring(name, during: schedule, events: events)

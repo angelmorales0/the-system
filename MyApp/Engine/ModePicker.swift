@@ -117,7 +117,7 @@ enum RestRules {
     static func check() -> [String] {
         var errors: [String] = []
         let catalog = FallbackCatalog.bundled()
-        guard let dayOne = QuestDay.start(of: "2026-10-05")?.addingTimeInterval(3_600) else { return ["could not build rest dates"] }
+        guard let dayOne = QuestDay.time(on: "2026-10-05", minutes: 60) else { return ["could not build rest dates"] }
         func day(_ offset: Int) -> Date { dayOne.addingTimeInterval(Double(offset) * 86_400) }
         func finishRequired(_ snapshot: inout GameSnapshot, now: Date) {
             for quest in snapshot.bundle.quests where quest.kind != .optional && quest.status != .completed {
