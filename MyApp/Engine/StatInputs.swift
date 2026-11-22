@@ -31,6 +31,10 @@ struct StatInputCache: Codable, Equatable {
     var stravaFullFetchAt: Date?
     /// Apple Health workout id → its longest zone 2 session (0 minutes when it had none).
     var zoneTwo: [String: ZoneTwoSession] = [:]
+    /// The last Apple Health read that worked, and the zone 2 sessions found from it. A read on a locked phone fails,
+    /// and the levels then use these: a level moves only when the player's data changes.
+    var health: HealthStatInputs?
+    var healthZoneTwo: [ZoneTwoSession]?
 
     static var fileURL: URL? {
         try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
@@ -76,13 +80,16 @@ enum StatInputLoader {
         cache = await refreshHevy(cache, now: now, sources: &sources)
         cache = await refreshWhoop(cache, now: now, zone: zone, sources: &sources)
         cache = await refreshStrava(cache, now: now, sources: &sources)
-        let health = await HealthKitBridge.statInputs(now: now)
-        sources["health"] = health.available ? "ok" : "not available"
+        let read = await HealthKitBridge.statInputs(now: now)
+        let health = healthForLevels(read, cache: cache)
+        sources["health"] = read.available ? "ok" : cache.health == nil ? "not available" : "cached"
 
         let effortStart = now.addingTimeInterval(-Double(EnduranceLevel.effortWindowDays) * 86_400)
         let events = cache.stravaEvents + health.workouts.filter { $0.start >= effortStart }
         var zoneSessions: [ZoneTwoSession] = []
-        if let maxHR = health.maxHeartRate {
+        if !read.available, let cached = cache.healthZoneTwo {
+            zoneSessions = cached.filter { $0.date >= effortStart }
+        } else if let maxHR = health.maxHeartRate {
             for workout in health.workouts where ZoneTwo.eligible(workout) && workout.start >= effortStart {
                 let session: ZoneTwoSession
                 if let cached = cache.zoneTwo[workout.id] {
@@ -97,6 +104,10 @@ enum StatInputLoader {
             }
         }
         cache.zoneTwo = cache.zoneTwo.filter { $0.value.date >= effortStart }
+        if read.available {
+            cache.health = read
+            cache.healthZoneTwo = zoneSessions
+        }
         cache.save()
 
         return StatInputs(
@@ -238,9 +249,29 @@ enum StatInputLoader {
 
     // MARK: - Self-check (runs in DEBUG at launch)
 
+    /// The Apple Health inputs the levels use: this read when it worked, else the last one that did.
+    static func healthForLevels(_ read: HealthStatInputs, cache: StatInputCache) -> HealthStatInputs {
+        read.available ? read : cache.health ?? read
+    }
+
     static func check() -> [String] {
         var errors: [String] = []
         let now = Date(timeIntervalSince1970: 1_790_000_000)
+        // A read on a locked phone fails. Endurance stays where the player's last good Health data put it.
+        var good = HealthStatInputs(available: true)
+        good.vo2 = [VO2MaxReading(value: 48, date: now.addingTimeInterval(-86_400), source: "Apple Health")]
+        good.workouts = [WorkoutEvent(source: "healthkit", externalId: "hk-5k", sport: "running", start: now.addingTimeInterval(-90_000),
+                                      end: now.addingTimeInterval(-88_500), movingTimeSec: 1_500, distanceMeters: 5_010)]
+        var saved = StatInputCache()
+        saved.health = good
+        func endurance(_ health: HealthStatInputs) -> Int {
+            EnduranceLevel.evaluate(efforts: EnduranceEfforts.runEfforts(health.workouts), swims: [], vo2: health.vo2, zoneTwo: [], now: now).level
+        }
+        let unlocked = endurance(healthForLevels(good, cache: saved))
+        let locked = endurance(healthForLevels(HealthStatInputs(), cache: saved))
+        if unlocked <= 0 || locked != unlocked {
+            errors.append("a failed Apple Health read should keep endurance at \(unlocked), got \(locked)")
+        }
         if !due(nil, now: now) || due(now.addingTimeInterval(-600), now: now) || !due(now.addingTimeInterval(-901), now: now) {
             errors.append("a source is due with no read, or 15 minutes after the last one")
         }

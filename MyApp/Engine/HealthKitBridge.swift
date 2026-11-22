@@ -6,8 +6,8 @@ extension Notification.Name {
 
 /// Stat inputs from Apple Health: 90 days of nutrition and weight by local day (MacroFactor first), VO₂ max readings,
 /// 180 days of workouts, and the max heart rate (220 minus the age from the Health date of birth) for zone 2.
-struct HealthStatInputs: Equatable {
-    /// False when Health is unavailable or access was refused.
+struct HealthStatInputs: Codable, Equatable {
+    /// False when Health is unavailable, access was refused, or a read failed (a locked phone).
     var available = false
     /// Rows with only the nutrition and weight fields set.
     var nutritionDays: [RecoveryDay] = []
@@ -48,13 +48,13 @@ enum HealthKitBridge {
         #endif
     }
 
-    /// The newest weigh-in from `days` before `now` up to `now`, MacroFactor's trend weight first. Nil without one.
-    static func latestBodyMass(days: Int, now: Date) async -> BodyMassReading? {
+    /// The newest weigh-in from `days` before `now` up to `now`, MacroFactor's trend weight first.
+    static func latestBodyMass(days: Int, now: Date) async -> HistoryRead<BodyMassReading?> {
         #if canImport(HealthKit)
         return await HealthKitStore.shared.latestBodyMass(since: now.addingTimeInterval(-Double(days) * 86_400), until: now)
         #else
         _ = (days, now)
-        return nil
+        return .notConfigured
         #endif
     }
 
@@ -85,7 +85,7 @@ final class HealthKitStore {
         }
         let interval = QuestDay.interval(for: day)
         let predicate = HKQuery.predicateForSamples(withStart: interval.start, end: interval.end, options: .strictStartDate)
-        return HealthDaySummary(access: .requested, workouts: await workoutEvents(predicate: predicate))
+        return HealthDaySummary(access: .requested, workouts: await workoutEvents(predicate: predicate) ?? [])
     }
 
     func startObservers() {
@@ -103,16 +103,16 @@ final class HealthKitStore {
         }
     }
 
-    func latestBodyMass(since start: Date, until end: Date) async -> BodyMassReading? {
-        guard HKHealthStore.isHealthDataAvailable(), let type = HKQuantityType.quantityType(forIdentifier: .bodyMass) else { return nil }
+    func latestBodyMass(since start: Date, until end: Date) async -> HistoryRead<BodyMassReading?> {
+        guard HKHealthStore.isHealthDataAvailable(), let type = HKQuantityType.quantityType(forIdentifier: .bodyMass) else { return .notConfigured }
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
-        let samples: [HKQuantitySample] = await samples(type: type, predicate: predicate)
-        guard let latest = MacroFactorSamples.prefer(samples).max(by: { $0.startDate < $1.startDate }) else { return nil }
-        return BodyMassReading(
+        guard let samples: [HKQuantitySample] = await samples(type: type, predicate: predicate) else { return .failed("Apple Health is locked") }
+        guard let latest = MacroFactorSamples.prefer(samples).max(by: { $0.startDate < $1.startDate }) else { return .complete(nil) }
+        return .complete(BodyMassReading(
             kg: latest.quantity.doubleValue(for: .gramUnit(with: .kilo)),
             date: latest.startDate,
             source: MacroFactorSamples.isMacroFactor(latest) ? "MacroFactor" : "Apple Health"
-        )
+        ))
     }
 
     /// See `HealthStatInputs`. Days are local calendar days, so they line up with MacroFactor's log and WHOOP's cycles.
@@ -130,7 +130,8 @@ final class HealthKitStore {
         var days: [String: RecoveryDay] = [:]
 
         for (identifier, unit, keyPath) in Self.dietaryTypes {
-            for (key, total) in await dailySums(identifier, unit: unit, predicate: recoveryPredicate, zone: zone, preferMacroFactor: true) {
+            guard let sums = await dailySums(identifier, unit: unit, predicate: recoveryPredicate, zone: zone, preferMacroFactor: true) else { return HealthStatInputs() }
+            for (key, total) in sums {
                 days[key, default: RecoveryDay(dayKey: key)][keyPath: keyPath] = Optional(total)
             }
         }
@@ -142,14 +143,14 @@ final class HealthKitStore {
         // Expenditure: active plus basal energy, on days that have both (an Apple Watch). Health has no MacroFactor estimate.
         // Health's own daily totals: an Apple Watch, the iPhone, and WHOOP can each write energy for the same minutes,
         // and a plain sum of their samples would count those minutes two or three times.
-        let active = await dailyTotals(.activeEnergyBurned, unit: .kilocalorie(), start: recoveryStart, end: now, zone: zone)
-        let basal = await dailyTotals(.basalEnergyBurned, unit: .kilocalorie(), start: recoveryStart, end: now, zone: zone)
+        guard let active = await dailyTotals(.activeEnergyBurned, unit: .kilocalorie(), start: recoveryStart, end: now, zone: zone),
+              let basal = await dailyTotals(.basalEnergyBurned, unit: .kilocalorie(), start: recoveryStart, end: now, zone: zone) else { return HealthStatInputs() }
         for (key, moving) in active {
             guard let resting = basal[key], moving > 0, resting > 0 else { continue }
             days[key, default: RecoveryDay(dayKey: key)].maintenanceKcal = moving + resting
         }
         if let type = HKQuantityType.quantityType(forIdentifier: .bodyMass) {
-            let samples: [HKQuantitySample] = await samples(type: type, predicate: recoveryPredicate)
+            guard let samples: [HKQuantitySample] = await samples(type: type, predicate: recoveryPredicate) else { return HealthStatInputs() }
             for (key, group) in Dictionary(grouping: samples, by: { OnDeviceTime.dayKey($0.startDate, zone: zone) }) {
                 guard let latest = MacroFactorSamples.prefer(group).max(by: { $0.startDate < $1.startDate }) else { continue }
                 days[key, default: RecoveryDay(dayKey: key)].bodyMassKg = latest.quantity.doubleValue(for: .gramUnit(with: .kilo))
@@ -159,11 +160,12 @@ final class HealthKitStore {
 
         if let type = HKQuantityType.quantityType(forIdentifier: .vo2Max) {
             let start = now.addingTimeInterval(-Double(EnduranceLevel.vo2WindowDays) * 86_400)
-            let samples: [HKQuantitySample] = await samples(type: type, predicate: HKQuery.predicateForSamples(withStart: start, end: now, options: []))
+            guard let samples: [HKQuantitySample] = await samples(type: type, predicate: HKQuery.predicateForSamples(withStart: start, end: now, options: [])) else { return HealthStatInputs() }
             inputs.vo2 = samples.map { VO2MaxReading(value: $0.quantity.doubleValue(for: Self.vo2Unit), date: $0.startDate, source: "Apple Health") }
         }
         let effortStart = now.addingTimeInterval(-Double(EnduranceLevel.effortWindowDays) * 86_400)
-        inputs.workouts = await workoutEvents(predicate: HKQuery.predicateForSamples(withStart: effortStart, end: now, options: []))
+        guard let workouts = await workoutEvents(predicate: HKQuery.predicateForSamples(withStart: effortStart, end: now, options: [])) else { return HealthStatInputs() }
+        inputs.workouts = workouts
         if let birth = try? store.dateOfBirthComponents(), let born = Calendar.current.date(from: birth) {
             let age = Calendar.current.dateComponents([.year], from: born, to: now).year ?? 0
             if age > 0 { inputs.maxHeartRate = ZoneTwo.maxHeartRate(age: age) }
@@ -174,15 +176,15 @@ final class HealthKitStore {
     func heartRate(from start: Date, to end: Date) async -> [HeartRateSample] {
         guard HKHealthStore.isHealthDataAvailable(), end > start,
               let type = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return [] }
-        let samples: [HKQuantitySample] = await samples(type: type, predicate: HKQuery.predicateForSamples(withStart: start, end: end, options: []))
+        let samples: [HKQuantitySample] = await samples(type: type, predicate: HKQuery.predicateForSamples(withStart: start, end: end, options: [])) ?? []
         let unit = HKUnit.count().unitDivided(by: .minute())
         return samples.map { HeartRateSample(time: $0.startDate, bpm: $0.quantity.doubleValue(for: unit)) }.sorted { $0.time < $1.time }
     }
 
     /// Local day → the sum of one quantity. With `preferMacroFactor`, a day with MacroFactor samples sums only those.
-    private func dailySums(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit, predicate: NSPredicate, zone: TimeZone, preferMacroFactor: Bool) async -> [String: Double] {
+    private func dailySums(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit, predicate: NSPredicate, zone: TimeZone, preferMacroFactor: Bool) async -> [String: Double]? {
         guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else { return [:] }
-        let samples: [HKQuantitySample] = await samples(type: type, predicate: predicate)
+        guard let samples: [HKQuantitySample] = await samples(type: type, predicate: predicate) else { return nil }
         var sums: [String: Double] = [:]
         for (key, group) in Dictionary(grouping: samples, by: { OnDeviceTime.dayKey($0.startDate, zone: zone) }) {
             let counted = preferMacroFactor ? MacroFactorSamples.prefer(group) : group
@@ -193,7 +195,7 @@ final class HealthKitStore {
 
     /// One total per local day, as the Health app shows it: Health merges its sources, so time that two devices
     /// recorded counts once.
-    private func dailyTotals(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit, start: Date, end: Date, zone: TimeZone) async -> [String: Double] {
+    private func dailyTotals(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit, start: Date, end: Date, zone: TimeZone) async -> [String: Double]? {
         guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else { return [:] }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
@@ -206,7 +208,8 @@ final class HealthKitStore {
                 anchorDate: anchor,
                 intervalComponents: DateComponents(day: 1)
             )
-            query.initialResultsHandler = { _, collection, _ in
+            query.initialResultsHandler = { _, collection, error in
+                guard error == nil else { return continuation.resume(returning: nil) }
                 var totals: [String: Double] = [:]
                 collection?.enumerateStatistics(from: anchor, to: end) { statistics, _ in
                     guard let total = statistics.sumQuantity()?.doubleValue(for: unit), total > 0 else { return }
@@ -218,8 +221,8 @@ final class HealthKitStore {
         }
     }
 
-    private func workoutEvents(predicate: NSPredicate) async -> [WorkoutEvent] {
-        let samples: [HKWorkout] = await samples(type: HKWorkoutType.workoutType(), predicate: predicate)
+    private func workoutEvents(predicate: NSPredicate) async -> [WorkoutEvent]? {
+        guard let samples: [HKWorkout] = await samples(type: HKWorkoutType.workoutType(), predicate: predicate) else { return nil }
         return samples.map { workout in
             WorkoutEvent(
                 source: "healthkit",
@@ -233,10 +236,11 @@ final class HealthKitStore {
         }
     }
 
-    private func samples<T: HKSample>(type: HKSampleType, predicate: NSPredicate) async -> [T] {
+    /// Nil when the read failed, as it does while the phone is locked: that is no data read, not "no samples".
+    private func samples<T: HKSample>(type: HKSampleType, predicate: NSPredicate) async -> [T]? {
         await withCheckedContinuation { continuation in
-            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, results, _ in
-                continuation.resume(returning: (results as? [T]) ?? [])
+            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, results, error in
+                continuation.resume(returning: error == nil ? (results as? [T]) ?? [] : nil)
             }
             store.execute(query)
         }
